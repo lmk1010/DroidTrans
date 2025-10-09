@@ -24,28 +24,36 @@
             android:layout_height="?attr/actionBarSize"
             android:background="@android:color/transparent"
             app:titleTextColor="@color/white"
-            app:title="@string/app_name"
-            app:titleCentered="false">
+            app:title="">
 
-            <!-- Device Name Chip -->
+            <!-- Custom Toolbar Content with Logo -->
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
                 android:layout_marginEnd="16dp">
 
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/chipDeviceName"
-                    android:layout_width="wrap_content"
+                <!-- App Logo -->
+                <ImageView
+                    android:id="@+id/ivAppLogo"
+                    android:layout_width="32dp"
                     android:layout_height="32dp"
-                    android:layout_gravity="end"
-                    android:textSize="12sp"
+                    android:src="@drawable/ic_transfer_logo"
+                    android:contentDescription="@string/app_name"
+                    android:layout_marginEnd="12dp" />
+
+                <!-- App Title -->
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/app_name"
                     android:textColor="@color/white"
-                    app:chipBackgroundColor="@color/primary_variant"
-                    app:chipStrokeWidth="0dp"
-                    app:chipIconTint="@color/white"
-                    app:chipIcon="@drawable/ic_smartphone"
-                    tools:text="优雅的天鹅-AB12" />
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
 
             </LinearLayout>
 
@@ -111,21 +119,39 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Device Name Chip -->
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipDeviceName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:textSize="13sp"
+                android:textColor="@color/text_high_emphasis"
+                app:chipBackgroundColor="@color/surface"
+                app:chipStrokeColor="@color/primary"
+                app:chipStrokeWidth="1dp"
+                app:chipIconTint="@color/primary"
+                app:chipIcon="@drawable/ic_smartphone"
+                app:layout_constraintTop_toBottomOf="@id/radarCard"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                tools:text="优雅的天鹅-AB12" />
+
             <!-- Status Text -->
             <TextView
                 android:id="@+id/tvScanStatus"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
+                android:layout_marginTop="16dp"
                 android:text="@string/scanning_servers"
-                android:textSize="20sp"
+                android:textSize="18sp"
                 android:textColor="@color/text_high_emphasis"
                 android:textStyle="bold"
-                app:layout_constraintTop_toBottomOf="@id/radarCard"
+                app:layout_constraintTop_toBottomOf="@id/chipDeviceName"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent" />
 
-            <!-- Server Count with Refresh Button -->
+            <!-- Server Count with Action Buttons -->
             <LinearLayout
                 android:id="@+id/serverCountContainer"
                 android:layout_width="wrap_content"
@@ -151,11 +177,24 @@
                     style="@style/Widget.Material3.Button.TextButton.Icon"
                     android:layout_width="wrap_content"
                     android:layout_height="36dp"
-                    android:layout_marginStart="8dp"
+                    android:layout_marginStart="4dp"
                     android:text="刷新"
                     android:textSize="12sp"
                     android:textColor="@color/primary"
                     app:icon="@android:drawable/ic_menu_rotate"
+                    app:iconTint="@color/primary"
+                    app:iconSize="18dp" />
+                
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnManualInput"
+                    style="@style/Widget.Material3.Button.TextButton.Icon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="4dp"
+                    android:text="手动输入"
+                    android:textSize="12sp"
+                    android:textColor="@color/primary"
+                    app:icon="@drawable/ic_edit"
                     app:iconTint="@color/primary"
                     app:iconSize="18dp" />
                 
@@ -219,21 +258,5 @@
         </androidx.constraintlayout.widget.ConstraintLayout>
 
     </androidx.core.widget.NestedScrollView>
-
-    <!-- Floating Action Button for Manual Input -->
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/fabManualInput"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="20dp"
-        android:text="@string/manual_input"
-        android:textColor="@color/white"
-        android:textStyle="bold"
-        app:icon="@drawable/ic_edit"
-        app:iconTint="@color/white"
-        app:backgroundTint="@color/primary"
-        app:cornerRadius="28dp"
-        app:elevation="8dp" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

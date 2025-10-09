@@ -32,6 +32,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.mk.androidtransfer.adapter.PhotoGridAdapter;
+import com.mk.androidtransfer.database.UploadRecordDao;
 import com.mk.androidtransfer.model.ApiResponse;
 import com.mk.androidtransfer.model.PhotoInfo;
 import com.mk.androidtransfer.model.PhotoListRequest;
@@ -46,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -66,6 +68,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
     private MaterialButton btnSelectAll;
     private MaterialButton btnDeselectAll;
     private MaterialButton btnSort;
+    private MaterialButton btnFilterUploaded;
     private RecyclerView recyclerViewPhotos;
     private FrameLayout loadingContainer;
     private LinearLayout emptyState;
@@ -74,9 +77,12 @@ public class PhotoSelectionActivity extends AppCompatActivity {
     // 数据
     private PhotoGridAdapter photoAdapter;
     private List<PhotoInfo> photoList = new ArrayList<>();
+    private List<PhotoInfo> allPhotoList = new ArrayList<>(); // 保存所有照片
     private String serverUrl;
     private String serverName;
     private ApiService apiService;
+    private UploadRecordDao uploadRecordDao;
+    private boolean isFilteringUploaded = false;
 
     // 权限请求
     private ActivityResultLauncher<String[]> permissionLauncher;
@@ -106,6 +112,9 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         // 初始化API服务
         RetrofitClient retrofitClient = RetrofitClient.getInstance(serverUrl);
         apiService = retrofitClient.getApiService();
+        
+        // 初始化数据库
+        uploadRecordDao = new UploadRecordDao(this);
 
         initViews();
         setupToolbar();
@@ -149,6 +158,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         btnSelectAll = findViewById(R.id.btnSelectAll);
         btnDeselectAll = findViewById(R.id.btnDeselectAll);
         btnSort = findViewById(R.id.btnSort);
+        btnFilterUploaded = findViewById(R.id.btnFilterUploaded);
         recyclerViewPhotos = findViewById(R.id.recyclerViewPhotos);
         loadingContainer = findViewById(R.id.loadingContainer);
         emptyState = findViewById(R.id.emptyState);
@@ -207,6 +217,11 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         // 排序（暂未实现）
         btnSort.setOnClickListener(v -> {
             Toast.makeText(this, "排序功能开发中", Toast.LENGTH_SHORT).show();
+        });
+        
+        // 过滤已上传照片
+        btnFilterUploaded.setOnClickListener(v -> {
+            toggleFilterUploaded();
         });
 
         // 上传照片
@@ -281,7 +296,8 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                 // 回到主线程更新UI
                 mainHandler.post(() -> {
                     showLoading(false);
-                    photoList = photos;
+                    allPhotoList = photos;
+                    photoList = new ArrayList<>(photos);
                     photoAdapter.updateData(photoList);
 
                     if (photoList.isEmpty()) {
@@ -295,6 +311,9 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                     }
 
                     updateSelectionCount(0);
+                    
+                    // 更新按钮显示已上传数量
+                    updateFilterButtonText();
                 });
             } catch (Exception e) {
                 mainHandler.post(() -> {
@@ -410,6 +429,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                     // 跳转到上传进度页面
                     Intent intent = new Intent(PhotoSelectionActivity.this, UploadProgressActivity.class);
                     intent.putExtra("server_url", serverUrl);
+                    intent.putExtra("server_name", serverName);
                     intent.putParcelableArrayListExtra("selected_photos", new ArrayList<>(selectedPhotos));
                     startActivity(intent);
                 })
@@ -555,5 +575,111 @@ public class PhotoSelectionActivity extends AppCompatActivity {
      */
     private String getAndroidDeviceId() {
         return Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+    }
+    
+    /**
+     * 切换过滤已上传照片
+     */
+    private void toggleFilterUploaded() {
+        if (isFilteringUploaded) {
+            // 取消过滤，显示所有照片
+            isFilteringUploaded = false;
+            photoList = new ArrayList<>(allPhotoList);
+            photoAdapter.updateData(photoList);
+            btnFilterUploaded.setText("排除已上传");
+            Toast.makeText(this, "显示全部照片", Toast.LENGTH_SHORT).show();
+        } else {
+            // 应用过滤，排除已上传照片
+            showLoading(true);
+            new Thread(() -> {
+                try {
+                    Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths();
+                    
+                    List<PhotoInfo> filteredList = new ArrayList<>();
+                    int filteredCount = 0;
+                    
+                    for (PhotoInfo photo : allPhotoList) {
+                        if (!uploadedPaths.contains(photo.getPath())) {
+                            filteredList.add(photo);
+                        } else {
+                            filteredCount++;
+                        }
+                    }
+                    
+                    final int finalFilteredCount = filteredCount;
+                    
+                    mainHandler.post(() -> {
+                        showLoading(false);
+                        isFilteringUploaded = true;
+                        photoList = filteredList;
+                        photoAdapter.updateData(photoList);
+                        btnFilterUploaded.setText("显示全部");
+                        
+                        if (finalFilteredCount > 0) {
+                            Toast.makeText(this, "已排除 " + finalFilteredCount + " 张已上传照片", Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(this, "暂无已上传照片", Toast.LENGTH_SHORT).show();
+                        }
+                        
+                        if (photoList.isEmpty()) {
+                            emptyState.setVisibility(View.VISIBLE);
+                            recyclerViewPhotos.setVisibility(View.GONE);
+                        } else {
+                            emptyState.setVisibility(View.GONE);
+                            recyclerViewPhotos.setVisibility(View.VISIBLE);
+                        }
+                        
+                        updateSelectionCount(0);
+                    });
+                    
+                } catch (Exception e) {
+                    mainHandler.post(() -> {
+                        showLoading(false);
+                        Toast.makeText(this, "过滤失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        Log.e(TAG, "过滤已上传照片失败", e);
+                    });
+                }
+            }).start();
+        }
+    }
+    
+    /**
+     * 更新过滤按钮文字
+     */
+    private void updateFilterButtonText() {
+        new Thread(() -> {
+            try {
+                Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths();
+                int uploadedCount = 0;
+                
+                for (PhotoInfo photo : allPhotoList) {
+                    if (uploadedPaths.contains(photo.getPath())) {
+                        uploadedCount++;
+                    }
+                }
+                
+                final int finalUploadedCount = uploadedCount;
+                
+                mainHandler.post(() -> {
+                    if (finalUploadedCount > 0) {
+                        btnFilterUploaded.setText("排除已上传 (" + finalUploadedCount + ")");
+                    } else {
+                        btnFilterUploaded.setText("排除已上传");
+                    }
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "更新过滤按钮失败", e);
+            }
+        }).start();
+    }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 返回此页面时更新过滤按钮文字（可能刚上传了新照片）
+        if (allPhotoList != null && !allPhotoList.isEmpty()) {
+            updateFilterButtonText();
+        }
     }
 }

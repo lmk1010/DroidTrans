@@ -78,6 +78,18 @@
                 android:layout_height="1dp"
                 android:layout_weight="1" />
 
+            <!-- Filter Uploaded Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFilterUploaded"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="排除已上传"
+                android:textColor="@color/white"
+                android:textSize="13sp"
+                app:icon="@drawable/ic_check_all"
+                app:iconTint="@color/white" />
+
             <!-- Sort Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSort"

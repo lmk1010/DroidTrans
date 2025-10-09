@@ -2115,6 +2115,171 @@ def serve_photo(device_id, photo_path):
             'error': str(e)
         }), 500
 
+@app.route('/api/wifi/open_photo_folder', methods=['POST'])
+def wifi_open_photo_folder():
+    """打开照片所在的文件夹"""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('device_id')
+        batch_id = data.get('batch_id')
+        photo_path = data.get('photo_path')
+        is_legacy = data.get('is_legacy', False)
+        
+        if not device_id or not photo_path:
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数'
+            }), 400
+        
+        # 构建照片所在目录
+        base_output_dir = wifi_mode_status.get('output_dir', OUTPUT_DIR)
+        device_output_dir = os.path.join(base_output_dir, device_id)
+        
+        # 根据批次类型确定目录
+        if is_legacy or not batch_id:
+            # 旧格式：照片在设备根目录
+            folder_path = device_output_dir
+        else:
+            # 新格式：照片在批次文件夹内
+            folder_path = os.path.join(device_output_dir, batch_id)
+        
+        # 确保目录存在
+        if not os.path.exists(folder_path):
+            return jsonify({
+                'success': False,
+                'error': '文件夹不存在'
+            }), 404
+        
+        folder_path = os.path.abspath(folder_path)
+        
+        # 根据操作系统选择不同的打开方式
+        import platform
+        system = platform.system()
+        
+        print(f"\n📂 打开照片文件夹:")
+        print(f"   设备ID: {device_id[:8]}...")
+        print(f"   批次ID: {batch_id}")
+        print(f"   照片: {photo_path}")
+        print(f"   文件夹: {folder_path}")
+        print(f"   系统: {system}")
+        
+        if system == 'Darwin':  # macOS
+            subprocess.run(['open', folder_path], check=True)
+            print(f"✅ 已在 Finder 中打开文件夹")
+        elif system == 'Windows':
+            subprocess.run(['explorer', folder_path], check=True)
+            print(f"✅ 已在资源管理器中打开文件夹")
+        elif system == 'Linux':
+            subprocess.run(['xdg-open', folder_path], check=True)
+            print(f"✅ 已在文件管理器中打开文件夹")
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'不支持的操作系统: {system}'
+            }), 400
+        
+        return jsonify({
+            'success': True,
+            'message': f'已打开文件夹',
+            'folder_path': folder_path
+        })
+    
+    except subprocess.CalledProcessError as e:
+        print(f"❌ 打开文件夹失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'无法打开文件夹: {str(e)}'
+        }), 500
+    except Exception as e:
+        print(f"❌ 打开文件夹失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/wifi/delete_photo', methods=['POST'])
+def wifi_delete_photo():
+    """删除指定照片"""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('device_id')
+        batch_id = data.get('batch_id')
+        photo_path = data.get('photo_path')
+        is_legacy = data.get('is_legacy', False)
+        
+        if not device_id or not photo_path:
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数'
+            }), 400
+        
+        # 构建照片完整路径
+        base_output_dir = wifi_mode_status.get('output_dir', OUTPUT_DIR)
+        device_output_dir = os.path.join(base_output_dir, device_id)
+        
+        # 根据批次类型确定路径
+        if is_legacy or not batch_id:
+            # 旧格式：照片在设备根目录
+            full_path = os.path.join(device_output_dir, photo_path)
+        else:
+            # 新格式：照片在批次文件夹内
+            full_path = os.path.join(device_output_dir, batch_id, photo_path)
+        
+        # 安全检查：确保路径在设备输出目录内
+        full_path = os.path.abspath(full_path)
+        device_output_dir_abs = os.path.abspath(device_output_dir)
+        
+        if not full_path.startswith(device_output_dir_abs):
+            print(f"❌ 非法路径访问: {full_path}")
+            return jsonify({
+                'success': False,
+                'error': '非法路径'
+            }), 403
+        
+        # 检查文件是否存在
+        if not os.path.exists(full_path):
+            return jsonify({
+                'success': False,
+                'error': '文件不存在'
+            }), 404
+        
+        print(f"\n🗑️ 删除照片:")
+        print(f"   设备ID: {device_id[:8]}...")
+        print(f"   批次ID: {batch_id}")
+        print(f"   照片: {photo_path}")
+        print(f"   完整路径: {full_path}")
+        
+        # 删除文件
+        os.remove(full_path)
+        print(f"✅ 照片已删除")
+        
+        # 从内存中的照片记录中移除
+        if not is_legacy and batch_id:
+            # 新格式：从批次记录中移除
+            if device_id in device_upload_batches:
+                if batch_id in device_upload_batches[device_id]['batches']:
+                    batch_data = device_upload_batches[device_id]['batches'][batch_id]
+                    # 移除照片记录
+                    batch_data['photos'] = [p for p in batch_data['photos'] if p['path'] != photo_path and p['name'] != photo_path]
+                    print(f"   从批次记录中移除，剩余 {len(batch_data['photos'])} 张")
+        else:
+            # 旧格式：从设备记录中移除
+            if device_id in device_photos:
+                device_photos[device_id] = [p for p in device_photos[device_id] if p['path'] != photo_path and p['name'] != photo_path]
+                print(f"   从设备记录中移除，剩余 {len(device_photos[device_id])} 张")
+        
+        return jsonify({
+            'success': True,
+            'message': '照片已删除'
+        })
+    
+    except Exception as e:
+        print(f"❌ 删除照片失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/upload/init', methods=['POST'])
 def init_upload():
     """初始化上传会话"""

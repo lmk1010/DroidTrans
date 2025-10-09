@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 现代风格Logo: 流动的数据传输 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    
+    <!-- 渐变色背景圆 -->
+    <path
+        android:fillColor="#5C6BC0"
+        android:pathData="M24,4C12.95,4 4,12.95 4,24C4,35.05 12.95,44 24,44C35.05,44 44,35.05 44,24C44,12.95 35.05,4 24,4Z"/>
+    
+    <!-- 手机图标 (简化) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M15,14C15,13.45 15.45,13 16,13H19C19.55,13 20,13.45 20,14V34C20,34.55 19.55,35 19,35H16C15.45,35 15,34.55 15,34V14Z"/>
+    <path
+        android:fillColor="#5C6BC0"
+        android:pathData="M17,31H18V32H17V31Z"/>
+    
+    <!-- 向右传输的流动线条 -->
+    <path
+        android:strokeColor="#FFD54F"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M20,20Q26,20 28,24"/>
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M27,22L30,24L27,26L27,22Z"/>
+    
+    <!-- 向左传输的流动线条 -->
+    <path
+        android:strokeColor="#4CAF50"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M28,28Q26,28 20,24"/>
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M21,26L18,24L21,22L21,26Z"/>
+    
+    <!-- 电脑图标 (简化) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,20C28,19.45 28.45,19 29,19H32C32.55,19 33,19.45 33,20V30C33,30.55 32.55,31 32,31H29C28.45,31 28,30.55 28,30V20Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M27,32H34V33H27V32Z"/>
+    
+    <!-- 数据粒子装饰 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.6"
+        android:pathData="M23,21C23,21.55 22.55,22 22,22C21.45,22 21,21.55 21,21C21,20.45 21.45,20 22,20C22.55,20 23,20.45 23,21Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.6"
+        android:pathData="M27,27C27,27.55 26.55,28 26,28C25.45,28 25,27.55 25,27C25,26.45 25.45,26 26,26C26.55,26 27,26.45 27,27Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.6"
+        android:pathData="M25,24C25,24.55 24.55,25 24,25C23.45,25 23,24.55 23,24C23,23.45 23.45,23 24,23C24.55,23 25,23.45 25,24Z"/>
+</vector>
+

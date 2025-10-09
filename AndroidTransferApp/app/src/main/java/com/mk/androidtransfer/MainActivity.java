@@ -56,10 +56,15 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
     private static final int DEFAULT_PORT = 9500;
-    private static final int SCAN_TIMEOUT = 1000; // 1秒超时
+    private static final int SCAN_TIMEOUT = 200; // 200ms超时（加快扫描）
     private static final String PREFS_NAME = "ServerCache";
     private static final String KEY_CACHED_SERVERS = "cached_servers";
     private static final long CACHE_VALIDITY_MS = 5 * 60 * 1000; // 5分钟缓存有效期
+    
+    // 常用的IP地址范围（优先扫描）
+    private static final int[] PRIORITY_IPS = {1, 2, 100, 101, 102, 254};
+    // 次优IP范围
+    private static final int[] SECONDARY_IPS = {10, 11, 12, 20, 50, 150, 200, 250};
 
     // UI组件
     private RadarScanView radarScanView;
@@ -68,8 +73,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvServerCount;
     private RecyclerView recyclerViewServers;
     private LinearLayout emptyState;
-    private ExtendedFloatingActionButton fabManualInput;
     private com.google.android.material.button.MaterialButton btnRefresh;
+    private com.google.android.material.button.MaterialButton btnManualInput;
 
     // 数据
     private ServerAdapter serverAdapter;
@@ -94,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
         setupRecyclerView();
         setupListeners();
 
-        executorService = Executors.newFixedThreadPool(20); // 用于并发扫描
+        executorService = Executors.newFixedThreadPool(50); // 增加并发数加快扫描
         mainHandler = new Handler(Looper.getMainLooper());
         
         // 尝试加载缓存的服务器列表
@@ -135,8 +140,19 @@ public class MainActivity extends AppCompatActivity {
         tvServerCount = findViewById(R.id.tvServerCount);
         recyclerViewServers = findViewById(R.id.recyclerViewServers);
         emptyState = findViewById(R.id.emptyState);
-        fabManualInput = findViewById(R.id.fabManualInput);
         btnRefresh = findViewById(R.id.btnRefresh);
+        btnManualInput = findViewById(R.id.btnManualInput);
+        
+        // 设置Toolbar菜单
+        androidx.appcompat.widget.Toolbar toolbar = findViewById(R.id.toolbar);
+        toolbar.inflateMenu(R.menu.menu_main);
+        toolbar.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == R.id.action_upload_history) {
+                openUploadHistory();
+                return true;
+            }
+            return false;
+        });
     }
 
     /**
@@ -165,8 +181,10 @@ public class MainActivity extends AppCompatActivity {
      * 设置监听器
      */
     private void setupListeners() {
-        // 手动输入服务器地址
-        fabManualInput.setOnClickListener(v -> showManualInputDialog());
+        // 手动输入按钮
+        if (btnManualInput != null) {
+            btnManualInput.setOnClickListener(v -> showManualInputDialog());
+        }
         
         // 刷新按钮
         if (btnRefresh != null) {
@@ -297,13 +315,48 @@ public class MainActivity extends AppCompatActivity {
                 String localIp = getLocalIpAddress();
                 if (localIp != null && !localIp.isEmpty()) {
                     String subnet = localIp.substring(0, localIp.lastIndexOf('.') + 1);
-                    Log.d(TAG, "扫描网段: " + subnet + "0/24");
+                    Log.d(TAG, "智能扫描网段: " + subnet + "0/24");
 
-                    // 扫描整个子网 (1-254)
-                    for (int i = 1; i <= 254; i++) {
-                        final String ip = subnet + i;
-                        executorService.execute(() -> scanHost(ip, DEFAULT_PORT));
+                    // 第一轮：优先扫描常用IP
+                    for (int ip : PRIORITY_IPS) {
+                        final String address = subnet + ip;
+                        executorService.execute(() -> scanHost(address, DEFAULT_PORT));
                     }
+                    
+                    // 第二轮：扫描次优IP
+                    for (int ip : SECONDARY_IPS) {
+                        final String address = subnet + ip;
+                        executorService.execute(() -> scanHost(address, DEFAULT_PORT));
+                    }
+                    
+                    // 第三轮：扫描剩余IP（延迟启动，给优先IP时间）
+                    mainHandler.postDelayed(() -> {
+                        if (isScanning && discoveredServers.isEmpty()) {
+                            // 只有在没找到服务器时才扫描全部
+                            for (int i = 1; i <= 254; i++) {
+                                // 跳过已经扫描过的IP
+                                boolean isPriority = false;
+                                for (int pIp : PRIORITY_IPS) {
+                                    if (i == pIp) {
+                                        isPriority = true;
+                                        break;
+                                    }
+                                }
+                                for (int sIp : SECONDARY_IPS) {
+                                    if (i == sIp) {
+                                        isPriority = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!isPriority) {
+                                    final String address = subnet + i;
+                                    executorService.execute(() -> scanHost(address, DEFAULT_PORT));
+                                }
+                            }
+                        }
+                    }, 1000); // 1秒后开始全面扫描
+                    
                 } else {
                     mainHandler.post(() -> {
                         Toast.makeText(MainActivity.this, "无法获取本地IP地址", Toast.LENGTH_SHORT).show();
@@ -319,7 +372,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }).start();
 
-        // 15秒后停止扫描
+        // 8秒后停止扫描（缩短时间）
         mainHandler.postDelayed(() -> {
             isScanning = false;
             if (discoveredServers.size() > 0) {
@@ -330,7 +383,7 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 tvScanStatus.setText("未发现服务器");
             }
-        }, 15000);
+        }, 8000);
     }
 
     /**
@@ -665,6 +718,14 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(MainActivity.this, PhotoSelectionActivity.class);
         intent.putExtra("server_url", server.getServerUrl());
         intent.putExtra("server_name", server.getName());
+        startActivity(intent);
+    }
+    
+    /**
+     * 打开上传历史记录
+     */
+    private void openUploadHistory() {
+        Intent intent = new Intent(this, UploadHistoryActivity.class);
         startActivity(intent);
     }
 }

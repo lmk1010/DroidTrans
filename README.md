@@ -1,254 +1,221 @@
-# Android照片传输工具 - M4 Mac 极速版 ⚡
+<div align="center">
 
-一个基于Python的Android手机照片传输工具，支持**ADB模式**和**WiFi模式**两种传输方式，**针对M4 Mac进行极致性能优化**。
+# 📱 Android Transfer
 
-## 🎯 传输模式
+<img src="app_logo.svg" width="120" height="120" alt="Android Transfer Logo">
 
-### 🔌 ADB模式
-- 通过USB数据线连接
-- 传输速度快，稳定可靠
-- 需要开启USB调试
+**现代化的 Android 照片传输工具**
 
-### 📡 WiFi模式（新功能）
-- 通过WiFi无线传输
-- 无需数据线，更加便捷
-- 手机和电脑需在同一局域网
-- 需要配合Android客户端APP使用
+一键扫描 · 批量传输 · 智能续传
 
-## 功能特点
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.7+-green.svg)](https://www.python.org/)
+[![Electron](https://img.shields.io/badge/Electron-28.0+-47848F.svg)](https://www.electronjs.org/)
 
-- ✅ **双模式支持**：ADB模式和WiFi模式自由切换
-- ✅ 自动扫描手机多个照片目录（DCIM、Pictures、Screenshots等）
-- ✅ Web界面展示照片列表，支持搜索和排序
-- ✅ 16线程超高并发传输（M4 Mac极速优化）
-- ✅ 24线程暴力并发扫描（极速定位照片）
-- ✅ 支持断点续传（自动保存进度，随时恢复）
-- ✅ 自动重试机制（每个文件最多重试2次）
-- ✅ 实时显示传输进度和速度预估
-- ✅ 支持选择性传输（可勾选需要的照片）
-- ✅ 适合大批量照片传输（测试支持3万+照片）
-- ✅ WiFi模式API完整，方便开发Android客户端
+[功能特性](#-功能特性) • [快速开始](#-快速开始) • [使用指南](#-使用指南) • [截图预览](#-截图预览)
 
-## 系统要求
+</div>
 
-- Python 3.7+
-- ADB工具（Android Debug Bridge）
-- 已开启USB调试的Android设备
+---
 
-## 安装步骤
+## ✨ 功能特性
 
-### 1. 安装ADB工具
+### 🔌 双传输模式
 
-**macOS:**
+<table>
+<tr>
+<td width="50%">
+
+#### USB 模式
+- ⚡ 高速稳定传输
+- 🔒 数据安全可靠
+- 📊 实时进度显示
+- 🔄 断点续传支持
+
+</td>
+<td width="50%">
+
+#### WiFi 模式
+- 📡 无线便捷传输
+- 🌐 局域网自动发现
+- 📱 手机APP配合
+- 💨 多设备批次管理
+
+</td>
+</tr>
+</table>
+
+### 🚀 核心优势
+
+- **智能扫描** - 自动识别多个照片目录（DCIM、Pictures、Screenshots等）
+- **超高性能** - M4 Mac 优化，16线程并发传输
+- **断点续传** - 传输中断自动恢复，不重复传输
+- **批量处理** - 支持数万张照片批量传输
+- **现代UI** - Material Design 风格，操作简单直观
+- **跨平台** - 支持 macOS、Windows、Linux
+
+---
+
+## 🚀 快速开始
+
+### 方式一：使用 Electron 桌面应用（推荐）
+
+下载对应平台的安装包：
+
+- **macOS**: `Android Transfer-1.0.0-arm64.dmg` (Apple Silicon) / `Android Transfer-1.0.0-x64.dmg` (Intel)
+- **Windows**: `Android Transfer-1.0.0-x64.exe`
+- **Linux**: `Android Transfer-1.0.0.AppImage`
+
+> 📦 [前往 Releases 下载](../../releases)
+
+### 方式二：Python 脚本运行
+
 ```bash
-brew install android-platform-tools
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get install android-tools-adb
-```
-
-**Windows:**
-下载 [Android SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools) 并添加到环境变量
-
-### 2. 创建Python虚拟环境（推荐）
-
-```bash
-cd AndroidTransfer
-
-# 创建虚拟环境
-python3 -m venv venv
-
-# 激活虚拟环境
-source venv/bin/activate  # macOS/Linux
-# 或者
-venv\Scripts\activate     # Windows
+# 克隆项目
+git clone https://github.com/yourusername/AndroidTransfer.git
+cd AndroidTransfer/AndroidTransferClient
 
 # 安装依赖
 pip install -r requirements.txt
-```
-
-### 3. 配置Android设备
-
-1. 在手机上开启"开发者选项"
-   - 设置 → 关于手机 → 连续点击"版本号"7次
-2. 开启"USB调试"
-   - 设置 → 开发者选项 → USB调试
-3. 通过USB连接手机到电脑
-4. 在手机上授权此电脑的ADB访问
-
-### 4. 验证ADB连接
-
-```bash
-adb devices
-```
-
-应该显示：
-```
-List of devices attached
-xxxxxxxxxx    device
-```
-
-## 使用方法
-
-### 方法一：使用启动脚本（推荐）
-
-```bash
-./start.sh
-```
-
-启动脚本会自动：
-- 检查ADB和Python环境
-- 创建并激活虚拟环境
-- 安装依赖
-- 启动服务
-
-### 方法二：手动启动
-
-```bash
-# 激活虚拟环境
-source venv/bin/activate  # macOS/Linux
-# 或
-venv\Scripts\activate     # Windows
 
 # 启动服务
 python app.py
 ```
 
-启动后会显示：
+访问 http://localhost:9500
+
+---
+
+## 📖 使用指南
+
+### USB 模式
+
+1. **准备工作**
+   - 安装 ADB 工具: `brew install android-platform-tools` (macOS)
+   - 手机开启 USB 调试
+   - USB 连接手机到电脑
+
+2. **传输照片**
+   - 打开应用，选择 USB 模式
+   - 点击"扫描照片"
+   - 选择需要的照片
+   - 点击"开始传输"
+
+### WiFi 模式
+
+1. **网络配置**
+   - 确保手机和电脑在同一 WiFi 网络
+   - 打开应用，选择 WiFi 模式
+
+2. **手机端操作**
+   - 安装 Android 客户端 APP
+   - APP 会自动扫描并连接服务器
+   - 选择照片后点击上传
+
+3. **电脑端查看**
+   - 照片自动按设备和批次分类
+   - 支持预览、打开文件夹、删除等操作
+
+---
+
+## 🖼️ 截图预览
+
+<div align="center">
+
+### 模式选择界面
+<img src="docs/screenshots/home.png" width="600" alt="主界面">
+
+### WiFi 传输模式
+<img src="docs/screenshots/wifi-mode.png" width="600" alt="WiFi模式">
+
+### USB 传输模式
+<img src="docs/screenshots/usb-mode.png" width="600" alt="USB模式">
+
+</div>
+
+---
+
+## 🛠️ 技术栈
+
+### 桌面端
+- **Electron** - 跨平台桌面应用框架
+- **Python + Flask** - 后端服务
+- **Material Design** - 现代化 UI 设计
+
+### Android 客户端
+- **Java/Kotlin** - 原生 Android 开发
+- **OkHttp** - 网络请求
+- **Room** - 本地数据库
+
+---
+
+## 📋 系统要求
+
+- **Python**: 3.7 或更高版本
+- **ADB**: Android Debug Bridge（仅 USB 模式需要）
+- **Node.js**: 16+ (如需构建 Electron 应用)
+
+---
+
+## 🔧 开发指南
+
+### 克隆项目
+
+```bash
+git clone https://github.com/yourusername/AndroidTransfer.git
+cd AndroidTransfer
 ```
-Android照片传输工具
-============================================================
-照片输出目录: ./photos_output
-每批传输数量: 50
-============================================================
 
-请确保:
-1. 已安装ADB工具
-2. 手机已通过USB连接并开启USB调试
-3. 手机已授权此电脑的ADB访问
+### 启动开发服务器
 
-启动服务中...
-访问 http://127.0.0.1:9500 开始使用
-============================================================
+```bash
+cd AndroidTransferClient
+pip install -r requirements.txt
+python app.py
 ```
 
-### 2. 打开Web界面
+### 构建 Electron 应用
 
-在浏览器中访问：http://127.0.0.1:9500
-
-### 3. 操作流程
-
-1. **检查设备** - 点击"检查设备"按钮，确认手机已正确连接
-2. **扫描照片** - 点击"扫描照片"按钮，等待扫描完成（3万张照片大约需要2-5分钟）
-3. **选择照片** - 在列表中勾选需要传输的照片，或点击"全选"
-4. **开始传输** - 点击"开始传输"按钮，等待传输完成
-5. **查看结果** - 传输的照片保存在 `./photos_output` 目录
-
-### 4. 功能说明
-
-**搜索和排序：**
-- 支持按文件名搜索
-- 支持按日期、名称、大小排序
-
-**传输特点：**
-- 每次传输一个文件，避免批量超时
-- 自动跳过已存在的文件（按大小判断）
-- 失败的文件会自动重试3次
-- 保持原始目录结构
-
-**进度显示：**
-- 实时显示当前传输的文件
-- 显示传输进度百分比
-- 显示传输速度统计
-
-## 配置说明
-
-可以在 `app.py` 中修改以下配置：
-
-```python
-OUTPUT_DIR = "./photos_output"  # 照片输出目录
-BATCH_SIZE = 50                 # 每批传输的照片数量（当前未使用，逐个传输）
-MAX_RETRIES = 3                 # 最大重试次数
+```bash
+cd AndroidTransferClient
+npm install
+npm run dist:mac    # macOS
+npm run dist:win    # Windows
+npm run dist:linux  # Linux
 ```
 
-扫描的目录包括：
-```python
-PHOTO_DIRS = [
-    '/sdcard/DCIM',
-    '/sdcard/Pictures',
-    '/sdcard/Screenshots',
-    '/sdcard/Download',
-    '/storage/emulated/0/DCIM',
-    '/storage/emulated/0/Pictures',
-    '/storage/emulated/0/Screenshots',
-]
-```
+---
 
-## 常见问题
+## 🤝 贡献
 
-### 1. 扫描很慢怎么办？
+欢迎提交 Issue 和 Pull Request！
 
-扫描速度取决于手机照片数量和USB连接速度。3万张照片大约需要2-5分钟是正常的。
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
 
-### 2. 传输中断怎么办？
+---
 
-- 重新点击"开始传输"即可，已传输的文件会自动跳过
-- 检查USB连接是否稳定
-- 确保手机屏幕保持常亮，避免进入休眠
+## 📄 许可证
 
-### 3. 提示"未检测到设备"？
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
-请检查：
-1. 手机是否通过USB连接
-2. 是否开启了USB调试
-3. 是否授权了ADB访问
-4. 运行 `adb devices` 确认设备已连接
+---
 
-### 4. 传输速度慢？
+## 🙏 致谢
 
-- USB 2.0 速度约为 5-10 MB/s，这是正常的
-- 3万张照片（假设平均每张5MB）约需要数小时
-- 建议晚上开始传输，保持电脑和手机不休眠
+- [Electron](https://www.electronjs.org/) - 跨平台桌面应用框架
+- [Flask](https://flask.palletsprojects.com/) - Python Web 框架
+- [Material Design](https://material.io/) - Google Material Design 设计规范
 
-### 5. 某些照片传输失败？
+---
 
-- 工具会自动重试3次
-- 失败的文件会在控制台显示
-- 可以在传输完成后重新选择失败的照片再次传输
+<div align="center">
 
-## 技术架构
+**⭐ 如果这个项目对你有帮助，请给个 Star ⭐**
 
-- **后端**: Python Flask
-- **前端**: HTML + JavaScript + CSS
-- **通信**: RESTful API + AJAX
-- **ADB**: subprocess调用adb命令行工具
+Made with ❤️ by [MK](https://github.com/yourusername)
 
-## 注意事项
-
-1. 传输期间请保持：
-   - USB连接稳定
-   - 手机屏幕常亮或调高自动锁屏时间
-   - 电脑不要进入休眠
-
-2. 传输的照片会保持原始目录结构，例如：
-   ```
-   photos_output/
-   ├── DCIM/
-   │   ├── Camera/
-   │   │   ├── IMG_001.jpg
-   │   │   └── IMG_002.jpg
-   │   └── Screenshots/
-   └── Pictures/
-   ```
-
-3. 已传输的照片不会被重复传输（通过文件大小判断）
-
-## 许可证
-
-MIT License
-
-## 作者
-
-Created with Claude Code
+</div>

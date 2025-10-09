@@ -24,10 +24,15 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mk.androidtransfer.adapter.UploadFileAdapter;
+import com.mk.androidtransfer.database.UploadRecordDao;
 import com.mk.androidtransfer.model.PhotoInfo;
 import com.mk.androidtransfer.model.UploadFileItem;
+import com.mk.androidtransfer.model.UploadRecord;
 import com.mk.androidtransfer.network.ApiService;
 import com.mk.androidtransfer.network.RetrofitClient;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -73,8 +78,10 @@ public class UploadProgressActivity extends AppCompatActivity {
     private List<UploadFileItem> fileList = new ArrayList<>();
     private UploadFileAdapter adapter;
     private String serverUrl;
+    private String serverName;
     private String deviceId;
     private ApiService apiService;
+    private UploadRecordDao uploadRecordDao;
 
     // 状态
     private boolean isUploading = false;
@@ -104,6 +111,7 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         // 获取传递的数据
         serverUrl = getIntent().getStringExtra("server_url");
+        serverName = getIntent().getStringExtra("server_name");
         ArrayList<PhotoInfo> selectedPhotos = getIntent().getParcelableArrayListExtra("selected_photos");
 
         if (serverUrl == null || selectedPhotos == null || selectedPhotos.isEmpty()) {
@@ -117,6 +125,9 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         // 初始化网络
         apiService = RetrofitClient.getInstance(serverUrl).getApiService();
+        
+        // 初始化数据库
+        uploadRecordDao = new UploadRecordDao(this);
 
         // 初始化文件列表
         initFileList(selectedPhotos);
@@ -443,6 +454,10 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         int failed = failedCount.get();
         int completed = completedCount.get();
+        int total = fileList.size();
+        
+        // 保存上传记录到数据库
+        saveUploadRecord(total, completed, failed);
         
         if (failed == 0) {
             tvProgressText.setText("全部上传完成！");
@@ -451,6 +466,52 @@ public class UploadProgressActivity extends AppCompatActivity {
             tvProgressText.setText(String.format("部分上传完成（成功 %d 个，失败 %d 个）", completed, failed));
             Toast.makeText(this, String.format("上传完成，失败 %d 个文件", failed), Toast.LENGTH_LONG).show();
         }
+    }
+    
+    /**
+     * 保存上传记录到数据库
+     */
+    private void saveUploadRecord(int total, int success, int failed) {
+        new Thread(() -> {
+            try {
+                // 构建文件列表JSON
+                JSONArray fileArray = new JSONArray();
+                for (UploadFileItem item : fileList) {
+                    JSONObject fileObj = new JSONObject();
+                    fileObj.put("name", item.getName());
+                    fileObj.put("path", item.getPath());
+                    fileObj.put("size", item.getSize());
+                    fileObj.put("success", item.getStatus() == UploadFileItem.Status.COMPLETED);
+                    fileArray.put(fileObj);
+                }
+                
+                // 创建上传记录
+                UploadRecord record = new UploadRecord(
+                    serverUrl,
+                    serverName != null ? serverName : "Unknown Server",
+                    total,
+                    success,
+                    failed,
+                    System.currentTimeMillis(),
+                    fileArray.toString()
+                );
+                
+                // 保存到数据库
+                long recordId = uploadRecordDao.insertUploadRecord(record);
+                
+                Log.d(TAG, "上传记录已保存，ID: " + recordId + ", 成功: " + success + ", 失败: " + failed);
+                
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "上传记录已保存", Toast.LENGTH_SHORT).show();
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "保存上传记录失败", e);
+                mainHandler.post(() -> {
+                    Toast.makeText(this, "保存记录失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
     }
 
     private void cancelUpload() {

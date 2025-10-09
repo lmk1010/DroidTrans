@@ -37,6 +37,7 @@
     <!-- 扩展主题色 - 青绿色系 -->
     <color name="primary_variant">#00796B</color>
     <color name="success">#4CAF50</color>
+    <color name="warning">#FF9800</color>
     
     <!-- 状态栏颜色 -->
     <color name="status_bar">#00897B</color>

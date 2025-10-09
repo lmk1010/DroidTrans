@@ -43,6 +43,11 @@
             android:name=".UploadProgressActivity"
             android:exported="false"
             android:theme="@style/Theme.AndroidTransfer" />
+
+        <activity
+            android:name=".UploadHistoryActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AndroidTransfer" />
     </application>
 
 </manifest>
