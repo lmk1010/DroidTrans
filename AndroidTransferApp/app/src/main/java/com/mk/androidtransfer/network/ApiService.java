@@ -63,6 +63,18 @@ public interface ApiService {
             @Part("device_id") RequestBody deviceId,
             @Part("relative_path") RequestBody relativePath
     );
+    
+    /**
+     * 上传单个照片文件（支持断点续传，包含file_size）
+     */
+    @Multipart
+    @POST("/api/wifi/upload_photo")
+    Call<Map<String, Object>> uploadPhotoMultipart(
+            @Part MultipartBody.Part file,
+            @Part("device_id") RequestBody deviceId,
+            @Part("relative_path") RequestBody relativePath,
+            @Part("file_size") RequestBody fileSize
+    );
 
     /**
      * 获取WiFi模式状态

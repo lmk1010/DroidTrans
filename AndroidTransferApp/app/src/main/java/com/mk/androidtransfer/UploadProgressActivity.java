@@ -37,6 +37,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -74,10 +78,15 @@ public class UploadProgressActivity extends AppCompatActivity {
 
     // 状态
     private boolean isUploading = false;
-    private boolean isCancelled = false;
-    private int currentIndex = 0;
-    private int completedCount = 0;
-    private int failedCount = 0;
+    private volatile boolean isCancelled = false;
+    private AtomicInteger completedCount = new AtomicInteger(0);
+    private AtomicInteger failedCount = new AtomicInteger(0);
+    private AtomicInteger uploadingCount = new AtomicInteger(0);
+    
+    // 多线程上传
+    private static final int THREAD_POOL_SIZE = 6; // 并发上传线程数（可调整：4-8）
+    private ExecutorService executorService;
+    private ConcurrentHashMap<Integer, Boolean> uploadingFiles = new ConcurrentHashMap<>();
 
     // Handler
     private Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -221,38 +230,46 @@ public class UploadProgressActivity extends AppCompatActivity {
         }
 
         isUploading = true;
-        currentIndex = 0;
-        uploadNextFile();
-    }
-
-    private void uploadNextFile() {
-        if (isCancelled) {
-            return;
+        
+        // 创建固定大小的线程池
+        executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        
+        // 提交所有上传任务到线程池
+        for (int i = 0; i < fileList.size(); i++) {
+            final int index = i;
+            executorService.submit(() -> uploadFile(fileList.get(index), index));
         }
-
-        if (currentIndex >= fileList.size()) {
-            // 所有文件上传完成
-            onUploadComplete();
-            return;
-        }
-
-        UploadFileItem item = fileList.get(currentIndex);
-        item.setStatus(UploadFileItem.Status.UPLOADING);
-        adapter.updateItem(currentIndex);
-        updateProgress();
-
-        // 滚动到当前上传的文件
-        recyclerViewFiles.smoothScrollToPosition(currentIndex);
-
-        // 更新服务器状态为uploading
-        updateFileStatus(currentIndex, "uploading");
-
-        // 上传文件
-        uploadFile(item, currentIndex);
+        
+        // 关闭线程池（不再接受新任务，但会完成已提交的任务）
+        executorService.shutdown();
+        
+        Log.d(TAG, "🚀 已启动多线程上传，线程池大小: " + THREAD_POOL_SIZE);
     }
 
     private void uploadFile(UploadFileItem item, int index) {
+        // 检查是否被取消
+        if (isCancelled) {
+            return;
+        }
+        
+        // 防止重复上传
+        if (uploadingFiles.putIfAbsent(index, true) != null) {
+            Log.w(TAG, "文件 " + index + " 已在上传中，跳过");
+            return;
+        }
+        
         try {
+            // 更新UI状态为上传中
+            mainHandler.post(() -> {
+                item.setStatus(UploadFileItem.Status.UPLOADING);
+                adapter.updateItem(index);
+                uploadingCount.incrementAndGet();
+                updateProgress();
+            });
+            
+            // 更新服务器状态为uploading
+            updateFileStatus(index, "uploading");
+            
             File file = new File(item.getPath());
             if (!file.exists()) {
                 onFileUploadFailed(index, "文件不存在");
@@ -264,17 +281,27 @@ public class UploadProgressActivity extends AppCompatActivity {
             
             RequestBody deviceIdBody = RequestBody.create(MediaType.parse("text/plain"), deviceId);
             RequestBody relativePathBody = RequestBody.create(MediaType.parse("text/plain"), file.getName());
+            RequestBody fileSizeBody = RequestBody.create(MediaType.parse("text/plain"), String.valueOf(file.length()));
 
-            Call<Map<String, Object>> call = apiService.uploadPhotoMultipart(body, deviceIdBody, relativePathBody);
+            Call<Map<String, Object>> call = apiService.uploadPhotoMultipart(body, deviceIdBody, relativePathBody, fileSizeBody);
 
-            // 记录开始时间用于计算速度
+            // 记录开始时间
             long startTime = System.currentTimeMillis();
-            long startBytes = 0;
 
             call.enqueue(new Callback<Map<String, Object>>() {
                 @Override
                 public void onResponse(Call<Map<String, Object>> call, Response<Map<String, Object>> response) {
+                    uploadingFiles.remove(index);
+                    uploadingCount.decrementAndGet();
+                    
                     if (response.isSuccessful()) {
+                        Map<String, Object> result = response.body();
+                        boolean skipped = result != null && Boolean.TRUE.equals(result.get("skipped"));
+                        
+                        if (skipped) {
+                            Log.d(TAG, "⏭️ 文件已存在，跳过: " + item.getName());
+                        }
+                        
                         onFileUploadSuccess(index);
                     } else {
                         onFileUploadFailed(index, "上传失败: " + response.code());
@@ -283,6 +310,8 @@ public class UploadProgressActivity extends AppCompatActivity {
 
                 @Override
                 public void onFailure(Call<Map<String, Object>> call, Throwable t) {
+                    uploadingFiles.remove(index);
+                    uploadingCount.decrementAndGet();
                     onFileUploadFailed(index, t.getMessage());
                 }
             });
@@ -291,6 +320,8 @@ public class UploadProgressActivity extends AppCompatActivity {
             simulateProgress(item, index);
 
         } catch (Exception e) {
+            uploadingFiles.remove(index);
+            uploadingCount.decrementAndGet();
             onFileUploadFailed(index, e.getMessage());
         }
     }
@@ -320,42 +351,57 @@ public class UploadProgressActivity extends AppCompatActivity {
 
     private void onFileUploadSuccess(int index) {
         UploadFileItem item = fileList.get(index);
-        item.setStatus(UploadFileItem.Status.COMPLETED);
-        item.setProgress(100);
-        adapter.updateItem(index);
+        
+        mainHandler.post(() -> {
+            item.setStatus(UploadFileItem.Status.COMPLETED);
+            item.setProgress(100);
+            adapter.updateItem(index);
 
-        completedCount++;
-        tvCompletedFiles.setText(String.valueOf(completedCount));
+            int completed = completedCount.incrementAndGet();
+            tvCompletedFiles.setText(String.valueOf(completed));
+            
+            updateProgress();
+            
+            // 检查是否全部完成
+            checkUploadComplete();
+        });
 
         // 更新服务器状态为completed
         updateFileStatus(index, "completed");
-
-        // 继续下一个文件
-        currentIndex++;
-        mainHandler.postDelayed(this::uploadNextFile, 300);
-        
-        updateProgress();
     }
 
     private void onFileUploadFailed(int index, String error) {
         UploadFileItem item = fileList.get(index);
-        item.setStatus(UploadFileItem.Status.FAILED);
-        item.setErrorMessage(error);
-        adapter.updateItem(index);
+        
+        mainHandler.post(() -> {
+            item.setStatus(UploadFileItem.Status.FAILED);
+            item.setErrorMessage(error);
+            adapter.updateItem(index);
 
-        failedCount++;
-        tvFailedFiles.setText(String.valueOf(failedCount));
-
-        Log.e(TAG, "文件上传失败: " + item.getName() + ", 错误: " + error);
+            int failed = failedCount.incrementAndGet();
+            tvFailedFiles.setText(String.valueOf(failed));
+            
+            Log.e(TAG, "文件上传失败: " + item.getName() + ", 错误: " + error);
+            
+            updateProgress();
+            
+            // 检查是否全部完成
+            checkUploadComplete();
+        });
 
         // 更新服务器状态为failed
         updateFileStatus(index, "failed");
-
-        // 继续下一个文件
-        currentIndex++;
-        mainHandler.postDelayed(this::uploadNextFile, 300);
+    }
+    
+    private void checkUploadComplete() {
+        int total = fileList.size();
+        int completed = completedCount.get();
+        int failed = failedCount.get();
         
-        updateProgress();
+        if (completed + failed >= total) {
+            // 所有文件处理完成
+            onUploadComplete();
+        }
     }
 
     private void updateFileStatus(int fileIndex, String status) {
@@ -381,12 +427,13 @@ public class UploadProgressActivity extends AppCompatActivity {
 
     private void updateProgress() {
         int total = fileList.size();
-        int completed = completedCount + failedCount;
+        int completed = completedCount.get() + failedCount.get();
+        int uploading = uploadingCount.get();
         int percent = total > 0 ? (completed * 100 / total) : 0;
 
         progressBar.setProgress(percent);
         tvProgressPercent.setText(percent + "%");
-        tvProgressText.setText(String.format("正在上传第 %d / %d 个文件", currentIndex + 1, total));
+        tvProgressText.setText(String.format("正在上传 %d 个，已完成 %d / %d", uploading, completed, total));
     }
 
     private void onUploadComplete() {
@@ -394,12 +441,15 @@ public class UploadProgressActivity extends AppCompatActivity {
         btnCancel.setVisibility(View.GONE);
         btnDone.setVisibility(View.VISIBLE);
 
-        if (failedCount == 0) {
+        int failed = failedCount.get();
+        int completed = completedCount.get();
+        
+        if (failed == 0) {
             tvProgressText.setText("全部上传完成！");
             Toast.makeText(this, "所有照片上传成功", Toast.LENGTH_LONG).show();
         } else {
-            tvProgressText.setText(String.format("部分上传完成（失败 %d 个）", failedCount));
-            Toast.makeText(this, String.format("上传完成，失败 %d 个文件", failedCount), Toast.LENGTH_LONG).show();
+            tvProgressText.setText(String.format("部分上传完成（成功 %d 个，失败 %d 个）", completed, failed));
+            Toast.makeText(this, String.format("上传完成，失败 %d 个文件", failed), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -411,14 +461,27 @@ public class UploadProgressActivity extends AppCompatActivity {
                 isCancelled = true;
                 isUploading = false;
 
+                // 停止线程池接受新任务
+                if (executorService != null && !executorService.isShutdown()) {
+                    executorService.shutdownNow();
+                }
+
                 // 更新未上传的文件状态
-                for (int i = currentIndex; i < fileList.size(); i++) {
-                    if (fileList.get(i).getStatus() == UploadFileItem.Status.PENDING) {
-                        fileList.get(i).setStatus(UploadFileItem.Status.FAILED);
-                        fileList.get(i).setErrorMessage("已取消");
-                        failedCount++;
+                int cancelCount = 0;
+                for (int i = 0; i < fileList.size(); i++) {
+                    UploadFileItem item = fileList.get(i);
+                    if (item.getStatus() == UploadFileItem.Status.PENDING) {
+                        item.setStatus(UploadFileItem.Status.FAILED);
+                        item.setErrorMessage("已取消");
+                        cancelCount++;
                     }
                 }
+                
+                if (cancelCount > 0) {
+                    failedCount.addAndGet(cancelCount);
+                    tvFailedFiles.setText(String.valueOf(failedCount.get()));
+                }
+                
                 adapter.notifyDataSetChanged();
 
                 tvProgressText.setText("已取消上传");
@@ -460,5 +523,22 @@ public class UploadProgressActivity extends AppCompatActivity {
             super.onBackPressed();
         }
     }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        
+        // 清理线程池资源
+        if (executorService != null && !executorService.isShutdown()) {
+            executorService.shutdownNow();
+            Log.d(TAG, "线程池已关闭");
+        }
+        
+        // 清理Handler消息
+        if (mainHandler != null) {
+            mainHandler.removeCallbacksAndMessages(null);
+        }
+    }
 }
+
 

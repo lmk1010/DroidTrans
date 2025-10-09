@@ -1588,7 +1588,7 @@ def wifi_upload_photo_list():
 
 @app.route('/api/wifi/upload_photo', methods=['POST'])
 def wifi_upload_photo():
-    """WiFi模式：接收手机上传的照片文件 - 流式处理防止内存泄漏"""
+    """WiFi模式：接收手机上传的照片文件 - 流式处理防止内存泄漏 + 断点续传支持"""
     global wifi_mode_status, upload_progress_data
     
     try:
@@ -1636,6 +1636,49 @@ def wifi_upload_photo():
         # 创建目录
         os.makedirs(local_dir, exist_ok=True)
         
+        # 🔥 断点续传：检查文件是否已存在
+        expected_size = request.form.get('file_size')
+        if expected_size:
+            expected_size = int(expected_size)
+        
+        if os.path.exists(local_path):
+            # 文件已存在，检查大小是否匹配
+            existing_size = os.path.getsize(local_path)
+            
+            if expected_size and existing_size == expected_size:
+                # 文件已完整上传，跳过
+                batch_info_str = f", 批次: {batch_id}" if batch_id else ""
+                print(f"⏭️  文件已存在，跳过: {relative_path} (设备: {device_id[:8]}...{batch_info_str})")
+                
+                # 更新设备心跳时间
+                if device_id in wifi_mode_status['connected_devices']:
+                    wifi_mode_status['connected_devices'][device_id]['last_heartbeat'] = datetime.now().isoformat()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '文件已存在，跳过上传',
+                    'skipped': True,
+                    'path': local_path
+                })
+            elif existing_size > 0 and not expected_size:
+                # 没有提供预期大小，但文件存在且非空，也跳过
+                batch_info_str = f", 批次: {batch_id}" if batch_id else ""
+                print(f"⏭️  文件已存在且非空，跳过: {relative_path} ({existing_size} bytes)")
+                
+                if device_id in wifi_mode_status['connected_devices']:
+                    wifi_mode_status['connected_devices'][device_id]['last_heartbeat'] = datetime.now().isoformat()
+                
+                return jsonify({
+                    'success': True,
+                    'message': '文件已存在，跳过上传',
+                    'skipped': True,
+                    'path': local_path
+                })
+            else:
+                # 文件大小不匹配，删除并重新上传
+                print(f"⚠️  文件大小不匹配，重新上传: {relative_path} (现有: {existing_size}, 期望: {expected_size})")
+                os.remove(local_path)
+        
         # 使用流式保存，避免大文件加载到内存（重要！防止 OOM）
         CHUNK_SIZE = 8192  # 8KB 块大小
         with open(local_path, 'wb') as f:
@@ -1644,6 +1687,11 @@ def wifi_upload_photo():
                 if not chunk:
                     break
                 f.write(chunk)
+        
+        # 验证文件大小
+        actual_size = os.path.getsize(local_path)
+        if expected_size and actual_size != expected_size:
+            print(f"⚠️  警告：上传文件大小不匹配！期望: {expected_size}, 实际: {actual_size}")
         
         # 更新设备心跳时间
         if device_id in wifi_mode_status['connected_devices']:
@@ -1655,6 +1703,7 @@ def wifi_upload_photo():
         return jsonify({
             'success': True,
             'message': '上传成功',
+            'skipped': False,
             'path': local_path
         })
     
@@ -2220,7 +2269,7 @@ def get_upload_progress(device_id):
 @app.route('/api/upload/update', methods=['POST'])
 def update_upload_progress():
     """更新文件上传进度"""
-    global upload_progress_data
+    global upload_progress_data, device_upload_batches
     
     try:
         data = request.get_json() or {}
@@ -2249,6 +2298,17 @@ def update_upload_progress():
         if progress['completed'] + progress['failed'] >= len(progress['files']):
             progress['is_uploading'] = False
             progress['end_time'] = datetime.now().isoformat()
+            
+            # 更新批次状态为已完成
+            batch_id = progress.get('batch_id')
+            if batch_id and device_id in device_upload_batches:
+                for batch in device_upload_batches[device_id]:
+                    if batch['batch_id'] == batch_id:
+                        batch['status'] = 'completed'
+                        # 保存到数据库
+                        save_batch_to_db(device_id, batch)
+                        break
+            
             print(f"✅ 设备 {device_id} 上传完成: 成功 {progress['completed']}, 失败 {progress['failed']}")
         
         return jsonify({
@@ -2282,6 +2342,105 @@ def cancel_upload(device_id):
     
     except Exception as e:
         print(f"❌ 取消上传失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/wifi/check_files', methods=['POST'])
+def wifi_check_files():
+    """检查哪些文件已经存在（用于断点续传）"""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('device_id', 'unknown')
+        batch_id = data.get('batch_id')
+        files = data.get('files', [])  # [{'name': 'xxx.jpg', 'size': 12345}, ...]
+        
+        if not files:
+            return jsonify({
+                'success': False,
+                'error': '文件列表为空'
+            }), 400
+        
+        # 获取输出目录
+        base_output_dir = wifi_mode_status.get('output_dir', OUTPUT_DIR)
+        
+        # 根据批次ID确定目录
+        if batch_id:
+            output_dir = os.path.join(base_output_dir, device_id, batch_id)
+        else:
+            output_dir = os.path.join(base_output_dir, device_id)
+        
+        # 检查每个文件
+        existing_files = []
+        missing_files = []
+        
+        for file_info in files:
+            file_name = file_info.get('name')
+            expected_size = file_info.get('size')
+            
+            if not file_name:
+                continue
+            
+            file_path = os.path.join(output_dir, file_name)
+            
+            if os.path.exists(file_path):
+                actual_size = os.path.getsize(file_path)
+                
+                # 如果提供了预期大小，检查是否匹配
+                if expected_size:
+                    if actual_size == expected_size:
+                        existing_files.append({
+                            'name': file_name,
+                            'size': actual_size,
+                            'status': 'complete'
+                        })
+                    else:
+                        # 大小不匹配，需要重新上传
+                        missing_files.append({
+                            'name': file_name,
+                            'size': expected_size,
+                            'actual_size': actual_size,
+                            'status': 'incomplete'
+                        })
+                else:
+                    # 没有提供预期大小，只要文件存在就算完成
+                    if actual_size > 0:
+                        existing_files.append({
+                            'name': file_name,
+                            'size': actual_size,
+                            'status': 'complete'
+                        })
+                    else:
+                        missing_files.append({
+                            'name': file_name,
+                            'size': 0,
+                            'status': 'empty'
+                        })
+            else:
+                missing_files.append({
+                    'name': file_name,
+                    'size': expected_size,
+                    'status': 'missing'
+                })
+        
+        print(f"\n🔍 文件检查结果 (设备: {device_id[:8]}...):")
+        print(f"   已存在: {len(existing_files)} 个")
+        print(f"   需上传: {len(missing_files)} 个")
+        
+        return jsonify({
+            'success': True,
+            'device_id': device_id,
+            'batch_id': batch_id,
+            'total': len(files),
+            'existing': len(existing_files),
+            'missing': len(missing_files),
+            'existing_files': existing_files,
+            'missing_files': missing_files
+        })
+    
+    except Exception as e:
+        print(f"❌ 检查文件失败: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
