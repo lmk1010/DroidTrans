@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material Design 主题色 - 青绿色系 (暗色模式) -->
+    <color name="primary">#1DE9B6</color>
+    <color name="primary_dark">#00BFA5</color>
+    <color name="primary_light">#64FFDA</color>
+    <color name="accent">#1DE9B6</color>
+    <color name="error">#CF6679</color>
+
+    <!-- 背景和表面色 (暗色模式) -->
+    <color name="background">#121212</color>
+    <color name="surface">#1E1E1E</color>
+
+    <!-- 文本色 (暗色模式) -->
+    <color name="text_high_emphasis">#DEFFFFFF</color>
+    <color name="text_medium_emphasis">#99FFFFFF</color>
+    <color name="text_disabled">#61FFFFFF</color>
+
+    <!-- 基础颜色 -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- 分割线 (暗色模式) -->
+    <color name="divider">#1FFFFFFF</color>
+
+    <!-- 雷达相关颜色 - 青绿色系 (暗色模式) -->
+    <color name="radar_background">#1A1DE9B6</color>
+    <color name="radar_border">#4D1DE9B6</color>
+    <color name="radar_sweep_start">#801DE9B6</color>
+    <color name="radar_sweep_end">#001DE9B6</color>
+    <color name="radar_circle">#331DE9B6</color>
+
+    <!-- 照片选择相关颜色 - 青绿色系 (暗色模式) -->
+    <color name="photo_stroke">#1DE9B6</color>
+    <color name="selection_overlay">#661DE9B6</color>
+
+    <!-- 扩展主题色 - 青绿色系 (暗色模式) -->
+    <color name="primary_variant">#00BFA5</color>
+    <color name="success">#81C784</color>
+    
+    <!-- 状态栏颜色 (暗色模式) -->
+    <color name="status_bar">#00BFA5</color>
+
+    <!-- Material Design 3 - 表面相关 (暗色模式) -->
+    <color name="on_surface">#E6E1E5</color>
+    <color name="on_background">#E6E1E5</color>
+    <color name="surface_variant">#49454F</color>
+    <color name="on_surface_variant">#CAC4D0</color>
+    <color name="outline">#938F99</color>
+
+    <!-- Material Design 3 - 主色容器 (暗色模式) -->
+    <color name="primary_container">#00534A</color>
+    <color name="on_primary_container">#B2F1E8</color>
+</resources>
+

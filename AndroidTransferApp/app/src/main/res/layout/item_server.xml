@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="16dp"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardCornerRadius="20dp"
+    app:cardElevation="4dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="@color/surface"
+    app:rippleColor="@color/primary">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="20dp">
+
+        <!-- Server Icon with Background -->
+        <FrameLayout
+            android:id="@+id/iconContainer"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/server_icon_background"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent">
+
+            <ImageView
+                android:id="@+id/ivServerIcon"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_computer"
+                android:tint="@color/primary"
+                android:contentDescription="@string/server_icon" />
+
+        </FrameLayout>
+
+        <!-- Server Name -->
+        <TextView
+            android:id="@+id/tvServerName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="8dp"
+            android:text="@string/server_name"
+            android:textSize="16sp"
+            android:textColor="@color/text_high_emphasis"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintStart_toEndOf="@id/iconContainer"
+            app:layout_constraintEnd_toStartOf="@id/ivChevron"
+            app:layout_constraintTop_toTopOf="@id/iconContainer"
+            tools:text="Mac Studio" />
+
+        <!-- Server IP -->
+        <TextView
+            android:id="@+id/tvServerIp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/server_ip"
+            android:textSize="14sp"
+            android:textColor="@color/text_medium_emphasis"
+            android:fontFamily="monospace"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintStart_toStartOf="@id/tvServerName"
+            app:layout_constraintEnd_toEndOf="@id/tvServerName"
+            app:layout_constraintTop_toBottomOf="@id/tvServerName"
+            app:layout_constraintBottom_toBottomOf="@id/iconContainer"
+            tools:text="192.168.1.100:9500" />
+
+        <!-- Status Badge -->
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:text="@string/available"
+            android:textSize="11sp"
+            android:textColor="@color/white"
+            app:chipMinHeight="24dp"
+            app:chipBackgroundColor="@color/success"
+            app:chipStrokeWidth="0dp"
+            app:chipStartPadding="8dp"
+            app:chipEndPadding="8dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:text="可用" />
+
+        <!-- Chevron Icon -->
+        <ImageView
+            android:id="@+id/ivChevron"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/text_disabled"
+            android:contentDescription="@string/go_to_server"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+transfer_progress.json
+
+# PyInstaller
+build/
+dist/
+dist_app/
+*.spec.backup
+*.manifest
+*.exe.manifest
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Electron Builder
+dist/
+out/
+.electron-builder.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Output
+photos_output/*
+!photos_output/.gitkeep
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+

@@ -1,0 +1,53 @@
+<resources>
+    <string name="app_name">照片传输助手</string>
+
+    <!-- Main Screen -->
+    <string name="scanning_servers">正在扫描服务器</string>
+    <string name="found_servers_count">已发现 %d 台服务器</string>
+    <string name="searching_for_servers">正在查找附近的服务器...</string>
+    <string name="ensure_same_network">请确保设备与电脑在同一WiFi网络</string>
+    <string name="manual_input">手动输入</string>
+    <string name="radar_center">雷达中心</string>
+    <string name="searching">搜索中</string>
+
+    <!-- Server List -->
+    <string name="server_icon">服务器图标</string>
+    <string name="server_name">服务器名称</string>
+    <string name="server_ip">服务器IP</string>
+    <string name="available">可用</string>
+    <string name="go_to_server">前往服务器</string>
+
+    <!-- Photo Selection -->
+    <string name="select_photos">选择照片</string>
+    <string name="selected_count_zero">已选 0</string>
+    <string name="selected_count">已选 %d</string>
+    <string name="select_all">全选</string>
+    <string name="deselect_all">取消全选</string>
+    <string name="sort">排序</string>
+    <string name="upload_photos">上传照片</string>
+    <string name="photo_preview">照片预览</string>
+    <string name="loading_photos">正在加载照片...</string>
+    <string name="no_photos">无照片</string>
+    <string name="no_photos_description">设备中暂无照片，请先拍摄或下载照片</string>
+
+    <!-- Legacy Strings -->
+    <string name="server_address">服务器地址</string>
+    <string name="server_address_hint">http://192.168.10.168:9500</string>
+    <string name="connect">连接</string>
+    <string name="scan_photos">扫描照片</string>
+    <string name="upload">上传</string>
+    <string name="photos_found">找到 %d 张照片/视频</string>
+    <string name="uploading">上传中…</string>
+    <string name="upload_progress">%d / %d</string>
+    <string name="upload_success">上传成功</string>
+    <string name="upload_failed">上传失败</string>
+    <string name="connection_success">连接成功</string>
+    <string name="connection_failed">连接失败</string>
+    <string name="scanning">正在扫描…</string>
+    <string name="permission_required">需要存储权限才能扫描照片</string>
+    <string name="grant_permission">授予权限</string>
+    <string name="no_photos_found">未找到照片</string>
+    <string name="server_info">服务器信息</string>
+    <string name="wifi_connected">WiFi已连接</string>
+    <string name="wifi_disconnected">WiFi未连接</string>
+</resources>

@@ -1,0 +1,133 @@
+{
+  "name": "android-transfer",
+  "version": "1.0.0",
+  "description": "Android照片传输工具 - WiFi/USB传输客户端",
+  "main": "electron_main.js",
+  "author": "MK",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "start:debug": "electron . --enable-logging --v=1",
+    "start:verbose": "electron . --enable-logging --v=2 --log-level=0",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "build:backend": "bash build_backend.sh",
+    "build:backend:win": "build_backend.bat",
+    "build:all": "bash build_all.sh",
+    "build:all:win": "build_all.bat",
+    "logs": "tail -f ~/Documents/AndroidTransfer/logs/electron-*.log"
+  },
+  "build": {
+    "appId": "com.mk.androidtransfer",
+    "productName": "Android Transfer",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build_resources"
+    },
+    "files": [
+      "electron_main.js",
+      "templates/**/*",
+      "static/**/*",
+      "photos_output/.gitkeep",
+      "!build_*.{sh,bat}",
+      "!app.spec",
+      "!venv/**/*",
+      "!dist_app",
+      "!build",
+      "!*.pyc",
+      "!__pycache__"
+    ],
+    "extraResources": [
+      {
+        "from": "dist_app",
+        "to": "app",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "icon.icns",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "entitlements": null,
+      "entitlementsInherit": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "title": "Android Transfer ${version}",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.ico",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Android Transfer",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "license": "LICENSE.txt"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "icon.png",
+      "category": "Utility",
+      "artifactName": "${productName}-${version}.${ext}",
+      "desktop": {
+        "Name": "Android Transfer",
+        "Comment": "Transfer photos from Android devices",
+        "Categories": "Utility;FileTransfer;"
+      }
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {}
+}
+
