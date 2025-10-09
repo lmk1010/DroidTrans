@@ -33,7 +33,7 @@
                 android:layout_height="32dp"
                 android:layout_gravity="center"
                 android:src="@drawable/ic_computer"
-                android:tint="@color/primary"
+                app:tint="@color/primary"
                 android:contentDescription="@string/server_icon" />
 
         </FrameLayout>
@@ -97,7 +97,7 @@
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:src="@drawable/ic_chevron_right"
-            android:tint="@color/text_disabled"
+            app:tint="@color/text_disabled"
             android:contentDescription="@string/go_to_server"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"

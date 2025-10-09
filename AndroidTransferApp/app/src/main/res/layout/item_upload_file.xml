@@ -46,7 +46,7 @@
                     android:layout_height="24dp"
                     android:layout_gravity="center"
                     android:visibility="gone"
-                    android:tint="@color/on_surface"
+                    app:tint="@color/on_surface"
                     tools:src="@drawable/ic_upload"
                     tools:visibility="visible" />
 
