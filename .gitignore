@@ -36,7 +36,7 @@ release/
 
 # PyInstaller
 build/
-*.spec
+# *.spec  # 需要保留 app.spec 用于 CI 构建
 
 # Android 构建
 AndroidTransferApp/app/build/
