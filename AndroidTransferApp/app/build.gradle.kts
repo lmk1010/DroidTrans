@@ -16,6 +16,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            // 从环境变量读取签名配置，如果不存在则使用 debug 签名
+            storeFile = if (System.getenv("RELEASE_KEYSTORE_FILE") != null) {
+                file(System.getenv("RELEASE_KEYSTORE_FILE"))
+            } else {
+                null
+            }
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: "android"
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "androiddebugkey"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -23,6 +37,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

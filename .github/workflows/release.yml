@@ -25,8 +25,23 @@ jobs:
         working-directory: ./AndroidTransferApp
         run: chmod +x gradlew
 
+      - name: Create release keystore
+        working-directory: ./AndroidTransferApp
+        run: |
+          # 生成临时签名密钥用于 CI 构建
+          keytool -genkey -v -keystore release.keystore \
+            -alias androidreleasekey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android123 -keypass android123 \
+            -dname "CN=Android Transfer, OU=Development, O=MK, L=City, S=State, C=CN"
+
       - name: Build APK
         working-directory: ./AndroidTransferApp
+        env:
+          RELEASE_KEYSTORE_FILE: release.keystore
+          RELEASE_KEYSTORE_PASSWORD: android123
+          RELEASE_KEY_ALIAS: androidreleasekey
+          RELEASE_KEY_PASSWORD: android123
         run: ./gradlew assembleRelease
 
       - name: Upload APK artifact
