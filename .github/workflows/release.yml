@@ -50,67 +50,9 @@ jobs:
           name: android-apk
           path: AndroidTransferApp/app/build/outputs/apk/release/*.apk
 
-  # 构建 macOS 版本
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Python dependencies
-        working-directory: ./AndroidTransferClient
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Create required directories
-        working-directory: ./AndroidTransferClient
-        run: |
-          mkdir -p photos_output
-          touch photos_output/.gitkeep
-
-      - name: Build Python backend
-        working-directory: ./AndroidTransferClient
-        run: |
-          pip install pyinstaller
-          pyinstaller app.spec --clean
-          mv dist/app dist_app
-          chmod +x dist_app/app
-
-      - name: Install Node dependencies
-        working-directory: ./AndroidTransferClient
-        run: npm ci
-
-      - name: Build Electron app for macOS
-        working-directory: ./AndroidTransferClient
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EP_DRAFT: false
-          EP_PRE_RELEASE: false
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-          # CI 环境中强制使用 ad-hoc 签名（本地构建会使用 package.json 中的开发者证书）
-          CSC_NAME: "-"
-        run: npm run dist:mac -- --publish never
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-builds
-          path: |
-            AndroidTransferClient/dist/*.dmg
-            AndroidTransferClient/dist/*.zip
-            AndroidTransferClient/dist/*.dmg.blockmap
-            AndroidTransferClient/dist/*.zip.blockmap
+  # macOS 版本由本地构建并手动上传到 Release
+  # 本地构建命令: cd AndroidTransferClient && ./build_m1.sh
+  # macOS 需要开发者证书签名，GitHub Actions 无法访问
 
   # 构建 Windows 版本
   build-windows:
@@ -170,9 +112,10 @@ jobs:
             AndroidTransferClient/dist/*.exe
             AndroidTransferClient/dist/*.exe.blockmap
 
-  # 创建 Release 并上传所有构建产物
+  # 创建 Release 并上传构建产物（Android + Windows）
+  # macOS 版本需要手动上传到 Release
   create-release:
-    needs: [build-android, build-mac, build-windows]
+    needs: [build-android, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -201,10 +144,31 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ## 📦 下载说明
+
+            ### Android APK
+            - 下载 APK 文件并安装到 Android 设备
+
+            ### Windows 安装包
+            - 下载 `.exe` 文件并运行安装向导
+
+            ### macOS 版本
+            **macOS 版本请在 Assets 中查找（由开发者本地构建并手动上传）**
+
+            - **M1/M2/M3/M4 Mac**: 下载 `Android-Transfer-*-arm64.dmg`
+            - **Intel Mac**: 下载 `Android-Transfer-*-x64.dmg`
+
+            ⚠️ **macOS 安装重要提示**：
+
+            安装后需执行以下命令移除隔离属性：
+            ```bash
+            sudo xattr -rd com.apple.quarantine /Applications/Android\ Transfer.app
+            ```
+
+            详见 [macOS 安装说明](https://github.com/MK-CO/AndroidTransfer/blob/main/INSTALL_MACOS.md)
           files: |
             artifacts/android-apk/*.apk
-            artifacts/macos-builds/*.dmg
-            artifacts/macos-builds/*.zip
             artifacts/windows-builds/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
