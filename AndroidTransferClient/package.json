@@ -66,9 +66,7 @@
       ],
       "icon": "icon.icns",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "identity": null,
-      "entitlements": null,
-      "entitlementsInherit": null,
+      "identity": "Apple Development: mingkang liu (VB3DDX8YB9)",
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
