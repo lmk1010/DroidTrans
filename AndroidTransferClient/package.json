@@ -71,23 +71,8 @@
       "gatekeeperAssess": false
     },
     "dmg": {
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ],
       "title": "Android Transfer ${version}",
-      "window": {
-        "width": 540,
-        "height": 380
-      }
+      "background": null
     },
     "win": {
       "target": [
