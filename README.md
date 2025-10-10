@@ -68,6 +68,25 @@
 
 > 📦 [前往 Releases 下载](../../releases)
 
+#### ⚠️ macOS 用户必读
+
+由于应用未经 Apple 代码签名，首次安装需要执行以下步骤：
+
+1. 下载并安装应用到 `Applications` 文件夹
+2. **打开终端，执行以下命令**（必须执行，否则显示"应用已损坏"）：
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/Android\ Transfer.app
+   ```
+3. 输入管理员密码
+4. 双击运行应用
+
+**如果仍然遇到安全警告：**
+1. 打开 `系统偏好设置` > `隐私与安全性`
+2. 在底部找到被阻止的应用
+3. 点击 "仍要打开"
+
+> 💡 这是开源软件的常见做法，完全安全。详见 [macOS 安装说明](INSTALL_MACOS.md)
+
 ### 方式二：Python 脚本运行
 
 ```bash

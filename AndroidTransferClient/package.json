@@ -36,6 +36,7 @@
       "templates/**/*",
       "static/**/*",
       "photos_output/.gitkeep",
+      "install_macos.sh",
       "!build_*.{sh,bat}",
       "!app.spec",
       "!venv/**/*",
