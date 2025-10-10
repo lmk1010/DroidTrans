@@ -20,7 +20,7 @@ android {
         create("release") {
             // 从环境变量读取签名配置，如果不存在则使用 debug 签名
             storeFile = if (System.getenv("RELEASE_KEYSTORE_FILE") != null) {
-                file(System.getenv("RELEASE_KEYSTORE_FILE"))
+                rootProject.file(System.getenv("RELEASE_KEYSTORE_FILE"))
             } else {
                 null
             }
