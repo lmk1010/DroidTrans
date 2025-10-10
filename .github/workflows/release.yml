@@ -68,7 +68,8 @@ jobs:
         working-directory: ./AndroidTransferClient
         run: |
           pip install pyinstaller
-          pyinstaller app.spec
+          pyinstaller app.spec --clean
+          mv dist/app dist_app
 
       - name: Install Node dependencies
         working-directory: ./AndroidTransferClient
@@ -122,9 +123,11 @@ jobs:
 
       - name: Build Python backend
         working-directory: ./AndroidTransferClient
+        shell: pwsh
         run: |
           pip install pyinstaller
-          pyinstaller app.spec
+          pyinstaller app.spec --clean
+          Move-Item -Path dist/app -Destination dist_app
 
       - name: Install Node dependencies
         working-directory: ./AndroidTransferClient

@@ -5,6 +5,10 @@
   "main": "electron_main.js",
   "author": "MK",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liumingkang/AndroidTransfer.git"
+  },
   "scripts": {
     "start": "electron .",
     "start:debug": "electron . --enable-logging --v=1",
