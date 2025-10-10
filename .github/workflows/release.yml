@@ -85,6 +85,7 @@ jobs:
           pip install pyinstaller
           pyinstaller app.spec --clean
           mv dist/app dist_app
+          chmod +x dist_app/app
 
       - name: Install Node dependencies
         working-directory: ./AndroidTransferClient
