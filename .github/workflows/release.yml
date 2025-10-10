@@ -94,7 +94,9 @@ jobs:
         working-directory: ./AndroidTransferClient
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist:mac
+          EP_DRAFT: false
+          EP_PRE_RELEASE: false
+        run: npm run dist:mac -- --publish never
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -152,7 +154,9 @@ jobs:
         working-directory: ./AndroidTransferClient
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist:win
+          EP_DRAFT: false
+          EP_PRE_RELEASE: false
+        run: npm run dist:win -- --publish never
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -170,6 +174,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Delete existing release (if exists)
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete ${{ github.ref_name }} --yes || true
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4

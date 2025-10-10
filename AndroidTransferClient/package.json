@@ -113,6 +113,13 @@
         "Comment": "Transfer photos from Android devices",
         "Categories": "Utility;FileTransfer;"
       }
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "MK-CO",
+      "repo": "AndroidTransfer",
+      "releaseType": "release",
+      "publishAutoUpdate": true
     }
   },
   "devDependencies": {
