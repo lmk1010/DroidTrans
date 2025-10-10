@@ -97,7 +97,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_DRAFT: false
           EP_PRE_RELEASE: false
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run dist:mac -- --publish never
+
+      - name: Sign app with ad-hoc signature
+        working-directory: ./AndroidTransferClient
+        run: |
+          # 为所有构建的 .app 进行 ad-hoc 签名
+          for app in dist/mac*/*.app; do
+            if [ -d "$app" ]; then
+              echo "Signing $app with ad-hoc signature..."
+              codesign --force --deep --sign - "$app"
+              # 验证签名
+              codesign -dv "$app" || true
+            fi
+          done
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
