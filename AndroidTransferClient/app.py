@@ -7,13 +7,20 @@ import subprocess
 import threading
 import socket
 import sqlite3
+import hashlib
 from pathlib import Path, PurePosixPath
 from flask import Flask, render_template, jsonify, request, send_file
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from werkzeug.utils import secure_filename
 
+# ADB Burst Mode 配置
+ADB_BURST_MODE_ENABLED = os.getenv('ADB_BURST_MODE', '1')  # 默认启用Burst模式
+
 app = Flask(__name__)
+
+# 线程锁，保护 transfer_status 的并发更新
+transfer_status_lock = threading.Lock()
 
 # 配置 - M4 Mac 超级并发优化
 # 智能选择输出目录：开发环境用本地，打包后用用户文档目录
@@ -33,6 +40,9 @@ def get_output_dir():
     return output_dir
 
 OUTPUT_DIR = get_output_dir()  # 照片输出目录
+BATCH_PREVIEW_DIR_NAME = 'previews'
+PREVIEW_DIR = os.path.join(OUTPUT_DIR, BATCH_PREVIEW_DIR_NAME)
+os.makedirs(PREVIEW_DIR, exist_ok=True)
 BATCH_SIZE = 50  # 每批传输的照片数量（已废弃，使用并发传输）
 MAX_RETRIES = 2  # 最大重试次数（降低以加快失败文件的处理）
 
@@ -65,7 +75,16 @@ transfer_status = {
     'current_file': '',
     'error': None,
     'completed_files': set(),  # 已完成的文件路径集合
-    'output_dir': OUTPUT_DIR
+    'output_dir': OUTPUT_DIR,
+    'bytes_total': 0,
+    'bytes_done': 0,
+    'start_ts': 0.0,
+    'speed_mbps': 0.0,
+    'elapsed_sec': 0.0,
+    'eta_sec': 0.0,
+    'speed_samples': [],  # 存储速度样本，用于计算平均值
+    'speed_estimated': False,  # 是否已完成速度估算
+    'usb_info': {}  # 存储USB设备信息
 }
 
 scan_status = {
@@ -76,7 +95,9 @@ scan_status = {
     'files_processed': 0,
     'total_files': 0,
     'photos': [],
-    'error': None
+    'error': None,
+    'albums_preview': {},
+    'albums_map': {}
 }
 
 # 设备连接状态
@@ -84,8 +105,17 @@ device_status = {
     'connected': False,
     'devices': [],
     'last_check_time': None,
-    'disconnect_detected': False  # 标记是否检测到设备断开
+    'disconnect_detected': False,  # 标记是否检测到设备断开
+    'fail_count': 0,               # 连续检测失败次数（ADB异常时使用）
+    'adb_issue': False,            # ADB 调用异常
+    'adb_error': ''
 }
+
+# 当前选中的ADB设备序列号
+selected_device = None
+
+# 设备监控线程启动标记
+device_monitor_started = False
 
 # WiFi模式状态
 wifi_mode_status = {
@@ -177,6 +207,9 @@ SUPPORTED_EXTENSIONS = {
     '.mxf', '.mpg', '.mpeg', '.mpv', '.ogv', '.hevc', '.h265', '.h264',
 }
 
+# 预览仅支持的图片扩展名（封面用）
+PREVIEW_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'}
+
 
 def has_supported_extension(file_path):
     """判断文件是否为支持的照片/视频格式"""
@@ -254,15 +287,43 @@ def clear_progress():
         print(f"⚠️ 清除进度失败: {str(e)}")
         return False
 
-def run_adb_command(command, timeout=30):
-    """执行ADB命令"""
+def _maybe_inject_serial(command: str) -> str:
+    """在adb命令中注入 -s <serial>，对 'adb devices'/'adb start-server'/'adb kill-server' 跳过。"""
     try:
+        cmd = command.strip()
+        if not cmd.startswith('adb'):
+            return command
+        # 跳过无需设备绑定的命令
+        for prefix in ('adb devices', 'adb start-server', 'adb kill-server'):
+            if cmd.startswith(prefix):
+                return command
+        if selected_device:
+            return command.replace('adb ', f'adb -s {selected_device} ', 1)
+        return command
+    except Exception:
+        return command
+
+
+def run_adb_command(command, timeout=30, enable_burst=None):
+    """执行ADB命令，支持Burst Mode"""
+    try:
+        command = _maybe_inject_serial(command)
+
+        # 确定是否启用Burst模式
+        burst_enabled = ADB_BURST_MODE_ENABLED == '1' if enable_burst is None else enable_burst
+
+        # 设置环境变量以启用Burst模式
+        env = os.environ.copy()
+        if burst_enabled:
+            env['ADB_DELAYED_ACK'] = '1'
+
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            env=env
         )
         return result.returncode == 0, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
@@ -272,9 +333,12 @@ def run_adb_command(command, timeout=30):
 
 def check_adb_connection():
     """检查ADB连接状态并更新全局设备状态"""
-    global device_status
+    global device_status, selected_device
 
     success, stdout, stderr = run_adb_command("adb devices")
+    was_connected = device_status.get('connected', False)
+    prev_devices = set(device_status.get('devices', []))
+
     connected = False
     devices = []
 
@@ -283,11 +347,51 @@ def check_adb_connection():
         if len(lines) > 1:
             devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
             connected = len(devices) > 0
+        device_status['fail_count'] = 0
+        device_status['adb_issue'] = False
+        device_status['adb_error'] = ''
+    else:
+        # ADB失败：快速二次确认，避免长时间误判
+        retry_ok, retry_out, _ = run_adb_command("adb devices", timeout=3)
+        if retry_ok and retry_out:
+            lines = retry_out.strip().split('\n')
+            if len(lines) > 1:
+                devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
+                connected = len(devices) > 0
+            device_status['fail_count'] = 0
+            device_status['adb_issue'] = False
+            device_status['adb_error'] = ''
+        else:
+            device_status['fail_count'] = device_status.get('fail_count', 0) + 1
+            device_status['adb_issue'] = True
+            device_status['adb_error'] = (stderr.decode('utf-8', errors='ignore') if isinstance(stderr, (bytes, bytearray)) else str(stderr)) or 'ADB不可用'
+            if device_status['fail_count'] < 2 and was_connected:
+                # 暂时保留上次状态一小段时间，避免抖动
+                connected = was_connected
+                devices = list(prev_devices)
+            else:
+                connected = False
+                devices = []
+
+    # 检查设备状态变化
+    was_connected_devices = set(device_status.get('devices', []))
+    current_devices = set(devices)
 
     # 更新全局设备状态
     device_status['connected'] = connected
     device_status['devices'] = devices
     device_status['last_check_time'] = datetime.now().isoformat()
+
+    # 检测新设备插入
+    if connected and not was_connected:
+        device_status['connect_detected'] = True
+        print(f"\n🎉 检测到新设备连接: {', '.join(devices)}")
+    elif connected and was_connected:
+        # 检查是否有新设备插入（多个设备情况）
+        new_devices = current_devices - was_connected_devices
+        if new_devices:
+            device_status['connect_detected'] = True
+            print(f"\n🎉 检测到新设备连接: {', '.join(new_devices)}")
 
     # 如果之前连接但现在断开，标记断开事件
     if not connected and device_status.get('was_connected', False):
@@ -296,7 +400,43 @@ def check_adb_connection():
 
     device_status['was_connected'] = connected
 
+    # 维护选中设备
+    if connected:
+        if not selected_device or selected_device not in devices:
+            selected_device = devices[0]
+    else:
+        selected_device = None
+
     return connected, devices
+
+
+def _device_monitor_loop(interval=2):
+    """后台设备监控循环，周期性检查ADB设备连接状态"""
+    import time
+    while True:
+        try:
+            check_adb_connection()
+        except Exception as _:
+            # 避免监控线程因为异常退出
+            pass
+        time.sleep(max(1, int(interval)))
+
+
+def start_device_monitor():
+    """启动设备监控线程（只启动一次）"""
+    global device_monitor_started
+    if device_monitor_started:
+        return
+    try:
+        t = threading.Thread(target=_device_monitor_loop, kwargs={'interval': 2}, daemon=True)
+        t.start()
+        device_monitor_started = True
+        print("🔎 已启动设备监控线程（2s轮询）")
+    except Exception as e:
+        print(f"⚠️ 启动设备监控线程失败: {e}")
+
+
+# 注意：Flask 3.0 移除了 before_first_request，这里不使用该钩子。
 
 def get_local_ip():
     """获取本机局域网IP地址"""
@@ -311,6 +451,123 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
+def organize_photos_by_album(photos):
+    """按文件夹组织照片为相册"""
+    albums = {}
+
+    # 定义相册映射规则
+    album_mappings = {
+        # 相机相册
+        'Camera': {
+            'paths': ['/DCIM/Camera', '/Pictures/Camera', '/DCIM/100MEDIA', '/DCIM/100ANDRO'],
+            'name': '相机',
+            'icon': '📷',
+            'priority': 1
+        },
+        # 截屏相册
+        'Screenshots': {
+            'paths': ['/DCIM/Screenshots', '/Pictures/Screenshots', '/Screenshots', '/DCIM/Screenshots/Instagram'],
+            'name': '截屏',
+            'icon': '📱',
+            'priority': 2
+        },
+        # 微信相册
+        'WeChat': {
+            'paths': ['/Pictures/WeiXin', '/Pictures/WeChat', '/Pictures/微信', '/Pictures/tencent/MicroMsg/WeiXin'],
+            'name': '微信',
+            'icon': '💬',
+            'priority': 3
+        },
+        # 知乎相册
+        'Zhihu': {
+            'paths': ['/Pictures/Zhihu', '/Pictures/知乎'],
+            'name': '知乎',
+            'icon': '📚',
+            'priority': 4
+        },
+        # 美团相册
+        'Meituan': {
+            'paths': ['/Pictures/Meituan', '/Pictures/美团'],
+            'name': '美团',
+            'icon': '🥡',
+            'priority': 5
+        },
+        # 微博相册
+        'Weibo': {
+            'paths': ['/Pictures/Weibo', '/Pictures/微博', '/Pictures/sina/weibo'],
+            'name': '微博',
+            'icon': '🌟',
+            'priority': 6
+        },
+        # QQ相册
+        'QQ': {
+            'paths': ['/Pictures/QQ', '/Pictures/Tencent', '/Pictures/tencent'],
+            'name': 'QQ',
+            'icon': '🐧',
+            'priority': 7
+        },
+        # 下载相册
+        'Download': {
+            'paths': ['/Download', '/Pictures/Download'],
+            'name': '下载',
+            'icon': '⬇️',
+            'priority': 8
+        },
+        # 其他相册
+        'Others': {
+            'paths': [],
+            'name': '其他相册',
+            'icon': '📁',
+            'priority': 99
+        }
+    }
+
+    # 初始化相册
+    for album_key, album_info in album_mappings.items():
+        albums[album_key] = {
+            'name': album_info['name'],
+            'icon': album_info['icon'],
+            'priority': album_info['priority'],
+            'photos': [],
+            'total_count': 0,
+            'total_size': 0
+        }
+
+    # 分类照片
+    for photo in photos:
+        photo_path = photo['path']
+        categorized = False
+
+        # 检查属于哪个相册
+        for album_key, album_info in album_mappings.items():
+            if album_key == 'Others':
+                continue
+
+            for path_pattern in album_info['paths']:
+                if path_pattern in photo_path:
+                    albums[album_key]['photos'].append(photo)
+                    albums[album_key]['total_count'] += 1
+                    albums[album_key]['total_size'] += photo['size']
+                    categorized = True
+                    break
+
+            if categorized:
+                break
+
+        # 如果没有匹配到任何相册，归为其他
+        if not categorized:
+            albums['Others']['photos'].append(photo)
+            albums['Others']['total_count'] += 1
+            albums['Others']['total_size'] += photo['size']
+
+    # 过滤掉空的相册（除了"其他"相册）
+    filtered_albums = {}
+    for album_key, album_data in albums.items():
+        if album_data['total_count'] > 0:
+            filtered_albums[album_key] = album_data
+
+    return filtered_albums
+
 def scan_photos_thread():
     """后台扫描照片线程 - 极速优化版"""
     global scan_status
@@ -321,7 +578,10 @@ def scan_photos_thread():
     scan_status['files_processed'] = 0
     scan_status['total_files'] = 0
     scan_status['photos'] = []
+    scan_status['albums'] = {}
     scan_status['error'] = None
+    scan_status['albums_preview'] = {}
+    scan_status['albums_map'] = {}
 
     seen_files = set()
     seen_dirs = set()
@@ -362,10 +622,47 @@ def scan_photos_thread():
             scan_status['is_running'] = False
             return
 
-        # 扫描主要目录
-        target_dirs = ['DCIM', 'Pictures', 'Download', 'Screenshots']
+        # 仅扫描内部存储的 Pictures 目录（避免全盘扫描导致手机卡顿）
+        pictures_root = f"{actual_storage}/Pictures"
 
-        for dir_name in target_dirs:
+        # 检查 Pictures 是否存在
+        check_pictures_cmd = f'adb shell "test -d {pictures_root} && echo EXISTS"'
+        success, stdout, _ = run_adb_command(check_pictures_cmd, timeout=5)
+        if not success or 'EXISTS' not in stdout:
+            print("   ✗ 未找到 Pictures 目录，仅支持扫描内部存储的 Pictures 目录")
+            scan_status['error'] = '未找到内部存储的 Pictures 目录，请确认手机路径 /storage/emulated/0/Pictures 是否存在'
+            scan_status['stage'] = 'error'
+            scan_status['is_running'] = False
+            return
+
+        # 列出一级子目录作为相册；若没有子目录，则扫描 Pictures 根目录
+        list_albums_cmd = f'adb shell "find {pictures_root} -mindepth 1 -maxdepth 1 -type d 2>/dev/null"'
+        success, stdout, _ = run_adb_command(list_albums_cmd, timeout=10)
+        album_dirs = []
+        if success and stdout.strip():
+            album_dirs = [line.strip() for line in stdout.strip().split('\n') if line.strip()]
+            # 过滤隐藏相册（以 . 开头的目录）
+            album_dirs = [d for d in album_dirs if not os.path.basename(d.rstrip('/')).startswith('.')]
+        else:
+            album_dirs = [pictures_root]
+
+        # 单独增加 DCIM/Camera（相机）相册，如果存在
+        camera_dir = f"{actual_storage}/DCIM/Camera"
+        has_camera = False
+        cam_check_cmd = f'adb shell "test -d {camera_dir} && echo EXISTS"'
+        ok_cam, cam_out, _ = run_adb_command(cam_check_cmd, timeout=5)
+        if ok_cam and 'EXISTS' in cam_out:
+            has_camera = True
+
+        # 合并列表并去重
+        all_album_dirs = []
+        if has_camera:
+            all_album_dirs.append(camera_dir)
+        all_album_dirs.extend(album_dirs)
+        # 确保 Pictures 根目录优先，再按名称排序子目录
+        album_dirs = sorted(set(all_album_dirs), key=lambda p: (p != pictures_root and p != camera_dir, p.lower()))
+
+        for dir_path in album_dirs:
             if not scan_status['is_running']:
                 break
 
@@ -378,7 +675,6 @@ def scan_photos_thread():
                 scan_status['is_running'] = False
                 return
 
-            dir_path = f'{actual_storage}/{dir_name}'
             normalized_dir = normalize_remote_path(dir_path)
 
             if normalized_dir in seen_dirs:
@@ -386,7 +682,7 @@ def scan_photos_thread():
             seen_dirs.add(normalized_dir)
 
             scan_status['current_dir'] = dir_path
-            print(f"\n📂 扫描目录: {dir_path}")
+            print(f"\n📂 扫描相册目录: {dir_path}")
 
             # 先检查目录是否存在
             check_cmd = f'adb shell "test -d {dir_path} && echo EXISTS"'
@@ -427,10 +723,11 @@ def scan_photos_thread():
             print(f"   ✓ 找到 {len(files)} 个文件")
             print(f"   → ⚡ 第2步：{SCAN_CONCURRENT*2}线程暴力并发获取信息...")
             
-            # 第2步：超高并发批量获取文件信息
+            # 第2步：超高并发批量获取文件信息（限定当前相册目录）
             batch_size = 300  # 每批300个文件
             max_concurrent = SCAN_CONCURRENT * 2  # 加倍并发数（24线程）
             previous_count = len(scan_status['photos'])
+            album_photos = []
             
             def ultra_fast_stat(batch_files, batch_index):
                 """超高速批量stat"""
@@ -498,14 +795,16 @@ def scan_photos_thread():
                             
                             if normalized_file not in seen_files and has_supported_extension(file_path):
                                 seen_files.add(normalized_file)
-                                scan_status['photos'].append({
+                                photo_info = {
                                     'path': file_path,
                                     'name': os.path.basename(file_path),
                                     'size': item['size'],
                                     'size_mb': round(item['size'] / 1024 / 1024, 2),
                                     'mtime': item['mtime'],
                                     'date': datetime.fromtimestamp(item['mtime']).strftime('%Y-%m-%d %H:%M:%S') if item['mtime'] > 0 else 'Unknown'
-                                })
+                                }
+                                scan_status['photos'].append(photo_info)
+                                album_photos.append(photo_info)
                         
                         completed += 1
                         
@@ -529,7 +828,29 @@ def scan_photos_thread():
             scan_status['files_processed'] = len(scan_status['photos'])
             
             if added_count > 0:
-                print(f"   ✓ 本目录新增 {added_count} 个文件（总计: {len(scan_status['photos'])}）")
+                print(f"   ✓ 本相册新增 {added_count} 个文件（总计: {len(scan_status['photos'])}）")
+
+            # 相册完成后，增量更新相册预览（仅该相册）
+            try:
+                album_name = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
+                total_size = sum(p['size'] for p in album_photos)
+                cover_path = album_photos[0]['path'] if album_photos else ''
+                if 'albums_preview' not in scan_status or not isinstance(scan_status['albums_preview'], dict):
+                    scan_status['albums_preview'] = {}
+                scan_status['albums_preview'][dir_path] = {
+                    'name': album_name,
+                    'icon': '📁',
+                    'priority': 10,
+                    'total_count': len(album_photos),
+                    'total_size': total_size,
+                    'cover': cover_path
+                }
+                # 保存该相册的完整照片列表，供最终返回
+                scan_status['albums_map'][dir_path] = album_photos
+            except Exception:
+                pass
+
+        # 不做兜底扫描：严格限定在 Pictures/Camera 范围，避免卡顿
 
         if not scan_status['photos']:
             print("\n⚠️  未找到任何照片/视频文件")
@@ -541,9 +862,38 @@ def scan_photos_thread():
         # 按时间排序
         scan_status['stage'] = 'getting_info'
         scan_status['total_files'] = len(scan_status['photos'])
-        
+
         print(f"\n📊 正在排序 {len(scan_status['photos'])} 个文件...")
         scan_status['photos'].sort(key=lambda x: x['mtime'], reverse=True)
+
+        # 使用目录相册（Pictures一级子目录）组织，而非类别聚合
+        print(f"📁 正在整理相册（按目录）...")
+        albums = {}
+        for album_path, photos in scan_status.get('albums_map', {}).items():
+            if not photos:
+                continue
+            album_name = os.path.basename(album_path.rstrip('/')) or 'Pictures'
+            total_size = sum(p['size'] for p in photos)
+            albums[album_path] = {
+                'name': album_name,
+                'icon': '📁',
+                'priority': 10,
+                'photos': photos,
+                'total_count': len(photos),
+                'total_size': total_size
+            }
+        # 如果没有子目录，仅将全部照片归为 Pictures
+        if not albums and scan_status['photos']:
+            total_size = sum(p['size'] for p in scan_status['photos'])
+            albums['Pictures'] = {
+                'name': 'Pictures',
+                'icon': '📁',
+                'priority': 10,
+                'photos': scan_status['photos'],
+                'total_count': len(scan_status['photos']),
+                'total_size': total_size
+            }
+        scan_status['albums'] = albums
 
         # 统计信息
         total_size_mb = sum(p['size_mb'] for p in scan_status['photos'])
@@ -556,6 +906,12 @@ def scan_photos_thread():
         print(f"   📷 图片: {image_count} 张")
         print(f"   🎬 视频: {video_count} 个")
         print(f"   📦 总大小: {total_size_mb:.2f} MB ({total_size_mb/1024:.2f} GB)")
+        print(f"   📁 相册数: {len(scan_status['albums'])} 个")
+
+        # 显示相册统计
+        for album_key, album_data in sorted(scan_status['albums'].items(), key=lambda x: x[1]['priority']):
+            print(f"   {album_data['icon']} {album_data['name']}: {album_data['total_count']} 张 ({album_data['total_size']/1024/1024:.2f} MB)")
+
         print(f"{'='*60}\n")
 
         scan_status['stage'] = 'done'
@@ -656,6 +1012,22 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     print(f"   ✓ 设备已连接: {', '.join(devices)}\n")
 
     start_time = time.time()
+    # 初始化速度统计
+    try:
+        transfer_status['bytes_total'] = sum(int(p.get('size', 0)) for p in photos)
+    except Exception:
+        transfer_status['bytes_total'] = 0
+    transfer_status['bytes_done'] = 0
+    transfer_status['start_ts'] = start_time
+    transfer_status['speed_mbps'] = 0.0
+    transfer_status['elapsed_sec'] = 0.0
+    transfer_status['eta_sec'] = 0.0
+    transfer_status['bytes_total'] = sum(int(p.get('size', 0)) for p in photos)
+    transfer_status['bytes_done'] = 0
+    transfer_status['start_ts'] = start_time
+    transfer_status['speed_mbps'] = 0.0
+    transfer_status['speed_samples'] = []  # 存储速度样本，用于计算平均值
+    transfer_status['speed_estimated'] = False  # 是否已完成速度估算
     skipped_count = 0
     last_save_count = 0
     
@@ -727,6 +1099,39 @@ def transfer_photos_thread(photos, output_dir, resume=False):
 
                     if "已存在" in msg:
                         skipped_count += 1
+                    else:
+                        # 成功传输，累加字节并更新速度
+                        try:
+                            sz = int(result_photo.get('size', 0))
+                        except Exception:
+                            sz = 0
+                        # 使用线程锁保护并发更新
+                        with transfer_status_lock:
+                            transfer_status['bytes_done'] = transfer_status.get('bytes_done', 0) + sz
+
+                            # 只估算3次速度，然后取平均值
+                            if not transfer_status.get('speed_estimated', False) and len(transfer_status.get('speed_samples', [])) < 3:
+                                elapsed = max(0.001, time.time() - transfer_status.get('start_ts', start_time))
+                                transfer_status['elapsed_sec'] = elapsed
+                                current_speed = (transfer_status['bytes_done'] / 1024.0 / 1024.0) / elapsed
+                                transfer_status['speed_samples'].append(current_speed)
+
+                                if len(transfer_status['speed_samples']) == 3:
+                                    # 计算3次样本的平均速度
+                                    avg_speed = sum(transfer_status['speed_samples']) / len(transfer_status['speed_samples'])
+                                    transfer_status['speed_mbps'] = avg_speed
+                                    transfer_status['speed_estimated'] = True
+                                    print(f"⚡ 速度估算完成: {avg_speed:.2f} MB/s")
+                                else:
+                                    # 使用当前速度作为临时显示
+                                    transfer_status['speed_mbps'] = current_speed
+                            elif transfer_status.get('speed_estimated', False):
+                                # 估算完成后，不再更新 elapsed_sec，保持显示稳定
+                                pass
+
+                            if transfer_status['speed_mbps'] > 0:
+                                remaining_mb = max(0.0, (transfer_status.get('bytes_total', 0) - transfer_status['bytes_done']) / 1024.0 / 1024.0)
+                                transfer_status['eta_sec'] = remaining_mb / transfer_status['speed_mbps']
                 
                 # 定期自动保存进度
                 if completed - last_save_count >= AUTO_SAVE_INTERVAL:
@@ -886,22 +1291,80 @@ def check_device():
 
 @app.route('/api/device_status')
 def get_device_status():
-    """获取设备状态（包括断开检测）"""
+    """获取设备状态（包括连接和断开检测）"""
     global device_status
+    # 确保监控线程已启动
+    try:
+        start_device_monitor()
+    except Exception:
+        pass
+    # 主动刷新一次设备状态，提升响应速度
+    try:
+        check_adb_connection()
+    except Exception:
+        pass
 
     # 返回当前设备状态
     status_copy = {
         'connected': device_status['connected'],
         'devices': device_status['devices'],
+        'selected': selected_device,
         'last_check_time': device_status['last_check_time'],
-        'disconnect_detected': device_status.get('disconnect_detected', False)
+        'disconnect_detected': device_status.get('disconnect_detected', False),
+        'connect_detected': device_status.get('connect_detected', False),
+        'adb_issue': device_status.get('adb_issue', False),
+        'adb_error': device_status.get('adb_error', '')
     }
 
-    # 重置断开检测标记（前端已经收到通知）
+    # 重置检测标记（前端已经收到通知）
     if device_status.get('disconnect_detected', False):
         device_status['disconnect_detected'] = False
+    if device_status.get('connect_detected', False):
+        device_status['connect_detected'] = False
 
     return jsonify(status_copy)
+
+
+@app.route('/api/devices')
+def api_list_devices():
+    """列出ADB设备并返回当前选中设备"""
+    connected, devices = check_adb_connection()
+    return jsonify({
+        'connected': connected,
+        'devices': devices,
+        'selected': selected_device
+    })
+
+
+@app.route('/api/select_device', methods=['POST'])
+def api_select_device():
+    """选择当前操作的ADB设备"""
+    global selected_device
+    data = request.get_json(silent=True) or {}
+    serial = (data.get('serial') or '').strip()
+    _, devices = check_adb_connection()
+    if not serial:
+        return jsonify({'success': False, 'error': '缺少serial'}), 400
+    if serial not in devices:
+        return jsonify({'success': False, 'error': '设备不在连接列表中'}), 400
+    selected_device = serial
+    return jsonify({'success': True, 'selected': selected_device})
+
+
+@app.route('/api/adb_restart', methods=['POST'])
+def adb_restart():
+    """尝试重启ADB服务（kill-server/start-server）"""
+    try:
+        ok1, _, err1 = run_adb_command('adb kill-server', timeout=5)
+        ok2, _, err2 = run_adb_command('adb start-server', timeout=10)
+        # 重启后立即刷新一次状态
+        check_adb_connection()
+        if ok2:
+            return jsonify({'success': True, 'message': 'ADB服务已重启'})
+        else:
+            return jsonify({'success': False, 'error': (err2 or '重启失败')}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/scan', methods=['POST'])
 def scan():
@@ -947,7 +1410,8 @@ def get_scan_status():
         'files_processed': scan_status['files_processed'],
         'total_files': scan_status['total_files'],
         'photo_count': len(scan_status['photos']),
-        'error': scan_status['error']
+        'error': scan_status['error'],
+        'albums_preview': scan_status.get('albums_preview', {})
     })
 
 @app.route('/api/scan_result')
@@ -957,13 +1421,282 @@ def get_scan_result():
         return jsonify({
             'success': True,
             'count': len(scan_status['photos']),
-            'photos': scan_status['photos']
+            'photos': scan_status['photos'],
+            'albums': scan_status.get('albums', {})
         })
     else:
         return jsonify({
             'success': False,
             'error': '扫描未完成'
         }), 400
+
+
+def _guess_mimetype_from_ext(path):
+    ext = PurePosixPath(path).suffix.lower()
+    if ext in {'.jpg', '.jpeg', '.jpe'}:
+        return 'image/jpeg'
+    if ext == '.png':
+        return 'image/png'
+    if ext == '.gif':
+        return 'image/gif'
+    if ext == '.webp':
+        return 'image/webp'
+    if ext == '.bmp':
+        return 'image/bmp'
+    return 'application/octet-stream'
+
+
+def _preview_local_path(remote_path: str) -> str:
+    """根据远程路径生成缓存预览文件本地路径（带原始扩展名）"""
+    ext = PurePosixPath(remote_path).suffix.lower()
+    if ext not in PREVIEW_IMAGE_EXTS:
+        ext = '.jpg'
+    h = hashlib.sha1(remote_path.encode('utf-8', errors='ignore')).hexdigest()
+    return os.path.join(PREVIEW_DIR, f"{h}{ext}")
+
+
+@app.route('/api/preview')
+def photo_preview():
+    """相册封面预览：拉取相册首张照片到本地缓存并返回"""
+    remote_path = request.args.get('path', '').strip()
+    if not remote_path:
+        return jsonify({'success': False, 'error': '缺少路径参数'}), 400
+
+    ext = PurePosixPath(remote_path).suffix.lower()
+    if ext not in PREVIEW_IMAGE_EXTS:
+        return jsonify({'success': False, 'error': '不支持的预览格式'}), 415
+
+    local_path = _preview_local_path(remote_path)
+
+    if not os.path.exists(local_path):
+        connected, _ = check_adb_connection()
+        if not connected:
+            return jsonify({'success': False, 'error': '设备未连接'}), 503
+
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        quoted_remote = remote_path.replace('"', '\\"')
+        quoted_local = local_path.replace('"', '\\"')
+        pull_cmd = f'adb pull "{quoted_remote}" "{quoted_local}"'
+        ok, stdout, stderr = run_adb_command(pull_cmd, timeout=60)
+        if not ok or not os.path.exists(local_path):
+            return jsonify({'success': False, 'error': '预览拉取失败'}), 500
+
+    try:
+        resp = send_file(local_path, mimetype=_guess_mimetype_from_ext(local_path), conditional=True)
+        # 强缓存，提升刷新体验（预览文件名基于内容路径哈希，长期有效）
+        resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return resp
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _map_usb_speed(speed_str: str):
+    s = (speed_str or '').strip().lower()
+    if 'super-speed-plus' in s:
+        return {'code': 'super-speed-plus', 'label': 'USB 3.1/3.2 (10–20 Gbps)', 'gbps': 10}
+    if 'super-speed' in s:
+        return {'code': 'super-speed', 'label': 'USB 3.0/3.1 Gen1 (5 Gbps)', 'gbps': 5}
+    if 'high-speed' in s:
+        return {'code': 'high-speed', 'label': 'USB 2.0 (480 Mbps)', 'gbps': 0.48}
+    if 'full-speed' in s:
+        return {'code': 'full-speed', 'label': 'USB 1.1 (12 Mbps)', 'gbps': 0.012}
+    return {'code': 'unknown', 'label': '未知速率', 'gbps': 0}
+
+
+@app.route('/api/usb/burst_mode', methods=['GET', 'POST'])
+def adb_burst_mode():
+    """获取或设置ADB Burst模式状态"""
+    global ADB_BURST_MODE_ENABLED
+
+    if request.method == 'GET':
+        return jsonify({
+            'success': True,
+            'enabled': ADB_BURST_MODE_ENABLED == '1',
+            'status': '已启用' if ADB_BURST_MODE_ENABLED == '1' else '已禁用'
+        })
+
+    elif request.method == 'POST':
+        data = request.get_json()
+        enabled = data.get('enabled', True)
+
+        # 更新全局变量
+        ADB_BURST_MODE_ENABLED = '1' if enabled else '0'
+
+        # 设置环境变量
+        os.environ['ADB_DELAYED_ACK'] = ADB_BURST_MODE_ENABLED
+
+        print(f"🚀 ADB Burst模式 {'启用' if enabled else '禁用'}")
+
+        return jsonify({
+            'success': True,
+            'enabled': enabled,
+            'message': f"ADB Burst模式已{'启用' if enabled else '禁用'}"
+        })
+
+@app.route('/api/usb/speed')
+def api_usb_speed():
+    """获取Android端当前USB速率（通过ADB读取sysfs/dumpsys）"""
+    connected, _ = check_adb_connection()
+    if not connected:
+        return jsonify({'success': False, 'error': '设备未连接'}), 400
+
+    # 1) sysfs: /sys/class/udc/*/current_speed 或通过 usb_gadget 获取 UDC 名称
+    try:
+        # 优先直接读取 current_speed
+        cmd1 = "adb shell 'for f in /sys/class/udc/*/current_speed; do cat \"$f\"; done 2>/dev/null'"
+        ok, out, err = run_adb_command(cmd1, timeout=3)
+        speed_line = ''
+        if ok and out.strip():
+            speed_line = out.strip().split('\n')[0]
+        else:
+            # 尝试通过 usb_gadget 找到 UDC 名称后读取
+            cmd_udc = "adb shell 'for g in /sys/class/usb_gadget/*/UDC; do cat \"$g\"; done 2>/dev/null'"
+            ok2, out2, _ = run_adb_command(cmd_udc, timeout=3)
+            if ok2 and out2.strip():
+                udc = out2.strip().split('\n')[0]
+                cmd2 = f"adb shell 'cat /sys/class/udc/{udc}/current_speed 2>/dev/null'"
+                ok3, out3, _ = run_adb_command(cmd2, timeout=3)
+                if ok3 and out3.strip():
+                    speed_line = out3.strip().split('\n')[0]
+        if speed_line:
+            m = _map_usb_speed(speed_line)
+            m.update({'success': True, 'source': 'sysfs', 'raw': out.strip()})
+            return jsonify(m)
+    except Exception:
+        pass
+
+    # 2) dumpsys usb（某些机型会包含速度字段）
+    try:
+        ok, out, err = run_adb_command("adb shell dumpsys usb", timeout=4)
+        if ok and out:
+            # 在 Python 侧查找包含 speed 的行
+            raw = out
+            line = ''
+            for l in raw.splitlines():
+                ls = l.strip()
+                if 'speed' in ls.lower():
+                    line = ls
+                    break
+            if line:
+                m = _map_usb_speed(line)
+                m.update({'success': True, 'source': 'dumpsys', 'raw': line})
+                return jsonify(m)
+    except Exception:
+        pass
+
+    # 3) 基于快速拉取的基准测试（非root可用）
+    try:
+        bench = _benchmark_usb_speed()
+        if bench and bench.get('measured_mbps', 0) > 0:
+            bench.update({'success': True, 'source': 'bench'})
+            return jsonify(bench)
+    except Exception:
+        pass
+
+    # 最后返回未知（占位）
+    m = _map_usb_speed('')
+    m.update({'success': True, 'source': 'none', 'raw': ''})
+    return jsonify(m)
+
+
+def _benchmark_usb_speed(size_mb: int = 64):
+    """通过adb在/sdcard/Download生成临时文件并pull到本地，估算实际MB/s。改进版本支持USB 3.2高速检测。"""
+    import time as _t
+
+    print(f"🚀 开始USB速度基准测试 (测试文件: {size_mb}MB)...")
+
+    remote_path = f"/sdcard/Download/.usb_speed_test.bin"
+    local_dir = PREVIEW_DIR if os.path.isdir(PREVIEW_DIR) else OUTPUT_DIR
+    os.makedirs(local_dir, exist_ok=True)
+    local_path = os.path.join(local_dir, 'usb_speed_test.bin')
+
+    # 生成远程测试文件（更大的文件以获得准确的高速测试）
+    print(f"📝 生成测试文件: {remote_path} (Burst模式: {ADB_BURST_MODE_ENABLED == '1'})")
+    ok1, _, _ = run_adb_command(f"adb shell 'dd if=/dev/zero of=\"{remote_path}\" bs=1M count={size_mb} 2>/dev/null'", timeout=30)
+    if not ok1:
+        print("❌ 无法生成测试文件，基准测试失败")
+        return None
+
+    # 多次测试以获得更准确的结果
+    speed_samples = []
+    test_rounds = 3  # 进行3轮测试
+
+    for i in range(test_rounds):
+        print(f"⚡ 第 {i+1}/{test_rounds} 轮测试...")
+
+        # 确保本地文件不存在
+        if os.path.exists(local_path):
+            os.remove(local_path)
+
+        # 拉取并计时（强制启用Burst模式以获得最佳性能）
+        start = _t.time()
+        ok2, _, _ = run_adb_command(f"adb pull \"{remote_path}\" \"{local_path}\"", timeout=60, enable_burst=True)
+        elapsed = max(0.001, _t.time() - start)
+
+        if ok2 and os.path.exists(local_path):
+            size = os.path.getsize(local_path)
+            speed_mbps = (size / 1024.0 / 1024.0) / elapsed
+            speed_samples.append(speed_mbps)
+            print(f"📊 第 {i+1} 轮结果: {speed_mbps:.1f} MB/s")
+
+            # 清理本地文件
+            os.remove(local_path)
+        else:
+            print(f"❌ 第 {i+1} 轮测试失败")
+
+    # 清理远程文件
+    run_adb_command(f"adb shell 'rm -f \"{remote_path}\"'", timeout=10)
+
+    if not speed_samples:
+        print("❌ 所有测试轮次都失败了")
+        return None
+
+    # 计算平均速度和最大速度
+    avg_speed = sum(speed_samples) / len(speed_samples)
+    max_speed = max(speed_samples)
+    min_speed = min(speed_samples)
+
+    print(f"📈 速度测试结果:")
+    print(f"   平均速度: {avg_speed:.1f} MB/s")
+    print(f"   最高速度: {max_speed:.1f} MB/s")
+    print(f"   最低速度: {min_speed:.1f} MB/s")
+    print(f"   速度范围: {max_speed - min_speed:.1f} MB/s")
+
+    # 使用最高速度作为USB速度等级判断依据（更能反映真实性能）
+    measured_mbps = max_speed
+
+    # 更新USB速度等级判断阈值，支持USB 3.2高速传输
+    if measured_mbps >= 1000:  # USB 3.2 Gen 2x2: 20Gbps = 2500MB/s
+        code, label = 'bench-3.2-2x2', 'USB 3.2 Gen 2x2 (估算)'
+    elif measured_mbps >= 500:  # USB 3.2 Gen 2: 10Gbps = 1250MB/s
+        code, label = 'bench-3.2', 'USB 3.2 Gen 2 (估算)'
+    elif measured_mbps >= 250:  # USB 3.1/3.2 Gen 1: 5Gbps = 625MB/s
+        code, label = 'bench-3.1', 'USB 3.1/3.2 Gen 1 (估算)'
+    elif measured_mbps >= 150:  # USB 3.0: 5Gbps = 625MB/s
+        code, label = 'bench-3.0', 'USB 3.0 (估算)'
+    elif measured_mbps >= 40:  # USB 2.0 高端
+        code, label = 'bench-2.0-hi', 'USB 2.0 高速 (估算)'
+    elif measured_mbps >= 15:  # USB 2.0 标准
+        code, label = 'bench-2.0', 'USB 2.0 (估算)'
+    else:
+        code, label = 'bench-unknown', 'USB 未知 (估算)'
+
+    # 计算等效的Gbps
+    gbps = measured_mbps * 8 / 1024  # MB/s to Gbps conversion
+
+    print(f"🎯 检测结果: {label} - {measured_mbps:.1f} MB/s ({gbps:.2f} Gbps)")
+
+    return {
+        'code': code,
+        'label': label,
+        'gbps': round(gbps, 2),
+        'measured_mbps': round(measured_mbps, 1),
+        'avg_mbps': round(avg_speed, 1),
+        'max_mbps': round(max_speed, 1),
+        'min_mbps': round(min_speed, 1),
+        'test_rounds': test_rounds,
+        'test_size_mb': size_mb
+    }
 
 @app.route('/api/check_progress')
 def check_progress():
@@ -1043,6 +1776,24 @@ def transfer():
             'success': False,
             'error': '没有选择照片'
         }), 400
+
+    # 检测USB速度并保存到传输状态
+    try:
+        print("🔍 正在检测USB设备速度...")
+        usb_info = get_usb_speed()
+        if usb_info and usb_info.get('success'):
+            transfer_status['usb_info'] = {
+                'label': usb_info.get('label', 'USB 未知'),
+                'measured_mbps': usb_info.get('measured_mbps', 0),
+                'gbps': usb_info.get('gbps', 0)
+            }
+            print(f"📡 USB设备检测: {usb_info.get('label')} - {usb_info.get('measured_mbps', 0):.1f} MB/s")
+        else:
+            print("⚠️ 无法检测USB速度")
+            transfer_status['usb_info'] = {'label': 'USB 未知', 'measured_mbps': 0, 'gbps': 0}
+    except Exception as e:
+        print(f"⚠️ USB速度检测失败: {e}")
+        transfer_status['usb_info'] = {'label': 'USB 未知', 'measured_mbps': 0, 'gbps': 0}
 
     # 启动后台传输线程
     thread = threading.Thread(target=transfer_photos_thread, args=(photos, output_dir, False))
@@ -2773,4 +3524,6 @@ if __name__ == '__main__':
     print("   M4芯片性能全开，准备起飞！🚀")
     print("=" * 60 + "\n")
 
+    # 在服务启动前启动设备监控线程（避免debug模式重复启动，使用标记控制）
+    start_device_monitor()
     app.run(debug=True, host='0.0.0.0', port=9500, threaded=True)
