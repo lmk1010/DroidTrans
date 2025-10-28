@@ -2280,6 +2280,103 @@ def wifi_delete_photo():
             'error': str(e)
         }), 500
 
+@app.route('/api/wifi/delete_batch', methods=['POST'])
+def wifi_delete_batch():
+    """删除指定批次及其所有照片"""
+    try:
+        data = request.get_json() or {}
+        device_id = data.get('device_id')
+        batch_id = data.get('batch_id')
+
+        if not device_id or not batch_id:
+            return jsonify({
+                'success': False,
+                'error': '缺少必要参数'
+            }), 400
+
+        # 构建批次目录路径
+        base_output_dir = wifi_mode_status.get('output_dir', OUTPUT_DIR)
+        device_output_dir = os.path.join(base_output_dir, device_id)
+        batch_dir = os.path.join(device_output_dir, batch_id)
+
+        # 安全检查：确保路径在设备输出目录内
+        batch_dir_abs = os.path.abspath(batch_dir)
+        device_output_dir_abs = os.path.abspath(device_output_dir)
+
+        if not batch_dir_abs.startswith(device_output_dir_abs):
+            print(f"❌ 非法路径访问: {batch_dir_abs}")
+            return jsonify({
+                'success': False,
+                'error': '非法路径'
+            }), 403
+
+        # 检查批次目录是否存在
+        if not os.path.exists(batch_dir_abs):
+            return jsonify({
+                'success': False,
+                'error': '批次目录不存在'
+            }), 404
+
+        print(f"\n🗑️ 删除批次:")
+        print(f"   设备ID: {device_id[:8]}...")
+        print(f"   批次ID: {batch_id}")
+        print(f"   批次路径: {batch_dir_abs}")
+
+        # 计算要删除的文件数量
+        photo_count = 0
+        for root, dirs, files in os.walk(batch_dir_abs):
+            photo_count += len([f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic'))])
+
+        print(f"   包含 {photo_count} 张照片")
+
+        # 删除整个批次目录
+        import shutil
+        shutil.rmtree(batch_dir_abs)
+        print(f"✅ 批次目录已删除")
+
+        # 从内存中的批次记录中移除
+        if device_id in device_upload_batches:
+            if batch_id in device_upload_batches[device_id].get('batches', {}):
+                del device_upload_batches[device_id]['batches'][batch_id]
+                print(f"   从内存记录中移除")
+
+        # 从数据库中删除批次记录
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # 删除批次中的所有照片记录
+            cursor.execute("""
+                DELETE FROM photos
+                WHERE device_id = ? AND batch_id = ?
+            """, (device_id, batch_id))
+
+            # 删除批次记录
+            cursor.execute("""
+                DELETE FROM batches
+                WHERE device_id = ? AND batch_id = ?
+            """, (device_id, batch_id))
+
+            conn.commit()
+            conn.close()
+            print(f"   从数据库中删除")
+        except Exception as db_error:
+            print(f"⚠️ 删除数据库记录失败: {str(db_error)}")
+
+        return jsonify({
+            'success': True,
+            'message': f'批次已删除，共删除 {photo_count} 张照片'
+        })
+
+    except Exception as e:
+        print(f"❌ 删除批次失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/upload/init', methods=['POST'])
 def init_upload():
     """初始化上传会话"""

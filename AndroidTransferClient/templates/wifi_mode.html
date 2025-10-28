@@ -297,6 +297,20 @@
             background: rgba(25, 118, 210, 0.22);
         }
 
+        .btn-danger {
+            background: #d32f2f;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c62828;
+            box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+        }
+
+        .btn-danger:active {
+            background: #b71c1c;
+        }
+
         .content {
             padding: 32px 40px;
         }
@@ -805,10 +819,22 @@
                         </span>
                         批次
                     </div>
-                    <select id="batchSelector" onchange="switchBatch()" 
-                            style="padding: 10px 12px; border: 1px solid #dadce0; border-radius: 8px; background: white; font-size: 13px; cursor: pointer; width: 100%;">
-                        <option value="">请先选择设备</option>
-                    </select>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="batchSelector" onchange="switchBatch()"
+                                style="flex: 1; padding: 10px 12px; border: 1px solid #dadce0; border-radius: 8px; background: white; font-size: 13px; cursor: pointer;">
+                            <option value="">请先选择设备</option>
+                        </select>
+                        <button class="btn btn-danger" onclick="deleteBatch()"
+                                style="height: 36px; font-size: 13px; padding: 0 16px; display: flex; align-items: center; justify-content: center;"
+                                title="删除当前批次及其所有照片">
+                            <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                <line x1="10" y1="11" x2="10" y2="17"></line>
+                                <line x1="14" y1="11" x2="14" y2="17"></line>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 操作按钮 -->
@@ -1424,6 +1450,46 @@
             }
             // 阻止事件冒泡
             event.stopPropagation();
+        }
+
+        // 删除批次
+        async function deleteBatch() {
+            if (!currentDeviceId || !currentBatchId) {
+                showToast('请先选择要删除的批次', 'warning');
+                return;
+            }
+
+            // 获取批次信息用于确认对话框
+            const batchSelector = document.getElementById('batchSelector');
+            const selectedOption = batchSelector.options[batchSelector.selectedIndex];
+            const batchName = selectedOption ? selectedOption.text : '当前批次';
+
+            if (!confirm(`确定要删除批次 "${batchName}" 及其所有照片吗？\n\n⚠️ 此操作不可恢复！所有照片将被永久删除！`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/wifi/delete_batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device_id: currentDeviceId,
+                        batch_id: currentBatchId
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    showToast(data.message || '批次已删除', 'success');
+                    // 重新加载设备的批次列表
+                    await loadDeviceBatches(currentDeviceId);
+                } else {
+                    showToast('删除失败: ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('删除批次失败:', error);
+                showToast('删除失败: ' + error.message, 'error');
+            }
         }
 
         // ESC键关闭预览

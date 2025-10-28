@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,更始宽度=设备宽度">
+    <title>Love You To Infinity</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f5f7fa;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+
+        /* 主爱心容器 */
+        .heart-container {
+            position: relative;
+            width: 300px;
+            height: 250px;
+        }
+
+        /* 爱心CSS样式 */
+        .heart {
+            position: relative;
+            width: 100%;
+            height: 90.9% /* 高度大约是宽度的两倍，形成爱心比例 */;
+            transform-origin: center;
+        }
+
+        /* 爱心内部结构 */
+        .heart:before, .heart:after {
+            content: "";
+            position: absolute;
+            top: -34%;
+            left: 0;
+            z-index: 16;
+            width: 50px; /* 水平尺寸 */
+            height: calc(100% + 68%); /* 垂直尺寸 */
+            border-radius: 50%;
+            background-color: #ff2a75;
+            /* 创建双曲面爱心 */
+        }
+
+        .heart:before {
+            -ms-transform: rotate(45deg);
+            transform: rotate(45deg);
+        }
+
+        .heart:after {
+            -ms-transform: rotate(-45deg);
+            transform: rotate(-45deg);
+        }
+
+        /* 使用Canvas创建立体感的爱心 */
+        .heart-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 星星背景 */
+        .stars {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+
+        /* 星星元素 */
+        .stars div {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background-color: white;
+        }
+
+        /* 爱心文字 */
+        .love-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #ff2a75;
+            text-align: center;
+            animation: appear 1s ease-in-out forwards;
+        }
+
+        /* 文字动画 */
+        @keyframes appear {
+            from { opacity: 0; transform: translate(-50%, -45%) scale(1); }
+            to { opacity: 1; transform: translate(-50%, -45%) scale(1); }
+        }
+
+        /* 心跳动画 */
+        @keyframes heartbeat {
+            0% { transform: scale(1) translate(-50%, -45%); }
+            25% { transform: scale(1.9) translate(-50%, -45%); }
+            50% { transform: scale(1) translate(-50%, -45%); }
+            75% { transform: scale(1.9) translate(-50%, -45%); }
+            100% { transform: scale(1) translate(-50%, -45%); }
+        }
+
+        /* 页面加载完成后的文字样式 */
+        .love-text {
+            animation: heartbeat 2s infinite;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* 心跳效果 */
+        .heart-container {
+            animation: heartbeat 2s infinite;
+        }
+
+        /* 点击爱心放大 */
+        .love-text:after {
+            content: "Love You To Infinity";
+        }
+
+        /* 添加随机点击效果 */
+        .love-text:before {
+            content: "";
+            position: absolute;
+            left: -130%;
+            top: calc(50% - 24px);
+            background-color: rgba(255, 170, 234, 0.8);
+            animation: textPulse 1s forwards;
+        }
+
+        /* 文字脉动动画 */
+        @keyframes textPulse {
+            0% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+            50% { transform: translate(var(--tx), calc(-23px - 16px)) scale(0.8); opacity: 0; }
+            100% { transform: translate(var(--tx), calc(-23px - 16px)) scale(0.8); opacity: 0; }
+        }
+
+        /* 样式注入 */
+        script {
+            position: absolute;
+            left: -9999px;
+            display:none;
+        }
+    </style>
+</head>
+<body>
+<!-- 爱心标题 -->
+<div class="love-text">Love You To Infinity</div>
+
+<!-- HTML爱心容器 -->
+<div class="heart-container">
+    <canvas id="animatedHeart" width="200" height="180"></canvas>
+    <div class="heart-box">❤</div>
+</div>
+
+<!-- 背景星星 -->
+<div class="stars" id="canvasOverlay"></div>
+
+<!-- 添加CSS爱心作为背景增强 -->
+<div class="heart" id="cssHeart"></div>
+
+<!-- 添加随机浮动的CSS爱心 -->
+<script>
+    // 动态添加星星背景并处理文本动画
+    document.addEventListener('DOMContentLoaded', function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 800;
+        canvas.height = window.innerHeight - 160;
+
+        // 处理Canvas位置
+        const container = document.getElementById('canvasOverlay');
+        if (container) {
+            // 清除星星元素，创建新的Canvas实例
+            container.replaceWith(canvas);
+        }
+
+        // 创建更多星星背景，增加视觉层次感
+        if (canvas.parentElement) {
+            const ctx = canvas.getContext('2d');
+
+            // 创建星星背景
+            function createStars() {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                for (let i = 0; i < 200; i++) {
+                    // 随机位置
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * canvas.height;
+
+                    // 随机大小
+                    const size = 1 + Math.random() * 3;
+
+                    // 随机闪烁效果
+                    const opacity = Math.random();
+
+                    // 绘制圆点
+                    ctx.beginPath();
+                    ctx.arc(x, y, size/4, 0, Math.PI * 2);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            // 创建星星背景并开始动画
+            function animateStars() {
+                requestAnimationFrame(animateStars);
+
+                // 每帧清除并重新绘制星星
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // 移动星星，创造一种闪烁效果
+                const time = new Date().getTime();
+                for (let i = 0; i < stars.length; i++) {
+                    const opacityChange = Math.sin((i * 20) + time/50) / 8;
+                    const star = stars[i];
+
+                    // 更新星星位置或大小来创造运动效果
+                    ctx.beginPath();
+                    const dx = (Math.random() - 0.5) * 1;
+                    star.x += dx;
+
+                    // 省略其他动画细节，保持简洁
+
+                }
+            }
+
+        }
+
+        const cssHeart = document.getElementById('cssHeart');
+        if(cssHeart) {
+            // 处理CSS爱心动画
+            setTimeout(() => cssHeart.style.animationPlayState = 'running', 0);
+        }
+    });
+</script>
+</body>
+</html>
