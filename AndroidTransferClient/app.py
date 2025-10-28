@@ -12,10 +12,13 @@ from pathlib import Path, PurePosixPath
 from flask import Flask, render_template, jsonify, request, send_file
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from werkzeug.utils import secure_filename
+import re
 
 # ADB Burst Mode 配置
 ADB_BURST_MODE_ENABLED = os.getenv('ADB_BURST_MODE', '1')  # 默认启用Burst模式
+FAST_ALBUM_SCAN = os.getenv('FAST_ALBUM_SCAN', '1') in ('1','true','on','yes')  # 仅相册封面快速扫描
 
 app = Flask(__name__)
 
@@ -43,6 +46,10 @@ OUTPUT_DIR = get_output_dir()  # 照片输出目录
 BATCH_PREVIEW_DIR_NAME = 'previews'
 PREVIEW_DIR = os.path.join(OUTPUT_DIR, BATCH_PREVIEW_DIR_NAME)
 os.makedirs(PREVIEW_DIR, exist_ok=True)
+THUMB_DIR = os.path.join(PREVIEW_DIR, 'thumbs')
+os.makedirs(THUMB_DIR, exist_ok=True)
+THUMB_CACHE_MAX_MB = int(os.getenv('THUMB_CACHE_MAX_MB', '1024'))  # 默认 1GB 上限
+PREVIEW_ORIG_MAX_MB = int(os.getenv('PREVIEW_ORIG_MAX_MB', '8192'))  # 原图缓存上限 8GB
 BATCH_SIZE = 50  # 每批传输的照片数量（已废弃，使用并发传输）
 MAX_RETRIES = 2  # 最大重试次数（降低以加快失败文件的处理）
 
@@ -97,7 +104,9 @@ scan_status = {
     'photos': [],
     'error': None,
     'albums_preview': {},
-    'albums_map': {}
+    'albums_map': {},
+    'thumbs_total': 0,
+    'thumbs_done': 0
 }
 
 # 设备连接状态
@@ -125,6 +134,18 @@ wifi_mode_status = {
     'last_sync_time': None,
     'output_dir': OUTPUT_DIR  # WiFi模式的输出目录
 }
+
+# USB 速率缓存（按当前选中设备缓存一次，断开或切换设备后清空）
+usb_speed_cache = {
+    'device': None,
+    'data': None,
+    'ts': 0,
+}
+
+# 缩略图后台执行器与任务去重
+THUMB_MAX_WORKERS = int(os.getenv('THUMB_MAX_WORKERS', '8'))
+thumb_executor = ThreadPoolExecutor(max_workers=max(2, min(32, THUMB_MAX_WORKERS)))
+thumb_inflight = set()  # set of remote_path
 
 # 按设备存储照片记录（按批次组织）
 device_photos = {}  # 旧格式，保留兼容
@@ -209,6 +230,7 @@ SUPPORTED_EXTENSIONS = {
 
 # 预览仅支持的图片扩展名（封面用）
 PREVIEW_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.heic', '.heif'}
+PREVIEW_VIDEO_EXTS = {'.mp4', '.m4v', '.mov', '.3gp', '.3g2', '.webm', '.mkv', '.avi', '.flv'}
 
 
 def has_supported_extension(file_path):
@@ -386,6 +408,13 @@ def check_adb_connection():
     if connected and not was_connected:
         device_status['connect_detected'] = True
         print(f"\n🎉 检测到新设备连接: {', '.join(devices)}")
+        # 设备变更：清空USB速率缓存
+        try:
+            usb_speed_cache['device'] = None
+            usb_speed_cache['data'] = None
+            usb_speed_cache['ts'] = 0
+        except Exception:
+            pass
     elif connected and was_connected:
         # 检查是否有新设备插入（多个设备情况）
         new_devices = current_devices - was_connected_devices
@@ -662,6 +691,83 @@ def scan_photos_thread():
         # 确保 Pictures 根目录优先，再按名称排序子目录
         album_dirs = sorted(set(all_album_dirs), key=lambda p: (p != pictures_root and p != camera_dir, p.lower()))
 
+        if FAST_ALBUM_SCAN:
+            print("\n⚡ 启用快速相册扫描模式（仅封面与目录列表）")
+            albums = {}
+            for dir_path in album_dirs:
+                if not scan_status['is_running']:
+                    break
+                # 选择封面（优先图片，其次任意文件）
+                cover = ''
+                try:
+                    # -p 为目录名添加斜杠，便于过滤；-t 时间倒序
+                    ok_ls, out_ls, _ = run_adb_command(f"adb shell 'ls -1pt " + dir_path.replace("'","'\''") + " 2>/dev/null'", timeout=6)
+                    if ok_ls and out_ls:
+                        entries = [l.strip() for l in out_ls.splitlines() if l.strip()]
+                        files = [nm for nm in entries if not nm.endswith('/')]
+                        # 先选图片封面
+                        for nm in files:
+                            p = dir_path.rstrip('/') + '/' + nm
+                            if PurePosixPath(p).suffix.lower() in PREVIEW_IMAGE_EXTS:
+                                cover = p
+                                break
+                        # 再选视频封面
+                        if not cover:
+                            for nm in files:
+                                p = dir_path.rstrip('/') + '/' + nm
+                                if PurePosixPath(p).suffix.lower() in PREVIEW_VIDEO_EXTS:
+                                    cover = p
+                                    break
+                except Exception:
+                    pass
+                # 统计文件数（快速方式，可能包含少量非媒体）
+                total_count = 0
+                try:
+                    ok_cnt, out_cnt, _ = run_adb_command(f"adb shell 'ls -1 " + dir_path.replace("'","'\''") + " 2>/dev/null | wc -l'", timeout=5)
+                    if ok_cnt and out_cnt.strip().isdigit():
+                        total_count = int(out_cnt.strip())
+                except Exception:
+                    pass
+                # 统计目录大小（KB）
+                total_size = 0
+                try:
+                    ok_sz, out_sz, _ = run_adb_command(f"adb shell 'du -sk " + dir_path.replace("'","'\''") + " 2>/dev/null'", timeout=6)
+                    if ok_sz and out_sz.strip():
+                        first = out_sz.strip().split()[0]
+                        if first.isdigit():
+                            total_size = int(first) * 1024
+                except Exception:
+                    pass
+                album_name = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
+                albums[dir_path] = {
+                    'name': album_name,
+                    'icon': '📁',
+                    'priority': 10,
+                    'photos': [],  # 延迟加载
+                    'total_count': total_count,
+                    'total_size': total_size,
+                    'cover': cover
+                }
+            scan_status['albums'] = albums
+            scan_status['stage'] = 'done'
+            # 异步封面缩略图生成
+            try:
+                covers = [a.get('cover') for a in albums.values() if a.get('cover')]
+                print(f"🎯 封面预生成(后台): {len(covers)}")
+                for c in covers:
+                    try:
+                        lp = _preview_local_path(c)
+                        tp = _thumb_local_path(c, size=256)
+                        if os.path.exists(tp) and os.path.getsize(tp) > 0:
+                            continue
+                        thumb_executor.submit(lambda p=c, l=lp, t=tp: _ensure_local_and_thumb(p, l, t, -1))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            print(f"✅ 快速相册扫描完成: {len(albums)} 个相册")
+            return
+
         for dir_path in album_dirs:
             if not scan_status['is_running']:
                 break
@@ -912,8 +1018,38 @@ def scan_photos_thread():
         for album_key, album_data in sorted(scan_status['albums'].items(), key=lambda x: x[1]['priority']):
             print(f"   {album_data['icon']} {album_data['name']}: {album_data['total_count']} 张 ({album_data['total_size']/1024/1024:.2f} MB)")
 
-        print(f"{'='*60}\n")
+        # 默认不在扫描阶段批量生成缩略图（避免首屏等待）。
+        # 相册封面优先生成（不阻塞）：每个相册选封面1张生成缩略图
+        try:
+            covers = []
+            for album_key, album in scan_status.get('albums', {}).items():
+                cover = None
+                # 优先选择图片作为封面
+                for p in album.get('photos', []):
+                    ext = PurePosixPath(p['path']).suffix.lower()
+                    if ext in PREVIEW_IMAGE_EXTS:
+                        cover = p['path']
+                        break
+                if not cover and album.get('photos'):
+                    cover = album['photos'][0]['path']
+                if cover:
+                    covers.append(cover)
+            print(f"🎯 准备相册封面 {len(covers)} 张（后台生成）")
+            def _submit_cover(path):
+                try:
+                    local_path = _preview_local_path(path)
+                    thumb_path = _thumb_local_path(path, size=256)
+                    if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+                        return
+                    thumb_executor.submit(lambda: _ensure_local_and_thumb(path, local_path, thumb_path, -1))
+                except Exception:
+                    pass
+            for c in covers:
+                _submit_cover(c)
+        except Exception:
+            pass
 
+        print(f"{'='*60}\n")
         scan_status['stage'] = 'done'
 
     except Exception as e:
@@ -1411,7 +1547,9 @@ def get_scan_status():
         'total_files': scan_status['total_files'],
         'photo_count': len(scan_status['photos']),
         'error': scan_status['error'],
-        'albums_preview': scan_status.get('albums_preview', {})
+        'albums_preview': scan_status.get('albums_preview', {}),
+        'thumbs_total': scan_status.get('thumbs_total', 0),
+        'thumbs_done': scan_status.get('thumbs_done', 0)
     })
 
 @app.route('/api/scan_result')
@@ -1447,26 +1585,236 @@ def _guess_mimetype_from_ext(path):
 
 
 def _preview_local_path(remote_path: str) -> str:
-    """根据远程路径生成缓存预览文件本地路径（带原始扩展名）"""
+    """根据远程路径生成缓存原始文件本地路径（保留原始扩展名）。"""
     ext = PurePosixPath(remote_path).suffix.lower()
-    if ext not in PREVIEW_IMAGE_EXTS:
-        ext = '.jpg'
+    if not ext:
+        ext = '.bin'
     h = hashlib.sha1(remote_path.encode('utf-8', errors='ignore')).hexdigest()
     return os.path.join(PREVIEW_DIR, f"{h}{ext}")
+
+def _slug(s: str) -> str:
+    s = s.strip().replace(' ', '_')
+    return re.sub(r'[^A-Za-z0-9_\-\.]+', '_', s)[:64] or 'unknown'
+
+device_label_cache = {}
+
+def _get_current_device_label() -> str:
+    """获取当前设备的标签（serial_model），用于按机型分目录保存缩略图。"""
+    try:
+        if not selected_device:
+            return 'unknown_device'
+        if selected_device in device_label_cache:
+            return device_label_cache[selected_device]
+        ok_m, out_m, _ = run_adb_command("adb shell getprop ro.product.model", timeout=3)
+        ok_b, out_b, _ = run_adb_command("adb shell getprop ro.product.brand", timeout=3)
+        model = (out_m or '').strip() or 'device'
+        brand = (out_b or '').strip()
+        label = _slug(f"{selected_device}_{brand}_{model}")
+        device_label_cache[selected_device] = label
+        return label
+    except Exception:
+        return 'unknown_device'
+
+def _thumb_local_path(remote_path: str, size: int = 512) -> str:
+    """缩略图缓存路径（统一jpg扩展，按设备分目录）。"""
+    h = hashlib.sha1(remote_path.encode('utf-8', errors='ignore')).hexdigest()
+    dev = _get_current_device_label()
+    return os.path.join(THUMB_DIR, dev, f"{h}_{size}.jpg")
+
+def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 512, quality: int = 70) -> bool:
+    """将本地原图生成压缩缩略图到 dst_thumb_path。返回是否成功。"""
+    try:
+        from PIL import Image
+    except Exception:
+        return False
+
+    try:
+        os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+        with Image.open(src_local_path) as im:
+            im.load()
+            # 转换到RGB以统一输出jpg
+            if im.mode not in ('RGB', 'L'):
+                im = im.convert('RGB')
+            im.thumbnail((max_size, max_size))
+            im.save(dst_thumb_path, format='JPEG', quality=quality, optimize=True)
+        try:
+            sz = os.path.getsize(dst_thumb_path)
+            print(f"[preview] thumb generated: {dst_thumb_path} ({sz/1024:.1f} KB) | thread={threading.current_thread().name}")
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        # Pillow 失败，尝试 ffmpeg 作为兜底（处理HEIC/特殊格式）
+        try:
+            import shutil, subprocess
+            if shutil.which('ffmpeg'):
+                vf = f"scale=if(gt(iw,ih),{max_size},-2):if(gt(iw,ih),-2,{max_size})"
+                cmd = [
+                    'ffmpeg', '-y', '-i', src_local_path,
+                    '-frames:v', '1',
+                    '-vf', vf,
+                    '-q:v', '6',
+                    dst_thumb_path
+                ]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                try:
+                    sz = os.path.getsize(dst_thumb_path)
+                    print(f"[preview] ffmpeg thumb generated: {dst_thumb_path} ({sz/1024:.1f} KB) | thread={threading.current_thread().name}")
+                except Exception:
+                    pass
+                return True
+        except Exception as ee:
+            print(f"[preview] ffmpeg fallback failed: {ee}")
+        try:
+            if os.path.exists(dst_thumb_path):
+                os.remove(dst_thumb_path)
+        except Exception:
+            pass
+        print(f"[preview] thumb generation failed: {e}")
+        return False
+
+def _ensure_video_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 320, quality: int = 6) -> bool:
+    """使用ffmpeg从视频提取封面帧并保存为jpeg缩略图。quality为ffmpeg -q:v (2~31，越小越好)。"""
+    import shutil, subprocess
+    if not shutil.which('ffmpeg'):
+        # 尝试占位图生成
+        try:
+            from PIL import Image, ImageDraw
+            os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+            img = Image.new('RGB', (max_size, max_size), (32, 32, 32))
+            d = ImageDraw.Draw(img)
+            # 画一个播放三角形
+            w, h = max_size, max_size
+            tri = [(w*0.35, h*0.3), (w*0.35, h*0.7), (w*0.7, h*0.5)]
+            d.polygon(tri, fill=(220,220,220))
+            img.save(dst_thumb_path, format='JPEG', quality=65, optimize=True)
+            return True
+        except Exception:
+            return False
+    try:
+        os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+        # 简化滤镜，提升兼容性
+        vf = f"scale={max_size}:-2:force_original_aspect_ratio=decrease"
+        base = ['ffmpeg', '-v', 'error', '-nostdin', '-y']
+        attempts = [
+            base + ['-ss', '0.5', '-i', src_local_path, '-an', '-frames:v', '1', '-vf', vf, '-q:v', str(quality), dst_thumb_path],
+            base + ['-i', src_local_path, '-ss', '0.5', '-an', '-frames:v', '1', '-vf', vf, '-q:v', str(quality), dst_thumb_path],
+            base + ['-i', src_local_path, '-an', '-frames:v', '1', '-vf', vf, '-q:v', str(quality), dst_thumb_path],
+        ]
+        for cmd in attempts:
+            try:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                if os.path.exists(dst_thumb_path) and os.path.getsize(dst_thumb_path) > 0:
+                    try:
+                        sz = os.path.getsize(dst_thumb_path)
+                        print(f"[preview] video thumb generated: {dst_thumb_path} ({sz/1024:.1f} KB) | thread={threading.current_thread().name}")
+                    except Exception:
+                        pass
+                    return True
+            except subprocess.CalledProcessError:
+                continue
+        # 全部失败
+        try:
+            if os.path.exists(dst_thumb_path):
+                os.remove(dst_thumb_path)
+        except Exception:
+            pass
+        print(f"[preview] video thumb generation failed: all attempts failed for {src_local_path}")
+        return False
+    except Exception as e:
+        try:
+            if os.path.exists(dst_thumb_path):
+                os.remove(dst_thumb_path)
+        except Exception:
+            pass
+        print(f"[preview] video thumb generation failed: {e}")
+        return False
+
+def _dir_usage_bytes(dir_path: str):
+    total = 0
+    files = []
+    for root, _, filenames in os.walk(dir_path):
+        for fn in filenames:
+            fp = os.path.join(root, fn)
+            try:
+                st = os.stat(fp)
+                total += st.st_size
+                files.append((fp, st.st_size, st.st_mtime))
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+    return total, files
+
+def _cleanup_dir_cap(dir_path: str, cap_mb: int, target_ratio: float = 0.9):
+    """若目录占用超过 cap_mb，则按最久未修改时间开始删除，直到降到 cap_mb*target_ratio。"""
+    cap_bytes = cap_mb * 1024 * 1024
+    total, files = _dir_usage_bytes(dir_path)
+    if total <= cap_bytes:
+        return False, total
+    files.sort(key=lambda x: x[2])  # 按mtime升序，最老的优先删
+    target_bytes = int(cap_bytes * target_ratio)
+    removed = 0
+    for fp, sz, _ in files:
+        try:
+            os.remove(fp)
+            removed += sz
+            total -= sz
+            if total <= target_bytes:
+                break
+        except Exception:
+            continue
+    print(f"[cache] cleanup {dir_path}: removed {removed/1024/1024:.1f} MB, remain {total/1024/1024:.1f} MB")
+    return True, total
+
+def _ensure_local_and_thumb(remote_path: str, local_path: str, thumb_path: str, idx: int = -1) -> bool:
+    """确保拉取原图到本地并生成缩略图（极小尺寸），返回是否成功。"""
+    try:
+        if idx >= 0:
+            print(f"[thumb]#{idx} start {remote_path} | thread={threading.current_thread().name}")
+        if not os.path.exists(local_path):
+            quoted_remote = remote_path.replace('"', '\\"')
+            quoted_local = local_path.replace('"', '\\"')
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            ok, _, _ = run_adb_command(f'adb pull "{quoted_remote}" "{quoted_local}"', timeout=60, enable_burst=True)
+            if not ok or not os.path.exists(local_path):
+                return False
+        # 生成更小的缩略图（320px, 质量 55），视频提取首帧
+        need = (not os.path.exists(thumb_path)) or (os.path.getmtime(thumb_path) < os.path.getmtime(local_path))
+        if need:
+            ext = PurePosixPath(remote_path).suffix.lower()
+            if ext in PREVIEW_IMAGE_EXTS:
+                ok = _ensure_thumbnail(local_path, thumb_path, max_size=256, quality=50)
+            elif ext in PREVIEW_VIDEO_EXTS:
+                ok = _ensure_video_thumbnail(local_path, thumb_path, max_size=256, quality=8)
+            else:
+                return False
+        else:
+            ok = True
+        if idx >= 0:
+            try:
+                sz = os.path.getsize(thumb_path) if os.path.exists(thumb_path) else 0
+            except Exception:
+                sz = 0
+            print(f"[thumb]#{idx} done {remote_path} -> {os.path.basename(thumb_path)} ({sz/1024:.1f} KB) | thread={threading.current_thread().name}")
+        return ok
+    except Exception:
+        return False
 
 
 @app.route('/api/preview')
 def photo_preview():
-    """相册封面预览：拉取相册首张照片到本地缓存并返回"""
+    """相册/照片预览：拉取到本地后返回压缩缩略图，避免MB级原图占用带宽。"""
     remote_path = request.args.get('path', '').strip()
     if not remote_path:
         return jsonify({'success': False, 'error': '缺少路径参数'}), 400
 
     ext = PurePosixPath(remote_path).suffix.lower()
-    if ext not in PREVIEW_IMAGE_EXTS:
+    if ext not in PREVIEW_IMAGE_EXTS and ext not in PREVIEW_VIDEO_EXTS:
         return jsonify({'success': False, 'error': '不支持的预览格式'}), 415
 
     local_path = _preview_local_path(remote_path)
+    thumb_path = _thumb_local_path(remote_path, size=512)
 
     if not os.path.exists(local_path):
         connected, _ = check_adb_connection()
@@ -1481,13 +1829,172 @@ def photo_preview():
         if not ok or not os.path.exists(local_path):
             return jsonify({'success': False, 'error': '预览拉取失败'}), 500
 
+    # 生成缩略图（如必要）并返回缩略图
     try:
-        resp = send_file(local_path, mimetype=_guess_mimetype_from_ext(local_path), conditional=True)
-        # 强缓存，提升刷新体验（预览文件名基于内容路径哈希，长期有效）
+        need_generate = (not os.path.exists(thumb_path)) or (os.path.getmtime(thumb_path) < os.path.getmtime(local_path))
+    except Exception:
+        need_generate = True
+
+    if need_generate:
+        if ext in PREVIEW_IMAGE_EXTS:
+            ok = _ensure_thumbnail(local_path, thumb_path, max_size=256, quality=50)
+        else:
+            ok = _ensure_video_thumbnail(local_path, thumb_path, max_size=256, quality=8)
+        if not ok:
+            # Pillow 不可用或失败时，退回原图（但仍加上缓存头）
+            try:
+                resp = send_file(local_path, mimetype=_guess_mimetype_from_ext(local_path), conditional=True)
+                resp.headers['Cache-Control'] = 'public, max-age=86400'
+                return resp
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+        else:
+            # 每次生成后检查缩略图目录容量（轻量）
+            _cleanup_dir_cap(THUMB_DIR, THUMB_CACHE_MAX_MB)
+
+    try:
+        print(f"[thumb-serve] {thumb_path} | thread={threading.current_thread().name}")
+        resp = send_file(thumb_path, mimetype='image/jpeg', conditional=True)
+        # 强缓存，提升刷新体验（文件名基于路径哈希+尺寸，长期有效）
         resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
         return resp
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/thumb')
+def photo_thumb():
+    """仅返回已存在的缩略图；不存在则返回404（由前端批处理异步生成）。"""
+    remote_path = request.args.get('path', '').strip()
+    if not remote_path:
+        return jsonify({'success': False, 'error': '缺少路径参数'}), 400
+    thumb_path = _thumb_local_path(remote_path, size=256)
+    if not os.path.exists(thumb_path):
+        return ('', 404)
+    print(f"[thumb-serve] {thumb_path} | thread={threading.current_thread().name}")
+    resp = send_file(thumb_path, mimetype='image/jpeg', conditional=True)
+    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return resp
+
+@app.route('/api/thumb_exists')
+def photo_thumb_exists():
+    path = request.args.get('path', '').strip()
+    if not path:
+        return jsonify({'success': False, 'error': '缺少路径参数'}), 400
+    thumb_path = _thumb_local_path(path, size=256)
+    return jsonify({'success': True, 'exists': os.path.exists(thumb_path)})
+
+@app.route('/api/thumb_status', methods=['POST'])
+def photo_thumb_status():
+    data = request.get_json(silent=True) or {}
+    paths = data.get('paths') or []
+    res = []
+    for p in paths:
+        try:
+            res.append(os.path.exists(_thumb_local_path(p, size=256)))
+        except Exception:
+            res.append(False)
+    return jsonify({'success': True, 'ready': res})
+
+@app.route('/api/thumb_batch_generate', methods=['POST'])
+def photo_thumb_batch_generate():
+    data = request.get_json(silent=True) or {}
+    paths = data.get('paths') or []
+    batch_size = int(data.get('batch_size') or 30)
+    size = int(data.get('size') or 256)
+    submitted = 0
+    for p in paths[:batch_size]:
+        try:
+            local_path = _preview_local_path(p)
+            thumb_path = _thumb_local_path(p, size=size)
+            if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+                continue
+            if p in thumb_inflight:
+                continue
+            thumb_inflight.add(p)
+            def _task(remote=p, lp=local_path, tp=thumb_path):
+                try:
+                    _ensure_local_and_thumb(remote, lp, tp, -1)
+                finally:
+                    try:
+                        thumb_inflight.discard(remote)
+                    except Exception:
+                        pass
+            thumb_executor.submit(_task)
+            submitted += 1
+        except Exception:
+            continue
+    return jsonify({'success': True, 'submitted': submitted, 'total': len(paths)})
+
+@app.route('/api/album_photos')
+def api_album_photos():
+    album = request.args.get('album', '').strip()
+    try:
+        offset = int(request.args.get('offset', '0'))
+        limit = int(request.args.get('limit', '120'))
+    except Exception:
+        offset, limit = 0, 120
+    if not album:
+        return jsonify({'success': False, 'error': '缺少相册路径'}), 400
+
+    # 快速列出按时间倒序的文件名
+    try:
+        ok, out, _ = run_adb_command(f"adb shell 'ls -1t " + album.replace("'","'\''") + " 2>/dev/null'", timeout=8)
+        files = []
+        if ok and out:
+            names = [l.strip() for l in out.splitlines() if l.strip()]
+            # 只要支持的媒体
+            for nm in names:
+                p = album.rstrip('/') + '/' + nm
+                if PurePosixPath(p).suffix.lower() in (PREVIEW_IMAGE_EXTS | PREVIEW_VIDEO_EXTS):
+                    files.append(p)
+        # 分页
+        page = files[offset: offset+limit]
+        # 生成简要元数据（避免额外stat）：按顺序构造递减mtime
+        now = int(datetime.now().timestamp())
+        photos = []
+        for i, p in enumerate(page):
+            name = os.path.basename(p)
+            mtime = now - (offset + i)
+            photos.append({
+                'path': p,
+                'name': name,
+                'size': 0,
+                'size_mb': 0.0,
+                'mtime': mtime,
+                'date': ''
+            })
+        return jsonify({'success': True, 'photos': photos, 'total': len(files)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/cache_stats')
+def cache_stats():
+    """返回缓存目录占用信息，便于前端或用户查看。"""
+    t_total, _ = _dir_usage_bytes(THUMB_DIR)
+    p_total, _ = _dir_usage_bytes(PREVIEW_DIR)
+    return jsonify({
+        'success': True,
+        'thumbs_mb': round(t_total/1024/1024, 2),
+        'previews_mb': round(p_total/1024/1024, 2),
+        'thumb_dir': THUMB_DIR,
+        'preview_dir': PREVIEW_DIR,
+        'thumb_cap_mb': THUMB_CACHE_MAX_MB,
+        'preview_cap_mb': PREVIEW_ORIG_MAX_MB
+    })
+
+@app.route('/api/cache_cleanup', methods=['POST'])
+def cache_cleanup():
+    """手动触发缓存清理。"""
+    changed1, t_total = _cleanup_dir_cap(THUMB_DIR, THUMB_CACHE_MAX_MB)
+    changed2, p_total = _cleanup_dir_cap(PREVIEW_DIR, PREVIEW_ORIG_MAX_MB)
+    return jsonify({
+        'success': True,
+        'thumbs_mb': round(t_total/1024/1024, 2),
+        'previews_mb': round(p_total/1024/1024, 2),
+        'thumb_dir': THUMB_DIR,
+        'preview_dir': PREVIEW_DIR,
+        'changed': changed1 or changed2
+    })
 
 
 def _map_usb_speed(speed_str: str):
@@ -1540,6 +2047,15 @@ def api_usb_speed():
     if not connected:
         return jsonify({'success': False, 'error': '设备未连接'}), 400
 
+    # 缓存命中则直接返回
+    try:
+        if usb_speed_cache.get('device') == selected_device and usb_speed_cache.get('data'):
+            d = dict(usb_speed_cache['data'])
+            d['cached'] = True
+            return jsonify(d)
+    except Exception:
+        pass
+
     # 1) sysfs: /sys/class/udc/*/current_speed 或通过 usb_gadget 获取 UDC 名称
     try:
         # 优先直接读取 current_speed
@@ -1561,6 +2077,7 @@ def api_usb_speed():
         if speed_line:
             m = _map_usb_speed(speed_line)
             m.update({'success': True, 'source': 'sysfs', 'raw': out.strip()})
+            usb_speed_cache.update({'device': selected_device, 'data': m})
             return jsonify(m)
     except Exception:
         pass
@@ -1580,6 +2097,7 @@ def api_usb_speed():
             if line:
                 m = _map_usb_speed(line)
                 m.update({'success': True, 'source': 'dumpsys', 'raw': line})
+                usb_speed_cache.update({'device': selected_device, 'data': m})
                 return jsonify(m)
     except Exception:
         pass
@@ -1589,6 +2107,7 @@ def api_usb_speed():
         bench = _benchmark_usb_speed()
         if bench and bench.get('measured_mbps', 0) > 0:
             bench.update({'success': True, 'source': 'bench'})
+            usb_speed_cache.update({'device': selected_device, 'data': bench})
             return jsonify(bench)
     except Exception:
         pass
@@ -1596,6 +2115,7 @@ def api_usb_speed():
     # 最后返回未知（占位）
     m = _map_usb_speed('')
     m.update({'success': True, 'source': 'none', 'raw': ''})
+    usb_speed_cache.update({'device': selected_device, 'data': m})
     return jsonify(m)
 
 
