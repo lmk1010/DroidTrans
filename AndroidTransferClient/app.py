@@ -206,7 +206,7 @@ usb_speed_probe_lock = threading.Lock()
 usb_speed_probe_ts = 0.0
 
 # 缩略图后台执行器与任务去重
-THUMB_MAX_WORKERS = int(os.getenv('THUMB_MAX_WORKERS', '16'))
+THUMB_MAX_WORKERS = int(os.getenv('THUMB_MAX_WORKERS', '32'))
 thumb_executor = ThreadPoolExecutor(max_workers=max(2, min(32, THUMB_MAX_WORKERS)))
 thumb_inflight = set()  # set of remote_path
 

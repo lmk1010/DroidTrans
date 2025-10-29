@@ -990,6 +990,7 @@
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
             box-shadow: none;
+            position: relative;
         }
 
         .album-card.skeleton {
@@ -1010,6 +1011,29 @@
             box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
             transform: translateY(-1px);
         }
+
+        /* Selected/partial selected states for album cards */
+        .album-card.selected { border: 2px solid #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,0.12); }
+        .album-card.partial  { border: 2px dashed #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,0.08); }
+        .album-card .select-mark {
+            display: none;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            height: 24px;
+            width: 24px;
+            border-radius: 999px;
+            color: #fff;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            line-height: 1;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            user-select: none;
+            pointer-events: none;
+        }
+        .album-card.selected .select-mark { display: inline-flex; background: #1a73e8; }
+        .album-card.partial .select-mark { display: inline-flex; background: #f59e0b; }
 
         .album-cover {
             width: 100%;
@@ -1803,9 +1827,9 @@
         let thumbPollTimer = null;
         let thumbPollRunning = false;
         const globalPendingThumbs = new Set(); // 待检测缩略图路径
-        const MAX_STATUS_BATCH = 200; // 每次状态轮询的最大路径数，避免请求体过大
-        const MAX_THUMB_RETRY = 120;   // 单个缩略图最大重试次数（~60s, 500ms间隔）
-        const PROBE_FETCH_LIMIT = 48;  // 每轮最多主动探测的数量（提升可见区未缓存的就绪速度）
+        const MAX_STATUS_BATCH = 600; // 每次状态轮询的最大路径数
+        const MAX_THUMB_RETRY = 120;  // 单个缩略图最大重试次数（~60s, 500ms间隔）
+        const PROBE_FETCH_LIMIT = 96; // 每轮最多主动探测的数量（提升可见区未缓存的就绪速度）
         const thumbRetryCount = new Map();
         // 相册首屏预取（进入前提前准备照片清单与部分缩略图）
         const albumPrefetching = new Set();
@@ -2558,7 +2582,7 @@
             allAlbums = {};
             currentAlbumKey = null;
             currentView = 'list';
-            previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 120, attached: false };
+            previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 200, attached: false };
 
             // 不再恢复上次相册；清空本地缓存并显示空态
             try { clearAlbumsCache(); } catch (e) {}
@@ -3441,6 +3465,26 @@
 
         let __transferPreparing = false;
         let __lastProgressPercent = 0;
+        function clearSelections() {
+            try {
+                selectedPhotos.clear();
+                selectedAlbumsAll.clear();
+                excludedByAlbum.clear();
+            } catch (e) {}
+            try {
+                localStorage.removeItem(LS_SELECTED_ALBUMS);
+                localStorage.removeItem(LS_EXCLUDED_BY_ALBUM);
+                localStorage.removeItem(LS_SELECTED_PHOTOS);
+            } catch (e) {}
+            try {
+                updateStats();
+                if (currentView === 'album') {
+                    displayAlbums();
+                } else {
+                    displayPhotos();
+                }
+            } catch (e) {}
+        }
         function startProgressPolling() {
             progressInterval = setInterval(updateProgress, 500);
         }
@@ -3584,6 +3628,12 @@
                         setTimeout(checkResumeProgress, 1000);
                     }
                     setContentMask(false);
+                    try {
+                        if ((status.total || 0) > 0 && (status.current || 0) >= (status.total || 0)) {
+                            // 仅在传输完整结束时清空选择
+                            clearSelections();
+                        }
+                    } catch (e) { /* ignore */ }
                 }
             } catch (error) {
                 console.error('更新进度失败:', error);
@@ -3661,9 +3711,15 @@
                 const coverPath = albumData.cover || ((albumData.photos || [])[0]?.path) || '';
                 const sizeBytes = Number(albumData.total_size || 0);
                 const sizeText = (sizeBytes >= 100*1024*1024) ? (sizeBytes/1024/1024/1024).toFixed(2) + ' GB' : (sizeBytes/1024/1024).toFixed(2) + ' MB';
+                const total = (albumData.total_count || 0);
+                let stateClass = '';
+                if (selectedCount > 0) {
+                    stateClass = (selectedCount >= total && total > 0) ? 'selected' : 'partial';
+                }
 
                 html += `
-                    <div class="album-card" data-album="${albumKey}" onclick="openAlbumPreview('${albumKey}')">
+                    <div class="album-card ${stateClass}" data-album="${albumKey}" onclick="openAlbumPreview('${albumKey}')" aria-selected="${stateClass ? 'true' : 'false'}" title="${stateClass==='selected' ? '已全选' : (stateClass==='partial' ? '部分选择' : '')}">
+                        <div class="select-mark" aria-hidden="true">${stateClass==='partial' ? '–' : '✓'}</div>
                         <div class="album-cover">
                             ${coverPath ? `
                                 <div class="skeleton-cover"></div>
@@ -3890,7 +3946,7 @@
         }
 
         // 新的相册预览（缩略图网格 + 分批加载）
-        let previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 120, attached: false };
+        let previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 200, attached: false, loadingMore: false, seen: new Set() };
 
         async function openAlbumPreview(albumKey) {
             currentAlbumKey = albumKey;
@@ -3910,7 +3966,7 @@
             photoList.innerHTML = skHTML;
 
             // 初始状态（空列表，稍后填充）
-            previewState = { albumKey, photos: [], loaded: 0, batchSize: 120, attached: false };
+            previewState = { albumKey, photos: [], loaded: 0, batchSize: 200, attached: false, loadingMore: false, seen: new Set() };
             attachPreviewScroll();
             showToast(`正在载入 ${albumData.name} (${albumData.total_count} 张)…`, { type: 'info' });
 
@@ -3927,7 +3983,17 @@
                         }
                     }
                     const photosSorted = photosArr.slice().sort((a,b)=> (b.mtime||0) - (a.mtime||0));
-                    previewState.photos = photosSorted;
+                    // 去重：按 path 去重，保持顺序
+                    const uniq = [];
+                    const seen = new Set();
+                    for (const p of photosSorted) {
+                        if (!p || !p.path) continue;
+                        if (seen.has(p.path)) continue;
+                        seen.add(p.path);
+                        uniq.push(p);
+                    }
+                    previewState.photos = uniq;
+                    previewState.seen = seen;
                     previewState.loaded = 0;
                     renderAlbumPreviewGrid(true);
                 } catch (e) {
@@ -4018,10 +4084,10 @@
             }
             previewState.loaded = end;
 
-            // 批量触发后台生成（每批最多30），并启动全局批处理轮询
+            // 批量触发后台生成（每批最多100），并启动全局批处理轮询
             if (pendingPaths.length) {
                 try {
-                    fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pendingPaths, batch_size: 30, size: THUMB_GRID_SIZE }) });
+                    fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pendingPaths, batch_size: 100, size: THUMB_GRID_SIZE }) });
                 } catch (e) {}
                 // 启动（或保持）全局轮询循环
                 thumbPollLoop();
@@ -4097,17 +4163,28 @@
                     // 若已渲染完当前页，但总数更大，则分页拉取更多
                     const album = currentAlbumKey;
                     const total = (allAlbums[album] && allAlbums[album].total_count) ? allAlbums[album].total_count : previewState.photos.length;
-                    if (previewState.photos.length < total) {
+                    if (!previewState.loadingMore && previewState.photos.length < total) {
+                        previewState.loadingMore = true;
                         const offset = previewState.photos.length;
                         const limit = 500;
                         fetch(`/api/album_photos?album=${encodeURIComponent(album)}&offset=${offset}&limit=${limit}`)
                             .then(r=>r.json()).then(d=>{
                                 if (d && d.success) {
                                     const more = d.photos || [];
-                                    previewState.photos = previewState.photos.concat(more);
+                                    // 追加前去重
+                                    const add = [];
+                                    for (const p of more) {
+                                        if (!p || !p.path) continue;
+                                        if (previewState.seen && previewState.seen.has(p.path)) continue;
+                                        previewState.seen && previewState.seen.add(p.path);
+                                        add.push(p);
+                                    }
+                                    if (add.length) {
+                                        previewState.photos = previewState.photos.concat(add);
+                                    }
                                     renderAlbumPreviewGrid(false);
                                 }
-                            }).catch(()=>{});
+                            }).catch(()=>{}).finally(()=>{ previewState.loadingMore = false; });
                     }
                 }
             };

@@ -57,7 +57,7 @@ fi
 HOST="0.0.0.0"
 PORT="9500"
 WORKERS=${GUNICORN_WORKERS:-2}
-THREADS=${GUNICORN_THREADS:-4}
+THREADS=${GUNICORN_THREADS:-10}
 
 echo "🚀 使用 Gunicorn 启动服务..."
 echo "监听地址: http://$HOST:$PORT"
