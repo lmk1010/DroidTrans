@@ -17,6 +17,7 @@ import threading
 from werkzeug.utils import secure_filename
 import re
 import time
+import base64
 
 def _parse_timestamp_from_name(name: str) -> int | None:
     """尽量从常见相机/截图命名中解析拍摄时间（秒）。
@@ -2713,6 +2714,56 @@ def photo_thumb_batch_generate():
         except Exception:
             continue
     return jsonify({'success': True, 'submitted': submitted, 'total': len(paths)})
+
+@app.route('/api/thumb_batch_fetch', methods=['POST'])
+def photo_thumb_batch_fetch():
+    """批量生成并返回缩略图（base64），用于减少前端小图的并发HTTP请求。
+
+    请求: { paths: [..], size?: int, limit?: int }
+    响应: { success: true, items: [{ path, b64? , error? }] }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        paths = list(dict.fromkeys((data.get('paths') or [])))  # 去重保持顺序
+        try:
+            size = int(data.get('size', THUMB_TARGET_PX))
+        except Exception:
+            size = THUMB_TARGET_PX
+        try:
+            limit = int(data.get('limit', 64))
+        except Exception:
+            limit = 64
+        size = max(64, min(512, size))
+        limit = max(1, min(128, limit))
+
+        items = []
+        for p in paths[:limit]:
+            try:
+                rp = normalize_remote_path(str(p))
+                tp = _thumb_local_path(rp, size=size)
+                # 若无现成则尝试即时生成（含占位退化）
+                if (not os.path.exists(tp)) or (os.path.getsize(tp) <= 0):
+                    ok = False
+                    try:
+                        ok = _ensure_thumb_from_remote(rp, tp, size)
+                    except Exception:
+                        ok = False
+                    if not ok or (not os.path.exists(tp)) or os.path.getsize(tp) <= 0:
+                        suf = PurePosixPath(rp).suffix.lower()
+                        if suf in PREVIEW_VIDEO_EXTS:
+                            _write_video_placeholder_jpeg(tp, size=max(64, size))
+                        else:
+                            _write_placeholder_jpeg(tp, size=max(64, size))
+                # 读入并返回base64
+                with open(tp, 'rb') as f:
+                    b64 = base64.b64encode(f.read()).decode('ascii')
+                items.append({'path': rp, 'b64': b64})
+            except Exception as e:
+                items.append({'path': str(p), 'error': str(e)})
+
+        return jsonify({'success': True, 'items': items, 'count': len(items)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/album_photos')
 def api_album_photos():

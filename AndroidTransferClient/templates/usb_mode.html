@@ -1830,6 +1830,57 @@
         const MAX_STATUS_BATCH = 600; // 每次状态轮询的最大路径数
         const MAX_THUMB_RETRY = 120;  // 单个缩略图最大重试次数（~60s, 500ms间隔）
         const PROBE_FETCH_LIMIT = 96; // 每轮最多主动探测的数量（提升可见区未缓存的就绪速度）
+        let batchFetchTimer = null;
+        function scheduleBatchFetch() {
+            if (batchFetchTimer) return;
+            batchFetchTimer = setTimeout(() => {
+                batchFetchTimer = null;
+                try { batchFetchVisibleThumbs(64); } catch (e) {}
+            }, 60);
+        }
+
+        async function batchFetchVisibleThumbs(limit = 48) {
+            const list = document.getElementById('photoList');
+            const grid = document.getElementById('thumbGrid');
+            if (!list || !grid) return;
+            const imgs = grid.querySelectorAll('img.thumb-img');
+            const viewTop = list.scrollTop - 200;
+            const viewBot = list.scrollTop + list.clientHeight + 800;
+            const req = [];
+            for (let i=0;i<imgs.length && req.length<limit;i++) {
+                const img = imgs[i];
+                if (!img || img.getAttribute('data-loaded') === '1' || img.src) continue;
+                const tile = img.closest('.thumb-item');
+                if (!tile) continue;
+                const top = tile.offsetTop;
+                const bottom = top + tile.offsetHeight;
+                if (bottom >= viewTop && top <= viewBot) {
+                    const p = img.getAttribute('data-path');
+                    if (p) req.push(p);
+                }
+            }
+            if (!req.length) return;
+            try {
+                const resp = await fetch('/api/thumb_batch_fetch', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paths: req, size: THUMB_GRID_SIZE, limit: limit })
+                });
+                const data = await resp.json();
+                if (data && data.success && Array.isArray(data.items)) {
+                    data.items.forEach(it => {
+                        if (!it || !it.path || !it.b64) return;
+                        const img = grid.querySelector(`img.thumb-img[data-path="${CSS.escape(it.path)}"]`);
+                        if (!img || img.getAttribute('data-loaded')==='1') return;
+                        const done = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                        img.onload = done;
+                        img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
+                        img.src = 'data:image/jpeg;base64,' + it.b64;
+                        img.setAttribute('data-loaded','1');
+                        if (img.complete && img.naturalWidth > 0) done();
+                    });
+                }
+            } catch (e) { /* ignore */ }
+        }
         const thumbRetryCount = new Map();
         // 相册首屏预取（进入前提前准备照片清单与部分缩略图）
         const albumPrefetching = new Set();
@@ -4059,17 +4110,8 @@
                 // 可见优先：监听进入视口时立刻加载
                 const imgNode = tile.querySelector('img.thumb-img');
                 if (imgNode) {
-                    if ((i - start) < EAGER_LIMIT) {
-                        // 前若干个直接加载，减少等待
-                        loadThumbInto(imgNode, p.path);
-                    } else {
-                        const io = ensureThumbIO();
-                        if (io) {
-                            try { io.observe(imgNode); } catch (e) { /* ignore */ }
-                        } else {
-                            loadThumbInto(imgNode, p.path);
-                        }
-                    }
+                    const io = ensureThumbIO();
+                    if (io) { try { io.observe(imgNode); } catch (e) {} }
                 }
 
                 // 视频默认封面（数据URI），之后就绪会替换
@@ -4089,13 +4131,14 @@
             }
             previewState.loaded = end;
 
-            // 批量触发后台生成（每批最多100），并启动全局批处理轮询
+            // 批量触发后台生成（每批最多100），并启动全局批处理轮询 + 批量可见直出
             if (pendingPaths.length) {
                 try {
                     fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pendingPaths, batch_size: 100, size: THUMB_GRID_SIZE }) });
                 } catch (e) {}
                 // 启动（或保持）全局轮询循环
                 thumbPollLoop();
+                scheduleBatchFetch();
             }
         }
 
@@ -4163,6 +4206,7 @@
                     // 如果还有未渲染的，继续渲染
                     if (previewState.loaded < previewState.photos.length) {
                         renderAlbumPreviewGrid(false);
+                        scheduleBatchFetch();
                         return;
                     }
                     // 若已渲染完当前页，但总数更大，则分页拉取更多
@@ -4188,6 +4232,7 @@
                                         previewState.photos = previewState.photos.concat(add);
                                     }
                                     renderAlbumPreviewGrid(false);
+                                    scheduleBatchFetch();
                                 }
                             }).catch(()=>{}).finally(()=>{ previewState.loadingMore = false; });
                     }
