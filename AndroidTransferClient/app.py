@@ -76,6 +76,7 @@ AUTO_SAVE_INTERVAL = 100  # 每传输多少个文件自动保存一次进度
 # 全局状态
 transfer_status = {
     'is_running': False,
+    'paused': False,
     'total': 0,
     'current': 0,
     'failed': [],
@@ -469,16 +470,27 @@ def start_device_monitor():
 
 def get_local_ip():
     """获取本机局域网IP地址"""
+    # 多策略，避免网络受限时抛错
+    # 1) macOS 常见网卡 en0
+    if sys.platform == 'darwin':
+        try:
+            p = subprocess.run(['ipconfig', 'getifaddr', 'en0'], capture_output=True, text=True, timeout=1)
+            if p.returncode == 0 and p.stdout.strip():
+                return p.stdout.strip().splitlines()[0]
+        except Exception:
+            pass
+    # 2) UDP socket 方法（无需真正联网）
     try:
-        # 创建一个UDP socket
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # 连接到外部地址（不会真正发送数据）
-        s.connect(("8.8.8.8", 80))
+        s.connect(("10.255.255.255", 1))  # 不可达保留地址，只用于获取本机绑定IP
         ip = s.getsockname()[0]
         s.close()
-        return ip
+        if ip and not ip.startswith('127.'):
+            return ip
     except Exception:
-        return "127.0.0.1"
+        pass
+    # 3) 回退环回地址
+    return "127.0.0.1"
 
 def organize_photos_by_album(photos):
     """按文件夹组织照片为相册"""
@@ -739,6 +751,9 @@ def scan_photos_thread():
                 except Exception:
                     pass
                 album_name = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
+                # 跳过空相册（0 文件）
+                if total_count <= 0:
+                    continue
                 albums[dir_path] = {
                     'name': album_name,
                     'icon': '📁',
@@ -1111,8 +1126,10 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     """后台传输照片线程 - M4超级并发优化版（支持断点续传）"""
     global transfer_status
     import time
+    import concurrent.futures as cf
 
     transfer_status['is_running'] = True
+    transfer_status['paused'] = False
     transfer_status['total'] = len(photos)
     transfer_status['current'] = 0
     transfer_status['failed'] = []
@@ -1164,6 +1181,8 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     transfer_status['speed_mbps'] = 0.0
     transfer_status['speed_samples'] = []  # 存储速度样本，用于计算平均值
     transfer_status['speed_estimated'] = False  # 是否已完成速度估算
+    transfer_status['last_bytes'] = 0
+    transfer_status['last_ts'] = start_time
     skipped_count = 0
     last_save_count = 0
     
@@ -1180,28 +1199,38 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     
     print(f"✅ 已创建 {len(unique_dirs)} 个目录\n")
 
-    # 使用线程池超高并发传输
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix='TransferWorker') as executor:
-        # 提交所有任务
-        future_to_photo = {
-            executor.submit(transfer_single_photo, photo, output_dir): photo 
-            for photo in photos
-        }
-
+    # 使用线程池并限制在途任务，支持暂停
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix='TransferWorker')
+    try:
+        next_idx = 0
+        futures = {}
         last_progress = -1
         completed = 0
         last_device_check = time.time()
-        device_check_interval = 5  # 每5秒检查一次设备连接
+        device_check_interval = 5
 
-        # 处理完成的任务
-        for future in as_completed(future_to_photo):
+        def submit_one():
+            nonlocal next_idx
+            if next_idx >= len(photos):
+                return False
+            ph = photos[next_idx]
+            next_idx += 1
+            fut = executor.submit(transfer_single_photo, ph, output_dir)
+            futures[fut] = ph
+            return True
+
+        # 初始填满工作队列
+        while len(futures) < MAX_WORKERS and next_idx < len(photos):
+            submit_one()
+
+        while True:
+            # 停止请求：取消未开始的任务并退出
             if not transfer_status['is_running']:
-                # 快速取消所有未完成的任务
-                for f in future_to_photo:
+                for f in list(futures.keys()):
                     f.cancel()
                 break
 
-            # 定期检查设备连接（每5秒检查一次）
+            # 设备心跳检查
             current_time = time.time()
             if current_time - last_device_check > device_check_interval:
                 connected, _ = check_adb_connection()
@@ -1209,15 +1238,56 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                     print(f"\n❌ 设备已断开，停止传输！")
                     transfer_status['error'] = '设备连接已断开'
                     transfer_status['is_running'] = False
-                    # 取消所有未完成的任务
-                    for f in future_to_photo:
+                    for f in list(futures.keys()):
                         f.cancel()
                     break
                 last_device_check = current_time
 
-            photo = future_to_photo[future]
-            try:
-                result_photo, success, msg = future.result(timeout=90)
+            # 若未暂停则补充任务
+            while (not transfer_status.get('paused', False)) and len(futures) < MAX_WORKERS and next_idx < len(photos):
+                submit_one()
+
+            if not futures:
+                # 没有在途任务
+                if next_idx >= len(photos):
+                    break
+                # 暂停中，稍候
+                time.sleep(0.2)
+                continue
+
+            # 等待任一完成（短超时以便响应暂停/停止）
+            done = []
+            for fut in list(futures.keys()):
+                try:
+                    # 非阻塞式检查
+                    res = fut.result(timeout=0.01)
+                    done.append((fut, res))
+                except cf.TimeoutError:
+                    # 未就绪
+                    continue
+                except Exception as e:
+                    # 任务异常，视为完成交由下方处理
+                    done.append((fut, e))
+
+            if not done:
+                time.sleep(0.05)
+                continue
+
+            for fut, res in done:
+                photo = futures.pop(fut, None) or {'path': 'unknown', 'name': 'unknown'}
+                try:
+                    if isinstance(res, Exception):
+                        raise res
+                    result_photo, success, msg = res
+                except Exception as e:
+                    completed += 1
+                    transfer_status['current'] = completed
+                    transfer_status['failed'].append({
+                        'path': photo.get('path', ''),
+                        'error': str(e)
+                    })
+                    print(f"❌ 异常: {photo.get('name', 'Unknown')} - {str(e)}")
+                    continue
 
                 completed += 1
                 transfer_status['current'] = completed
@@ -1233,41 +1303,37 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                     # 记录已完成的文件
                     transfer_status['completed_files'].add(result_photo['path'])
 
+                    # 计算本地文件大小（即使是已存在也计入）
+                    try:
+                        sz = int(result_photo.get('size', 0))
+                    except Exception:
+                        sz = 0
+                    if sz <= 0:
+                        try:
+                            rel_path = result_photo['path'].replace('/sdcard/', '').replace('/storage/emulated/0/', '').replace('/storage/self/primary/', '')
+                            local_fp = os.path.join(output_dir, rel_path)
+                            if os.path.exists(local_fp):
+                                sz = os.path.getsize(local_fp)
+                        except Exception:
+                            pass
+
                     if "已存在" in msg:
                         skipped_count += 1
-                    else:
-                        # 成功传输，累加字节并更新速度
-                        try:
-                            sz = int(result_photo.get('size', 0))
-                        except Exception:
-                            sz = 0
-                        # 使用线程锁保护并发更新
-                        with transfer_status_lock:
-                            transfer_status['bytes_done'] = transfer_status.get('bytes_done', 0) + sz
 
-                            # 只估算3次速度，然后取平均值
-                            if not transfer_status.get('speed_estimated', False) and len(transfer_status.get('speed_samples', [])) < 3:
-                                elapsed = max(0.001, time.time() - transfer_status.get('start_ts', start_time))
-                                transfer_status['elapsed_sec'] = elapsed
-                                current_speed = (transfer_status['bytes_done'] / 1024.0 / 1024.0) / elapsed
-                                transfer_status['speed_samples'].append(current_speed)
-
-                                if len(transfer_status['speed_samples']) == 3:
-                                    # 计算3次样本的平均速度
-                                    avg_speed = sum(transfer_status['speed_samples']) / len(transfer_status['speed_samples'])
-                                    transfer_status['speed_mbps'] = avg_speed
-                                    transfer_status['speed_estimated'] = True
-                                    print(f"⚡ 速度估算完成: {avg_speed:.2f} MB/s")
-                                else:
-                                    # 使用当前速度作为临时显示
-                                    transfer_status['speed_mbps'] = current_speed
-                            elif transfer_status.get('speed_estimated', False):
-                                # 估算完成后，不再更新 elapsed_sec，保持显示稳定
-                                pass
-
-                            if transfer_status['speed_mbps'] > 0:
-                                remaining_mb = max(0.0, (transfer_status.get('bytes_total', 0) - transfer_status['bytes_done']) / 1024.0 / 1024.0)
-                                transfer_status['eta_sec'] = remaining_mb / transfer_status['speed_mbps']
+                    # 累加字节并更新时间/速度（平均）
+                    with transfer_status_lock:
+                        transfer_status['bytes_done'] = transfer_status.get('bytes_done', 0) + max(0, int(sz))
+                        now = time.time()
+                        transfer_status['elapsed_sec'] = max(0.0, now - transfer_status.get('start_ts', start_time))
+                        if transfer_status['elapsed_sec'] > 0:
+                            transfer_status['speed_mbps'] = max(0.0, (transfer_status['bytes_done'] / 1024.0 / 1024.0) / transfer_status['elapsed_sec'])
+                        else:
+                            transfer_status['speed_mbps'] = 0.0
+                        transfer_status['last_bytes'] = transfer_status['bytes_done']
+                        transfer_status['last_ts'] = now
+                        if transfer_status['speed_mbps'] > 0 and transfer_status.get('bytes_total', 0) > 0:
+                            remaining_mb = max(0.0, (transfer_status.get('bytes_total', 0) - transfer_status['bytes_done']) / 1024.0 / 1024.0)
+                            transfer_status['eta_sec'] = remaining_mb / transfer_status['speed_mbps']
                 
                 # 定期自动保存进度
                 if completed - last_save_count >= AUTO_SAVE_INTERVAL:
@@ -1288,15 +1354,12 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                           f"预计剩余: {int(eta)}秒 | "
                           f"已跳过: {skipped_count}")
                     last_progress = progress
-
-            except Exception as e:
-                completed += 1
-                transfer_status['current'] = completed
-                transfer_status['failed'].append({
-                    'path': photo['path'],
-                    'error': str(e)
-                })
-                print(f"❌ 异常: {photo.get('name', 'Unknown')} - {str(e)}")
+            
+    finally:
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
 
     transfer_status['is_running'] = False
     transfer_status['current_file'] = '完成'
@@ -1346,6 +1409,21 @@ def wifi_mode():
     default_output_dir = str(Path(OUTPUT_DIR).expanduser().resolve(strict=False))
     project_root = str(Path.cwd().resolve())
     return render_template('wifi_mode.html', default_output_dir=default_output_dir, project_root=project_root, mode='wifi')
+
+# Chrome 120+ 会在打开 DevTools 时尝试加载域定制配置：
+# /.well-known/appspecific/com.chrome.devtools.json
+# 404 虽无害，但可能在某些环境下触发额外的等待或报错提示。
+# 这里返回一个空对象并设置短期缓存，避免无谓的404日志、提升首屏观感。
+@app.route('/.well-known/appspecific/com.chrome.devtools.json')
+def chrome_devtools_well_known():
+    try:
+        from flask import make_response
+        resp = make_response('{}', 200)
+        resp.mimetype = 'application/json'
+        resp.headers['Cache-Control'] = 'public, max-age=86400'
+        return resp
+    except Exception:
+        return ('{}', 200, {'Content-Type': 'application/json'})
 
 @app.route('/upload_progress')
 def upload_progress():
@@ -1585,12 +1663,25 @@ def _guess_mimetype_from_ext(path):
 
 
 def _preview_local_path(remote_path: str) -> str:
-    """根据远程路径生成缓存原始文件本地路径（保留原始扩展名）。"""
-    ext = PurePosixPath(remote_path).suffix.lower()
+    """根据远程路径生成缓存原始文件本地路径（保留原始扩展名）。
+
+    说明：Android 同一文件可能存在多种常见别名（如 /sdcard 与
+    /storage/emulated/0）。缩略图/预览缓存依赖路径哈希，为避免别名
+    导致的缓存未命中，这里统一先进行路径标准化再计算哈希。
+    """
+    # 统一远程路径，避免 /sdcard 与 /storage/emulated/0 别名导致哈希不一致
+    try:
+        from pathlib import PurePosixPath as _PP
+        norm_remote = normalize_remote_path(remote_path)
+    except Exception:
+        norm_remote = remote_path
+
+    ext = PurePosixPath(norm_remote).suffix.lower()
     if not ext:
         ext = '.bin'
-    h = hashlib.sha1(remote_path.encode('utf-8', errors='ignore')).hexdigest()
-    return os.path.join(PREVIEW_DIR, f"{h}{ext}")
+    h = hashlib.sha1(norm_remote.encode('utf-8', errors='ignore')).hexdigest()
+    dev = _get_current_device_label()
+    return os.path.join(PREVIEW_DIR, dev, f"{h}{ext}")
 
 def _slug(s: str) -> str:
     s = s.strip().replace(' ', '_')
@@ -1616,10 +1707,41 @@ def _get_current_device_label() -> str:
         return 'unknown_device'
 
 def _thumb_local_path(remote_path: str, size: int = 512) -> str:
-    """缩略图缓存路径（统一jpg扩展，按设备分目录）。"""
-    h = hashlib.sha1(remote_path.encode('utf-8', errors='ignore')).hexdigest()
+    """缩略图缓存路径（统一jpg扩展，按设备分目录）。
+
+    注意：为避免 /sdcard 与 /storage/emulated/0 等别名导致同一文件
+    生成不同哈希，这里先对路径做 normalize。
+    """
+    try:
+        norm_remote = normalize_remote_path(remote_path)
+    except Exception:
+        norm_remote = remote_path
+    h = hashlib.sha1(norm_remote.encode('utf-8', errors='ignore')).hexdigest()
     dev = _get_current_device_label()
     return os.path.join(THUMB_DIR, dev, f"{h}_{size}.jpg")
+
+def _thumb_any_path(remote_path: str, size: int = 512) -> str | None:
+    """在所有设备子目录中寻找对应缩略图。
+
+    同样对路径进行标准化，以保证别名一致性。
+    """
+    try:
+        norm_remote = normalize_remote_path(remote_path)
+        h = hashlib.sha1(norm_remote.encode('utf-8', errors='ignore')).hexdigest()
+        target = f"{h}_{size}.jpg"
+        # 先查当前设备label
+        p = _thumb_local_path(remote_path, size)
+        if os.path.exists(p) and os.path.getsize(p) > 0:
+            return p
+        # 遍历子目录
+        for root, dirs, files in os.walk(THUMB_DIR):
+            if target in files:
+                fp = os.path.join(root, target)
+                if os.path.getsize(fp) > 0:
+                    return fp
+        return None
+    except Exception:
+        return None
 
 def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 512, quality: int = 70) -> bool:
     """将本地原图生成压缩缩略图到 dst_thumb_path。返回是否成功。"""
@@ -1629,9 +1751,26 @@ def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 
         return False
 
     try:
+        # 源文件必须存在且非空
+        try:
+            if (not os.path.exists(src_local_path)) or os.path.getsize(src_local_path) <= 0:
+                return False
+        except Exception:
+            return False
         os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+        from PIL import ImageFile
+        try:
+            ImageFile.LOAD_TRUNCATED_IMAGES = True
+        except Exception:
+            pass
         with Image.open(src_local_path) as im:
             im.load()
+            try:
+                # 修正EXIF方向，避免缩略图方向错误
+                from PIL import ImageOps
+                im = ImageOps.exif_transpose(im)
+            except Exception:
+                pass
             # 转换到RGB以统一输出jpg
             if im.mode not in ('RGB', 'L'):
                 im = im.convert('RGB')
@@ -1644,27 +1783,34 @@ def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 
             pass
         return True
     except Exception as e:
-        # Pillow 失败，尝试 ffmpeg 作为兜底（处理HEIC/特殊格式）
+        # Pillow失败时，优先尝试ffmpeg对图像进行一次转码/缩放（不限格式）
         try:
             import shutil, subprocess
             if shutil.which('ffmpeg'):
+                os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
                 vf = f"scale=if(gt(iw,ih),{max_size},-2):if(gt(iw,ih),-2,{max_size})"
-                cmd = [
-                    'ffmpeg', '-y', '-i', src_local_path,
-                    '-frames:v', '1',
-                    '-vf', vf,
-                    '-q:v', '6',
-                    dst_thumb_path
-                ]
+                cmd = ['ffmpeg','-v','error','-y','-i',src_local_path,'-frames:v','1','-vf',vf,'-q:v','6',dst_thumb_path]
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-                try:
-                    sz = os.path.getsize(dst_thumb_path)
-                    print(f"[preview] ffmpeg thumb generated: {dst_thumb_path} ({sz/1024:.1f} KB) | thread={threading.current_thread().name}")
-                except Exception:
-                    pass
-                return True
-        except Exception as ee:
-            print(f"[preview] ffmpeg fallback failed: {ee}")
+                if os.path.exists(dst_thumb_path) and os.path.getsize(dst_thumb_path) > 0:
+                    print(f"[preview] ffmpeg(image) thumb generated: {dst_thumb_path}")
+                    return True
+        except Exception:
+            pass
+        # 生成占位缩略图，避免重复失败和日志噪音
+        try:
+            from PIL import Image, ImageDraw
+            os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+            size = max_size
+            img = Image.new('RGB', (size, size), color=(232, 240, 254))
+            draw = ImageDraw.Draw(img)
+            # 简单播放/相片占位符
+            w, h = size, size
+            draw.rectangle([(int(w*0.2), int(h*0.2)), (int(w*0.8), int(h*0.8))], outline=(66,133,244), width=3)
+            img.save(dst_thumb_path, format='JPEG', quality=60, optimize=True)
+            print(f"[preview] thumb placeholder generated: {dst_thumb_path}")
+            return True
+        except Exception:
+            pass
         try:
             if os.path.exists(dst_thumb_path):
                 os.remove(dst_thumb_path)
@@ -1773,22 +1919,40 @@ def _ensure_local_and_thumb(remote_path: str, local_path: str, thumb_path: str, 
         if idx >= 0:
             print(f"[thumb]#{idx} start {remote_path} | thread={threading.current_thread().name}")
         if not os.path.exists(local_path):
+            # 统一远程路径，避免别名导致 pull 失败或缓存错配
+            remote_path = normalize_remote_path(remote_path)
             quoted_remote = remote_path.replace('"', '\\"')
             quoted_local = local_path.replace('"', '\\"')
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             ok, _, _ = run_adb_command(f'adb pull "{quoted_remote}" "{quoted_local}"', timeout=60, enable_burst=True)
-            if not ok or not os.path.exists(local_path):
+            # 校验文件存在且非空
+            if (not ok) or (not os.path.exists(local_path)) or (os.path.getsize(local_path) <= 0):
+                try:
+                    if os.path.exists(local_path):
+                        os.remove(local_path)
+                except Exception:
+                    pass
                 return False
         # 生成更小的缩略图（320px, 质量 55），视频提取首帧
         need = (not os.path.exists(thumb_path)) or (os.path.getmtime(thumb_path) < os.path.getmtime(local_path))
         if need:
             ext = PurePosixPath(remote_path).suffix.lower()
             if ext in PREVIEW_IMAGE_EXTS:
+                # 先走 Pillow，失败则回退到 ffmpeg 提帧（部分 JPEG/WEBP 在 Pillow 下可能异常）
                 ok = _ensure_thumbnail(local_path, thumb_path, max_size=256, quality=50)
+                if not ok:
+                    ok = _ensure_video_thumbnail(local_path, thumb_path, max_size=256, quality=8)
             elif ext in PREVIEW_VIDEO_EXTS:
                 ok = _ensure_video_thumbnail(local_path, thumb_path, max_size=256, quality=8)
             else:
-                return False
+                # 无扩展名：尝试内容探测
+                ok = False
+                try:
+                    ok = _ensure_thumbnail(local_path, thumb_path, max_size=256, quality=50)
+                    if not ok:
+                        ok = _ensure_video_thumbnail(local_path, thumb_path, max_size=256, quality=8)
+                except Exception:
+                    ok = False
         else:
             ok = True
         if idx >= 0:
@@ -1809,6 +1973,9 @@ def photo_preview():
     if not remote_path:
         return jsonify({'success': False, 'error': '缺少路径参数'}), 400
 
+    # 统一路径别名，确保缩略图/预览缓存一致
+    remote_path = normalize_remote_path(remote_path)
+
     ext = PurePosixPath(remote_path).suffix.lower()
     if ext not in PREVIEW_IMAGE_EXTS and ext not in PREVIEW_VIDEO_EXTS:
         return jsonify({'success': False, 'error': '不支持的预览格式'}), 415
@@ -1826,7 +1993,13 @@ def photo_preview():
         quoted_local = local_path.replace('"', '\\"')
         pull_cmd = f'adb pull "{quoted_remote}" "{quoted_local}"'
         ok, stdout, stderr = run_adb_command(pull_cmd, timeout=60)
-        if not ok or not os.path.exists(local_path):
+        # 必须存在且非空
+        if (not ok) or (not os.path.exists(local_path)) or (os.path.getsize(local_path) <= 0):
+            try:
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+            except Exception:
+                pass
             return jsonify({'success': False, 'error': '预览拉取失败'}), 500
 
     # 生成缩略图（如必要）并返回缩略图
@@ -1841,13 +2014,9 @@ def photo_preview():
         else:
             ok = _ensure_video_thumbnail(local_path, thumb_path, max_size=256, quality=8)
         if not ok:
-            # Pillow 不可用或失败时，退回原图（但仍加上缓存头）
-            try:
-                resp = send_file(local_path, mimetype=_guess_mimetype_from_ext(local_path), conditional=True)
-                resp.headers['Cache-Control'] = 'public, max-age=86400'
-                return resp
-            except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+            # 若缩略图生成失败，尝试占位图已在函数内处理；此处只在不存在缩略图时兜底
+            if not os.path.exists(thumb_path):
+                return jsonify({'success': False, 'error': '缩略图生成失败'}), 500
         else:
             # 每次生成后检查缩略图目录容量（轻量）
             _cleanup_dir_cap(THUMB_DIR, THUMB_CACHE_MAX_MB)
@@ -1863,13 +2032,45 @@ def photo_preview():
 
 @app.route('/api/thumb')
 def photo_thumb():
-    """仅返回已存在的缩略图；不存在则返回404（由前端批处理异步生成）。"""
+    """返回缩略图；若不存在则尝试即时生成一次。
+
+    之前策略：仅返回已存在文件，不存在直接404，交给前端批量生成。
+    实测在部分环境下会出现前端批量请求未触发或延迟较大，导致大量404、首屏体验差。
+    新策略：当未命中缓存时，后端尝试同步生成一次缩略图；若生成成功立即返回，
+    失败则维持404，交由前端的重试与批处理逻辑兜底。
+    """
     remote_path = request.args.get('path', '').strip()
     if not remote_path:
         return jsonify({'success': False, 'error': '缺少路径参数'}), 400
+    # 标准化路径，避免别名导致哈希不一致
+    remote_path = normalize_remote_path(remote_path)
     thumb_path = _thumb_local_path(remote_path, size=256)
-    if not os.path.exists(thumb_path):
-        return ('', 404)
+    # 若不存在，尝试其它设备目录；若存在但为0字节，也视为无效
+    def _size_ok(p: str) -> bool:
+        try:
+            return os.path.exists(p) and os.path.getsize(p) > 0
+        except Exception:
+            return False
+
+    if not _size_ok(thumb_path):
+        anyp = _thumb_any_path(remote_path, size=256)
+        if anyp and _size_ok(anyp):
+            thumb_path = anyp
+        else:
+            # 若有空文件，先清掉再生成
+            try:
+                if os.path.exists(thumb_path) and os.path.getsize(thumb_path) == 0:
+                    os.remove(thumb_path)
+            except Exception:
+                pass
+            # 尝试即时生成一次（同步）
+            try:
+                local_path = _preview_local_path(remote_path)
+                ok = _ensure_local_and_thumb(remote_path, local_path, thumb_path, -1)
+                if not _size_ok(thumb_path):
+                    return ('', 404)
+            except Exception:
+                return ('', 404)
     print(f"[thumb-serve] {thumb_path} | thread={threading.current_thread().name}")
     resp = send_file(thumb_path, mimetype='image/jpeg', conditional=True)
     resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
@@ -1880,6 +2081,8 @@ def photo_thumb_exists():
     path = request.args.get('path', '').strip()
     if not path:
         return jsonify({'success': False, 'error': '缺少路径参数'}), 400
+    # 统一路径
+    path = normalize_remote_path(path)
     thumb_path = _thumb_local_path(path, size=256)
     return jsonify({'success': True, 'exists': os.path.exists(thumb_path)})
 
@@ -1890,7 +2093,11 @@ def photo_thumb_status():
     res = []
     for p in paths:
         try:
-            res.append(os.path.exists(_thumb_local_path(p, size=256)))
+            p = normalize_remote_path(p)
+            ok = os.path.exists(_thumb_local_path(p, size=256))
+            if not ok:
+                ok = _thumb_any_path(p, size=256) is not None
+            res.append(ok)
         except Exception:
             res.append(False)
     return jsonify({'success': True, 'ready': res})
@@ -1901,13 +2108,22 @@ def photo_thumb_batch_generate():
     paths = data.get('paths') or []
     batch_size = int(data.get('batch_size') or 30)
     size = int(data.get('size') or 256)
+    force = bool(data.get('force') or False)
     submitted = 0
     for p in paths[:batch_size]:
         try:
+            p = normalize_remote_path(p)
             local_path = _preview_local_path(p)
             thumb_path = _thumb_local_path(p, size=size)
-            if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
-                continue
+            if os.path.exists(thumb_path):
+                try:
+                    if os.path.getsize(thumb_path) > 0 and not force:
+                        continue
+                    if force:
+                        os.remove(thumb_path)
+                except Exception:
+                    if not force:
+                        continue
             if p in thumb_inflight:
                 continue
             thumb_inflight.add(p)
@@ -1945,7 +2161,8 @@ def api_album_photos():
             # 只要支持的媒体
             for nm in names:
                 p = album.rstrip('/') + '/' + nm
-                if PurePosixPath(p).suffix.lower() in (PREVIEW_IMAGE_EXTS | PREVIEW_VIDEO_EXTS):
+                suf = PurePosixPath(p).suffix.lower()
+                if (suf in (PREVIEW_IMAGE_EXTS | PREVIEW_VIDEO_EXTS)) or (suf == ''):
                     files.append(p)
         # 分页
         page = files[offset: offset+limit]
@@ -1964,6 +2181,62 @@ def api_album_photos():
                 'date': ''
             })
         return jsonify({'success': True, 'photos': photos, 'total': len(files)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def _list_album_media(album: str):
+    try:
+        ok, out, _ = run_adb_command(f"adb shell 'ls -1t " + album.replace("'","'\\''") + " 2>/dev/null'", timeout=10)
+        files = []
+        if ok and out:
+            names = [l.strip() for l in out.splitlines() if l.strip()]
+            for nm in names:
+                p = album.rstrip('/') + '/' + nm
+                suf = PurePosixPath(p).suffix.lower()
+                if (suf in (PREVIEW_IMAGE_EXTS | PREVIEW_VIDEO_EXTS)) or (suf == ''):
+                    files.append(p)
+        return files
+    except Exception:
+        return []
+
+@app.route('/api/selection_expand', methods=['POST'])
+def selection_expand():
+    data = request.get_json(silent=True) or {}
+    albums = data.get('albums') or []
+    exclude = data.get('exclude') or {}
+    singles = data.get('singles') or []
+    result = []
+    seen = set()
+    try:
+        # 展开相册
+        for alb in albums:
+            files = _list_album_media(alb)
+            ex = set(exclude.get(alb, []))
+            for p in files:
+                if p in ex: continue
+                if p in seen: continue
+                seen.add(p)
+                result.append({
+                    'path': p,
+                    'name': os.path.basename(p),
+                    'size': 0,
+                    'size_mb': 0.0,
+                    'mtime': 0,
+                    'date': ''
+                })
+        # 追加单独选中的
+        for p in singles:
+            if p in seen: continue
+            seen.add(p)
+            result.append({
+                'path': p,
+                'name': os.path.basename(p),
+                'size': 0,
+                'size_mb': 0.0,
+                'mtime': 0,
+                'date': ''
+            })
+        return jsonify({'success': True, 'photos': result, 'total': len(result)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -2040,32 +2313,30 @@ def adb_burst_mode():
             'message': f"ADB Burst模式已{'启用' if enabled else '禁用'}"
         })
 
-@app.route('/api/usb/speed')
-def api_usb_speed():
-    """获取Android端当前USB速率（通过ADB读取sysfs/dumpsys）"""
+def get_usb_speed():
+    """获取USB速率信息（字典），供内部调用与API复用。"""
     connected, _ = check_adb_connection()
     if not connected:
-        return jsonify({'success': False, 'error': '设备未连接'}), 400
+        return {'success': False, 'error': '设备未连接'}
 
-    # 缓存命中则直接返回
+    # 缓存命中
     try:
         if usb_speed_cache.get('device') == selected_device and usb_speed_cache.get('data'):
             d = dict(usb_speed_cache['data'])
             d['cached'] = True
-            return jsonify(d)
+            d['success'] = True
+            return d
     except Exception:
         pass
 
-    # 1) sysfs: /sys/class/udc/*/current_speed 或通过 usb_gadget 获取 UDC 名称
+    # 1) sysfs current_speed
     try:
-        # 优先直接读取 current_speed
         cmd1 = "adb shell 'for f in /sys/class/udc/*/current_speed; do cat \"$f\"; done 2>/dev/null'"
         ok, out, err = run_adb_command(cmd1, timeout=3)
         speed_line = ''
         if ok and out.strip():
             speed_line = out.strip().split('\n')[0]
         else:
-            # 尝试通过 usb_gadget 找到 UDC 名称后读取
             cmd_udc = "adb shell 'for g in /sys/class/usb_gadget/*/UDC; do cat \"$g\"; done 2>/dev/null'"
             ok2, out2, _ = run_adb_command(cmd_udc, timeout=3)
             if ok2 and out2.strip():
@@ -2076,17 +2347,16 @@ def api_usb_speed():
                     speed_line = out3.strip().split('\n')[0]
         if speed_line:
             m = _map_usb_speed(speed_line)
-            m.update({'success': True, 'source': 'sysfs', 'raw': out.strip()})
+            m.update({'success': True, 'source': 'sysfs', 'raw': out.strip() if isinstance(out, str) else ''})
             usb_speed_cache.update({'device': selected_device, 'data': m})
-            return jsonify(m)
+            return m
     except Exception:
         pass
 
-    # 2) dumpsys usb（某些机型会包含速度字段）
+    # 2) dumpsys usb
     try:
         ok, out, err = run_adb_command("adb shell dumpsys usb", timeout=4)
         if ok and out:
-            # 在 Python 侧查找包含 speed 的行
             raw = out
             line = ''
             for l in raw.splitlines():
@@ -2098,25 +2368,32 @@ def api_usb_speed():
                 m = _map_usb_speed(line)
                 m.update({'success': True, 'source': 'dumpsys', 'raw': line})
                 usb_speed_cache.update({'device': selected_device, 'data': m})
-                return jsonify(m)
+                return m
     except Exception:
         pass
 
-    # 3) 基于快速拉取的基准测试（非root可用）
+    # 3) 基准测试
     try:
         bench = _benchmark_usb_speed()
         if bench and bench.get('measured_mbps', 0) > 0:
             bench.update({'success': True, 'source': 'bench'})
             usb_speed_cache.update({'device': selected_device, 'data': bench})
-            return jsonify(bench)
+            return bench
     except Exception:
         pass
 
-    # 最后返回未知（占位）
     m = _map_usb_speed('')
     m.update({'success': True, 'source': 'none', 'raw': ''})
     usb_speed_cache.update({'device': selected_device, 'data': m})
-    return jsonify(m)
+    return m
+
+@app.route('/api/usb/speed')
+def api_usb_speed():
+    """API封装：返回USB速率信息"""
+    data = get_usb_speed()
+    if not data.get('success', True) and data.get('error'):
+        return jsonify(data), 400
+    return jsonify(data)
 
 
 def _benchmark_usb_speed(size_mb: int = 64):
@@ -2276,6 +2553,15 @@ def resume_transfer():
         'message': f'继续传输 {len(pending_photos)} 个文件'
     })
 
+@app.route('/api/clear_progress', methods=['POST'])
+def api_clear_progress():
+    """清除上次未完成的传输进度文件，用于用户选择忽略时。"""
+    try:
+        clear_progress()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/transfer', methods=['POST'])
 def transfer():
     """开始传输照片"""
@@ -2288,8 +2574,74 @@ def transfer():
         }), 400
 
     data = request.get_json()
-    photos = data.get('photos', [])
-    output_dir = data.get('output_dir', OUTPUT_DIR)
+    print(f"DEBUG: 接收到的数据: keys={list(data.keys()) if isinstance(data, dict) else type(data)}")
+
+    photos = []
+    output_dir = (data.get('output_dir') if isinstance(data, dict) else None) or OUTPUT_DIR
+
+    # 新增：支持选择摘要，由服务端展开，避免前端分页压力
+    sel = (data.get('selection') if isinstance(data, dict) else None) or None
+    if sel:
+        try:
+            albums = sel.get('albums') or []
+            exclude = sel.get('exclude') or {}
+            singles = sel.get('singles') or []
+            seen = set()
+            # 展开相册
+            for alb in albums:
+                ex = set(exclude.get(alb, []))
+                files = _list_album_media(alb) or []
+                for p in files:
+                    if p in ex: continue
+                    if p in seen: continue
+                    seen.add(p)
+                    photos.append({
+                        'path': p,
+                        'name': os.path.basename(p),
+                        'size': 0,
+                        'mtime': 0,
+                        'size_mb': 0.0,
+                        'date': ''
+                    })
+            # 追加独立选择
+            for p in singles:
+                if p in seen: continue
+                seen.add(p)
+                photos.append({
+                    'path': p,
+                    'name': os.path.basename(p),
+                    'size': 0,
+                    'mtime': 0,
+                    'size_mb': 0.0,
+                    'date': ''
+                })
+            print(f"DEBUG: 服务端展开 selection 完成: {len(photos)} 项")
+            # 基于相册聚合大小快速初始化总字节，避免大规模逐个stat阻塞
+            try:
+                approx_total = 0
+                albums_map = scan_status.get('albums', {}) if isinstance(scan_status.get('albums', {}), dict) else {}
+                for alb in albums:
+                    info = albums_map.get(alb)
+                    if info and isinstance(info.get('total_size', 0), (int, float)):
+                        approx_total += int(info.get('total_size', 0))
+                with transfer_status_lock:
+                    if approx_total > 0:
+                        transfer_status['bytes_total'] = approx_total
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"ERROR: 展开 selection 失败: {e}")
+            return jsonify({'success': False, 'error': f'展开选择失败: {e}'}), 400
+    else:
+        photos = (data.get('photos') if isinstance(data, dict) else None) or []
+
+    print(f"DEBUG: 照片数量: {len(photos)}")
+    print(f"DEBUG: 输出目录: {output_dir}")
+    if photos:
+        try:
+            print(f"DEBUG: 第一张照片示例: {photos[0]}")
+        except Exception:
+            pass
 
     if not photos:
         return jsonify({
@@ -2297,32 +2649,87 @@ def transfer():
             'error': '没有选择照片'
         }), 400
 
-    # 检测USB速度并保存到传输状态
-    try:
-        print("🔍 正在检测USB设备速度...")
-        usb_info = get_usb_speed()
-        if usb_info and usb_info.get('success'):
-            transfer_status['usb_info'] = {
-                'label': usb_info.get('label', 'USB 未知'),
-                'measured_mbps': usb_info.get('measured_mbps', 0),
-                'gbps': usb_info.get('gbps', 0)
-            }
-            print(f"📡 USB设备检测: {usb_info.get('label')} - {usb_info.get('measured_mbps', 0):.1f} MB/s")
-        else:
-            print("⚠️ 无法检测USB速度")
-            transfer_status['usb_info'] = {'label': 'USB 未知', 'measured_mbps': 0, 'gbps': 0}
-    except Exception as e:
-        print(f"⚠️ USB速度检测失败: {e}")
-        transfer_status['usb_info'] = {'label': 'USB 未知', 'measured_mbps': 0, 'gbps': 0}
+    # 为了尽快返回API响应，将USB速度检测与大小预估改为异步，不阻塞启动
+    def _async_prefetch():
+        # USB 速度检测
+        try:
+            print("🔍 正在检测USB设备速度...")
+            usb_info = get_usb_speed()
+            if usb_info and usb_info.get('success'):
+                with transfer_status_lock:
+                    transfer_status['usb_info'] = {
+                        'label': usb_info.get('label', 'USB 未知'),
+                        'measured_mbps': usb_info.get('measured_mbps', 0),
+                        'gbps': usb_info.get('gbps', 0)
+                    }
+                print(f"📡 USB设备检测: {usb_info.get('label')} - {usb_info.get('measured_mbps', 0):.1f} MB/s")
+            else:
+                with transfer_status_lock:
+                    transfer_status['usb_info'] = {'label': 'USB 未知', 'measured_mbps': 0, 'gbps': 0}
+        except Exception as e:
+            print(f"⚠️ USB速度检测失败: {e}")
+            with transfer_status_lock:
+                transfer_status['usb_info'] = {'label': 'USB 未知', 'measured_mbps': 0, 'gbps': 0}
 
-    # 启动后台传输线程
-    thread = threading.Thread(target=transfer_photos_thread, args=(photos, output_dir, False))
-    thread.daemon = True
-    thread.start()
+        # 大小预估（后台补全，供ETA使用）
+        try:
+            def _stat_size_one(pth: str) -> int:
+                try:
+                    ok, out, _ = run_adb_command("adb shell 'stat -c %s " + pth.replace("'","'\\''") + "'", timeout=4)
+                    if ok and out.strip().isdigit():
+                        return int(out.strip())
+                except Exception:
+                    pass
+                return 0
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            max_workers = min(16, max(4, (os.cpu_count() or 8)))
+            total_bytes = 0
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futs = {}
+                for ph in photos:
+                    if not ph.get('name'):
+                        ph['name'] = os.path.basename(ph.get('path',''))
+                    if int(ph.get('size', 0)) > 0:
+                        total_bytes += int(ph.get('size', 0))
+                        continue
+                    futs[ex.submit(_stat_size_one, ph.get('path',''))] = ph
+                for f in as_completed(futs):
+                    sz = f.result() or 0
+                    ph = futs[f]
+                    ph['size'] = sz
+                    total_bytes += sz
+                    # 分段更新 bytes_total，提高前端ETA及时性
+                    if total_bytes % (50*1024*1024) < 1024:  # 每累计约50MB就刷新一次
+                        with transfer_status_lock:
+                            transfer_status['bytes_total'] = total_bytes
+            with transfer_status_lock:
+                transfer_status['bytes_total'] = total_bytes
+        except Exception as e:
+            print(f"⚠️ 预估大小失败: {e}")
+
+    # 依据设备ID/机型建立批次文件夹: <base>/<device_label>/<YYYYMMDD_HHMMSS>
+    try:
+        device_label = _get_current_device_label() if 'selected_device' in globals() else 'unknown_device'
+    except Exception:
+        device_label = 'unknown_device'
+    try:
+        ts_folder = datetime.now().strftime('%Y%m%d_%H%M%S')
+    except Exception:
+        ts_folder = 'batch'
+    final_output_dir = os.path.join(output_dir, device_label, ts_folder)
+    os.makedirs(final_output_dir, exist_ok=True)
+    # 立即启动后台传输线程
+    t1 = threading.Thread(target=transfer_photos_thread, args=(photos, final_output_dir, False), daemon=True)
+    t1.start()
+    # 异步启动USB速度和大小预估
+    t2 = threading.Thread(target=_async_prefetch, daemon=True)
+    t2.start()
 
     return jsonify({
         'success': True,
-        'message': '传输已开始'
+        'message': '传输已开始',
+        'output_dir': final_output_dir
     })
 
 @app.route('/api/transfer_status')
@@ -2333,6 +2740,20 @@ def get_transfer_status():
     status_copy['completed_count'] = len(transfer_status.get('completed_files', set()))
     status_copy.pop('completed_files', None)  # 移除set，避免JSON序列化错误
     return jsonify(status_copy)
+
+@app.route('/api/pause_transfer', methods=['POST'])
+def pause_transfer():
+    """暂停当前传输（不再提交新任务，已在途任务完成后等待）"""
+    transfer_status['paused'] = True
+    return jsonify({'success': True, 'paused': True})
+
+@app.route('/api/resume_live', methods=['POST'])
+def resume_live():
+    """恢复当前传输（继续提交新任务）"""
+    if not transfer_status.get('is_running', False):
+        return jsonify({'success': False, 'error': '没有正在进行的传输'}), 400
+    transfer_status['paused'] = False
+    return jsonify({'success': True, 'paused': False})
 
 @app.route('/api/stop_transfer', methods=['POST'])
 def stop_transfer():
@@ -4046,4 +4467,10 @@ if __name__ == '__main__':
 
     # 在服务启动前启动设备监控线程（避免debug模式重复启动，使用标记控制）
     start_device_monitor()
-    app.run(debug=True, host='0.0.0.0', port=9500, threaded=True)
+    # 根据环境切换运行模式：默认关闭 debug 与重载器，避免双进程与阻塞
+    debug_flag = os.getenv('AT_DEBUG', '0').lower() in ('1','true','yes','on')
+    try:
+        app.run(host='0.0.0.0', port=9500, threaded=True, debug=debug_flag, use_reloader=False)
+    except TypeError:
+        # 兼容旧版本 Flask 没有 use_reloader 参数位置变化
+        app.run(host='0.0.0.0', port=9500, threaded=True, debug=debug_flag)

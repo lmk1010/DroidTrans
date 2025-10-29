@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>USB模式 - Android照片传输工具</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg width='48' height='48' viewBox='0 0 1024 1024' xmlns='http://www.w3.org/2000/svg'><path d='M0 0m512 0l0 0q512 0 512 512l0 0q0 512-512 512l0 0q-512 0-512-512l0 0q0-512 512-512Z' fill='%234992FF'/><path d='M260.654545 620.897745a37.236364 37.236364 0 1 1-74.472727-1.340509l3.165091-175.476363a186.181818 186.181818 0 0 1 186.144582-182.830546H679.005091a37.236364 37.236364 0 1 1 0 74.472728H375.491491a111.709091 111.709091 0 0 0-111.709091 109.698327L260.654545 620.897745z' fill='%23FFFFFF'/><path d='M697.455709 257.805964a27.927273 27.927273 0 1 1-33.214836 44.907054l-122.842764-90.875345a27.927273 27.927273 0 0 1 33.214836-44.907055l122.842764 90.875346z' fill='%23FFFFFF'/><path d='M675.579345 277.355055a27.927273 27.927273 0 1 1 35.355928 43.250036l-142.391855 116.363636a27.927273 27.927273 0 0 1-35.337309-43.250036l142.373236-116.363636z' fill='%23FFFFFF'/><path d='M800.581818 403.102255a37.236364 37.236364 0 1 1 74.472727 1.340509l-3.16509 175.476363a186.181818 186.181818 0 0 1-186.144582 182.830546H382.231273a37.236364 37.236364 0 1 1 0-74.472728h303.532218a111.709091 111.709091 0 0 0 111.709091-109.698327L800.581818 403.102255z' fill='%23FFFFFF'/><path d='M363.780655 766.194036a27.927273 27.927273 0 1 1 33.214836-44.907054l122.842764 90.875345a27.927273 27.927273 0 0 1-33.214837 44.907055l-122.842763-90.875346z' fill='%23FFFFFF'/><path d='M385.657018 746.644945a27.927273 27.927273 0 1 1-35.355927-43.250036l142.391854-116.363636a27.927273 27.927273 0 0 1 35.33731 43.250036l-142.373237 116.363636z' fill='%23FFFFFF'/></svg>">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- 移除外网字体以避免阻塞；使用系统字体栈与等宽字体回退 -->
     <style>
         * {
             margin: 0;
@@ -244,6 +244,9 @@
             transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 4px;
         }
+        /* 不确定进度动画 */
+        .progress-bar.indeterminate { width: 30%; animation: indeterminate 1.2s infinite ease-out; }
+        @keyframes indeterminate { 0% { transform: translateX(-120%);} 100% { transform: translateX(400%);} }
 
         .current-file {
             font-size: 12px;
@@ -1065,6 +1068,9 @@
             position: absolute; right: 6px; top: 6px; z-index: 2; background: rgba(0,0,0,0.55); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 14px;
         }
         .thumb-video-badge { position: absolute; left: 6px; bottom: 6px; background: rgba(0,0,0,0.55); color:#fff; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+        /* Filename overlay on hover */
+        .thumb-name { position: absolute; left:0; right:0; bottom:0; background: rgba(0,0,0,0.55); color:#fff; font-size: 12px; padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .2s ease; }
+        .thumb-item:hover .thumb-name { opacity: 1; }
     /* Tooltip styles */
         .tooltip {
             position: relative;
@@ -1263,6 +1269,8 @@
             <button class="btn btn-primary" id="scanBtn" onclick="scanPhotos()" disabled>扫描照片</button>
             <button class="btn btn-success" id="transferBtn" onclick="startTransfer()" disabled>开始传输</button>
             <button class="btn btn-success" id="resumeBtn" onclick="resumeTransfer()" style="display: none;">🔄 继续传输</button>
+            <button class="btn btn-tonal" id="pauseBtn" onclick="pauseTransfer()" style="display: none;">暂停</button>
+            <button class="btn btn-tonal" id="resumeLiveBtn" onclick="resumeLive()" style="display: none;">继续</button>
             <button class="btn btn-danger" id="stopBtn" onclick="stopTransfer()" style="display: none;">停止传输</button>
             <div class="status" style="display:flex;align-items:center;gap:8px;">
                 <span class="status-badge status-speed" id="usbSpeedBadge" style="display:none;">USB</span>
@@ -1448,17 +1456,32 @@
                 return;
             }
             try {
-                const resp = await fetch(`/api/thumb?path=${encodeURIComponent(path)}`, { cache: 'no-cache' });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                // 不使用 no-cache，避免频繁 304；如返回304，改为直接img.src触发浏览器缓存
+                const resp = await fetch(`/api/thumb?path=${encodeURIComponent(path)}`);
+                if (!resp.ok) {
+                    if (resp.status === 304) {
+                        imgEl.onload = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                        imgEl.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                        return;
+                    }
+                    throw new Error(`HTTP ${resp.status}`);
+                }
                 const blob = await resp.blob();
                 const entry = thumbCachePut(path, blob);
                 imgEl.onload = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
                 imgEl.onerror = () => { const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
                 imgEl.src = entry ? entry.url : URL.createObjectURL(blob);
             } catch (e) {
-                const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove();
-                imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>');
-                console.error('[ThumbCache] Load failed:', path, e);
+                // 兜底：仍尝试直接指向原URL，让浏览器利用缓存
+                try {
+                    imgEl.onload = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                    imgEl.onerror = () => { const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
+                    imgEl.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                } catch (err) {
+                    const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove();
+                    imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>');
+                    console.error('[ThumbCache] Load failed:', path, e);
+                }
             }
         }
         let allPhotos = [];
@@ -1470,9 +1493,152 @@
         let scanStatusInterval = null;
         let deviceStatusInterval = null;
         let progressInterval = null;
+        // 全局缩略图轮询控制（避免重复定时器/超大请求）
+        let thumbPollTimer = null;
+        let thumbPollRunning = false;
+        const globalPendingThumbs = new Set(); // 待检测缩略图路径
+        const MAX_STATUS_BATCH = 200; // 每次状态轮询的最大路径数，避免请求体过大
+        const MAX_THUMB_RETRY = 120;   // 单个缩略图最大重试次数（~60s, 500ms间隔）
+        const PROBE_FETCH_LIMIT = 20;  // 每轮最多主动探测的数量
+        const thumbRetryCount = new Map();
+
+        function stopThumbPolling() {
+            if (thumbPollTimer) {
+                clearTimeout(thumbPollTimer);
+                thumbPollTimer = null;
+            }
+            thumbPollRunning = false;
+        }
+
+        async function thumbPollLoop() {
+            // 单例轮询：避免多个并发轮询造成压力
+            if (thumbPollRunning) return;
+            thumbPollRunning = true;
+
+            const doOne = async () => {
+                try {
+                    if (globalPendingThumbs.size === 0) {
+                        thumbPollRunning = false; // 无任务则停止
+                        return;
+                    }
+                    // 取一批进行轮询
+                    const batch = [];
+                    const it = globalPendingThumbs.values();
+                    for (let i = 0; i < MAX_STATUS_BATCH; i++) {
+                        const n = it.next();
+                        if (n.done) break;
+                        batch.push(n.value);
+                    }
+                    if (batch.length === 0) {
+                        thumbPollRunning = false;
+                        return;
+                    }
+                    const resp = await fetch('/api/thumb_status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ paths: batch })
+                    });
+                    const data = await resp.json().catch(() => ({}));
+                    if (data && data.success && Array.isArray(data.ready)) {
+                        let readyCount = 0;
+                        for (let i = 0; i < data.ready.length; i++) {
+                            if (!data.ready[i]) continue;
+                            const path = batch[i];
+                            globalPendingThumbs.delete(path);
+                            thumbRetryCount.delete(path);
+                            // 预览缩略图
+                            const img = document.querySelector(`#thumbGrid .thumb-item[data-path="${CSS.escape(path)}"] img`);
+                            if (img && (img.getAttribute('data-ph') === '1' || !img.src)) {
+                                img.onload = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                img.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                                img.removeAttribute('data-ph');
+                            }
+                            // 相册封面
+                            const cover = document.querySelector(`.album-cover img[data-cover="${CSS.escape(path)}"]`);
+                            if (cover && !cover.src) {
+                                cover.onload = () => { onCoverLoaded(cover); };
+                                cover.onerror = () => { fallbackCover(cover, cover.alt || '') };
+                                cover.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                            }
+                            readyCount++;
+                        }
+                        // 主动探测：对长时间未就绪的路径做有限度 GET 探测，避免卡死
+                        try {
+                            let probes = 0;
+                            for (const path of batch) {
+                                if (probes >= PROBE_FETCH_LIMIT) break;
+                                if (!globalPendingThumbs.has(path)) continue;
+                                const cnt = (thumbRetryCount.get(path) || 0) + 1;
+                                thumbRetryCount.set(path, cnt);
+                                if (cnt > MAX_THUMB_RETRY) {
+                                    globalPendingThumbs.delete(path);
+                                    const img = document.querySelector(`#thumbGrid .thumb-item[data-path="${CSS.escape(path)}"] img`);
+                                    const sk = img?.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove();
+                                    if (img) img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>');
+                                    continue;
+                                }
+                                if (cnt % 3 !== 0) continue; // 每3轮探测一次
+                                probes++;
+                                fetch(`/api/thumb?path=${encodeURIComponent(path)}`, { method: 'GET' })
+                                  .then(r => {
+                                      if (r.ok) return r.blob();
+                                      if (r.status === 304) return 'USE_CACHE';
+                                      return null;
+                                  })
+                                  .then(blob => {
+                                      if (!blob) return;
+                                      const img = document.querySelector(`#thumbGrid .thumb-item[data-path="${CSS.escape(path)}"] img`);
+                                      if (img && blob !== 'USE_CACHE') {
+                                          img.onload = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                          img.src = URL.createObjectURL(blob);
+                                          img.removeAttribute('data-ph');
+                                      } else if (img && blob === 'USE_CACHE') {
+                                          // 304：直接指向同URL，浏览器会使用本地缓存
+                                          img.onload = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                          img.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                                          img.removeAttribute('data-ph');
+                                      }
+                                      const cover = document.querySelector(`.album-cover img[data-cover="${CSS.escape(path)}"]`);
+                                      if (cover && !cover.src) {
+                                          if (blob !== 'USE_CACHE') {
+                                              cover.onload = () => { onCoverLoaded(cover); };
+                                              cover.src = URL.createObjectURL(blob);
+                                          } else {
+                                              cover.onload = () => { onCoverLoaded(cover); };
+                                              cover.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                                          }
+                                      }
+                                      globalPendingThumbs.delete(path);
+                                      thumbRetryCount.delete(path);
+                                  })
+                                  .catch(() => {});
+                            }
+                        } catch (e) {}
+                        // 更新整体缩略图进度条
+                        const grid = document.getElementById('thumbGrid');
+                        const tTotal = previewState.photos.length;
+                        const loadedImgs = grid ? grid.querySelectorAll('.thumb-img.loaded').length : 0;
+                        const percent = tTotal > 0 ? Math.round((loadedImgs / tTotal) * 100) : 0;
+                        const bar = document.getElementById('thumbProgressBar');
+                        const txt = document.getElementById('thumbProgressText');
+                        if (bar) bar.style.width = `${percent}%`;
+                        if (txt) txt.textContent = `${loadedImgs}/${tTotal} (${percent}%)`;
+                    }
+                } catch (e) {
+                    // 忽略错误，稍后重试
+                } finally {
+                    // 根据队列大小调整轮询频率（队列大时稍微放缓）
+                    const delay = globalPendingThumbs.size > 2000 ? 1200 : globalPendingThumbs.size > 500 ? 900 : 600;
+                    thumbPollTimer = setTimeout(doOne, delay);
+                }
+            };
+            thumbPollTimer = setTimeout(doOne, 300);
+        }
         let allAlbums = {};
         let currentView = 'list'; // 'list' or 'album'
         let currentAlbumKey = null;
+        // 由全局轮询器统一管理，这里不再定义局部轮询器
         window.__disconnectDialogVisible = false;
         window.__adbIssueDialogVisible = false;
 
@@ -1968,7 +2134,8 @@
         }
 
         // 页面加载：启动设备状态轮询与静默检测，并检查是否需要恢复任务
-        window.addEventListener('load', () => {
+        // 使用 DOMContentLoaded 更快进入可交互状态，避免等待所有资源
+        window.addEventListener('DOMContentLoaded', () => {
             // 初始化Burst模式状态
             loadBurstModeStatus();
 
@@ -2003,9 +2170,9 @@
                     } else if (st && (st.is_running || st.stage === 'finding' || st.stage === 'getting_info')) {
                         startScanStatusPolling();
                     } else {
-                        // 首次无结果时才自动扫描，避免刷新重复扫描
-                        const lastDone = localStorage.getItem('at_last_scan_done');
-                        if (!lastDone) setTimeout(() => scanPhotos(), 600);
+                        // 不再默认自动扫描：首屏先可交互，让用户手动点击“扫描照片”
+                        const scanBtnNow = document.getElementById('scanBtn');
+                        if (scanBtnNow) scanBtnNow.disabled = false;
                     }
                 } else {
                     statusBadge.className = 'status-badge status-disconnected';
@@ -2085,8 +2252,28 @@
             }
         }
 
+        async function ignoreResumeForever() {
+            try {
+                localStorage.setItem('at_resume_ignore_forever', '1');
+            } catch (e) {}
+            try {
+                await fetch('/api/clear_progress', { method: 'POST' });
+            } catch (e) {}
+            const resumeBtn = document.getElementById('resumeBtn');
+            if (resumeBtn) resumeBtn.style.display = 'none';
+            showToast('已忽略未完成任务，今后不再提示', { type: 'success' });
+        }
+
         async function checkResumeProgress() {
             try {
+                // 用户选择永久忽略时，不再弹框
+                try {
+                    if (localStorage.getItem('at_resume_ignore_forever') === '1') {
+                        const resumeBtn = document.getElementById('resumeBtn');
+                        if (resumeBtn) resumeBtn.style.display = 'none';
+                        return;
+                    }
+                } catch (e) {}
                 const response = await fetch('/api/check_progress');
                 const data = await response.json();
 
@@ -2095,16 +2282,16 @@
                     resumeBtn.style.display = 'inline-block';
                     resumeBtn.title = `有 ${data.pending} 个文件未传输（已完成 ${data.completed}/${data.total}）`;
 
-                    const shouldResume = await showConfirmation({
+                    // 三按钮对话：继续、稍后、忽略且不再提示
+                    showDialog({
                         title: '发现未完成的传输',
-                        message: `发现未完成的传输任务：\n\n总文件: ${data.total}\n已完成: ${data.completed}\n剩余: ${data.pending}\n失败: ${data.failed}\n\n是否立即继续传输？`,
-                        confirmLabel: '继续传输',
-                        cancelLabel: '稍后'
+                        message: `发现未完成的传输任务：\n\n总文件: ${data.total}\n已完成: ${data.completed}\n剩余: ${data.pending}\n失败: ${data.failed}\n\n要如何处理？`,
+                        actions: [
+                            { label: '稍后' },
+                            { label: '忽略并不再提示', onClick: () => ignoreResumeForever() },
+                            { label: '继续传输', type: 'primary', onClick: () => resumeTransfer() }
+                        ]
                     });
-
-                    if (shouldResume) {
-                        resumeTransfer();
-                    }
                 }
             } catch (error) {
                 console.error('检查进度失败:', error);
@@ -2242,7 +2429,11 @@
                     let extraInfo = '';
 
                     if (status.stage === 'finding') {
-                        extraInfo = `已发现 ${status.files_found} 个文件`;
+                        if ((status.files_found || 0) > 0) {
+                            extraInfo = `已发现 ${status.files_found} 个文件`;
+                        } else {
+                            extraInfo = '';
+                        }
                     } else if (status.stage === 'getting_info') {
                         const percent = status.total_files > 0 ? Math.round((status.files_processed / status.total_files) * 100) : 0;
                         extraInfo = `处理中: ${status.files_processed}/${status.total_files} (${percent}%)`;
@@ -2319,16 +2510,19 @@
                         html += '</div>';
                         photoList.innerHTML = html;
                     } else {
-                        // 仍未有预览：显示加载提示
-                        const parts = [
-                            '<div class="loading">',
-                            '<div class="spinner"></div>',
-                            `<p>${stageText}</p>`
-                        ];
-                        if (extraInfo) parts.push(`<p>${extraInfo}</p>`);
-                        if (status.current_dir) parts.push(`<p>当前目录: ${status.current_dir}</p>`);
-                        parts.push('</div>');
-                        photoList.innerHTML = parts.join('');
+                        // 仍未有预览：显示不确定进度和骨架占位
+                        let html = '';
+                        html += `<div class="progress-container active">
+                                    <div class="progress-info">
+                                        <span>${stageText}</span>
+                                        <span id="scanFindingText">${extraInfo || '正在扫描存储…'}</span>
+                                    </div>
+                                    <div class="progress-bar-container"><div class="progress-bar indeterminate"></div></div>
+                                </div>`;
+                        html += '<div class="album-grid">';
+                        for (let i=0;i<8;i++) { html += '<div class="album-card skeleton" style="height: 230px;"></div>'; }
+                        html += '</div>';
+                        photoList.innerHTML = html;
                     }
                     return;
                 }
@@ -2403,10 +2597,16 @@
             let html = '<div class="select-all-container">';
             html += '<input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" class="photo-checkbox">';
             html += '<label for="selectAllCheckbox">全选 / 全不选</label>';
+            html += `<span style="margin-left:12px; color:#666;">共 ${filteredPhotos.length} 张</span>`;
             html += '<button class="btn btn-tonal" style="margin-left:12px;height:32px;padding:0 12px;" onclick="invertSelection()">反选</button>';
             html += '</div>';
 
-            filteredPhotos.forEach(photo => {
+            // 限制显示数量，提高性能
+            const maxDisplay = 1000;
+            const displayCount = Math.min(filteredPhotos.length, maxDisplay);
+
+            for (let i = 0; i < displayCount; i++) {
+                const photo = filteredPhotos[i];
                 const isSelected = selectedPhotos.has(photo.path);
                 html += `
                     <div class="photo-item">
@@ -2421,10 +2621,15 @@
                         </div>
                     </div>
                 `;
-            });
+            }
+
+            if (filteredPhotos.length > maxDisplay) {
+                html += `<div style="text-align:center;padding:20px;color:#666;">显示前 ${maxDisplay} 张，共 ${filteredPhotos.length} 张照片。请使用相册视图浏览所有照片。</div>`;
+            }
 
             photoList.innerHTML = html;
-            document.getElementById('transferBtn').disabled = selectedPhotos.size === 0;
+            // 统一由 updateStats 控制按钮可用状态（考虑相册整体选择）
+            updateStats();
         }
 
         function invertSelection() {
@@ -2452,7 +2657,6 @@
                 selectedPhotos.add(path);
             }
             updateStats();
-            document.getElementById('transferBtn').disabled = selectedPhotos.size === 0;
         }
 
         function toggleSelectAll() {
@@ -2461,6 +2665,9 @@
 
             if (checked) {
                 filteredPhotos.forEach(photo => selectedPhotos.add(photo.path));
+                showToast(`已选择所有 ${filteredPhotos.length} 张照片`, { type: 'success' });
+            } else {
+                showToast('已取消选择所有照片', { type: 'info' });
             }
 
             displayPhotos();
@@ -2468,11 +2675,20 @@
         }
 
         function updateStats() {
-            const total = (currentView === 'preview' && previewState && previewState.photos) ? previewState.photos.length : filteredPhotos.length;
+            // 计算总数：优先使用相册聚合（更快更全），预览时用当前相册的照片数
+            let total = 0;
+            const albums = allAlbums || {};
+            if (currentView === 'preview' && previewState && Array.isArray(previewState.photos)) {
+                total = previewState.photos.length;
+            } else if (Object.keys(albums).length > 0) {
+                // 相册视图：汇总各相册的 total_count（无需已展开具体照片）
+                Object.values(albums).forEach(a => { total += Number(a.total_count || 0); });
+            } else {
+                total = filteredPhotos.length;
+            }
             document.getElementById('totalCount').textContent = total;
             // 计算全局已选数：相册整体选择（减去 excluded）+ 独立选择（排除已被整体选择覆盖的）
             let selectedCount = 0;
-            const albums = allAlbums || {};
             selectedAlbumsAll.forEach(k => { selectedCount += (albums[k]?.total_count || 0) - ((excludedByAlbum.get(k)?.size) || 0); });
             // 去重：从独立选择中剔除已计入相册整体选择的路径
             selectedPhotos.forEach(p => {
@@ -2485,11 +2701,27 @@
             });
             document.getElementById('selectedCount').textContent = selectedCount;
 
-            // 计算所有照片的总大小
+            // 计算所有照片的总大小（可能不精确）与已选大小（基于相册总大小即时显示）
             let allSize = 0;
             let selectedSize = 0;
-
-            // 简化：体积显示保留原有基于 allPhotos 的统计（快速模式下不精确）
+            // 总大小：优先用相册聚合的 total_size（快速扫描立即可用）
+            if (Object.keys(albums).length > 0) {
+                Object.values(albums).forEach(a => { allSize += Number(a.total_size || 0); });
+            } else {
+                // 退化到逐照片累加
+                allPhotos.forEach(ph => { allSize += (ph.size || 0); });
+            }
+            // 相册整体选中的体积快速汇总
+            selectedAlbumsAll.forEach(k => { const alb = albums[k]; if (alb && alb.total_size) selectedSize += alb.total_size; });
+            // 额外独立选择（不在相册整体选中集合内）的体积
+            selectedPhotos.forEach(p => {
+                let covered = false;
+                for (const k of selectedAlbumsAll) { const prefix = k.replace(/\/+$/,'') + '/'; if (p.startsWith(prefix)) { covered = true; break; } }
+                if (!covered) {
+                    const ph = allPhotos.find(x => x.path === p);
+                    if (ph && ph.size) selectedSize += ph.size;
+                }
+            });
 
             // GB自动转换函数
             function formatSize(bytes) {
@@ -2504,7 +2736,7 @@
             document.getElementById('selectedSize').textContent = formatSize(selectedSize);
 
             const transferBtn = document.getElementById('transferBtn');
-            if (transferBtn) transferBtn.disabled = selectedPhotos.size === 0;
+            if (transferBtn) transferBtn.disabled = (selectedCount === 0);
         }
 
         function filterPhotos() {
@@ -2565,54 +2797,37 @@
             }
         }
 
-        async function startTransfer() {
-            if (selectedPhotos.size === 0) {
-                showToast('请至少选择一张照片', { type: 'warning' });
-                return;
-            }
-
-            const outputPath = outputPathInput.value.trim();
-            if (!outputPath) {
-                showToast('请输入输出目录路径', { type: 'warning' });
-                return;
-            }
-
-            const photos = allPhotos.filter(photo => selectedPhotos.has(photo.path));
-
-            try {
-                const response = await fetch('/api/transfer', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        photos: photos,
-                        output_dir: outputPath
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    document.getElementById('progressContainer').classList.add('active');
-                    document.getElementById('transferBtn').style.display = 'none';
-                    document.getElementById('stopBtn').style.display = 'inline-block';
-                    document.getElementById('scanBtn').disabled = true;
-                    document.getElementById('currentFile').textContent = `保存到: ${outputPath}`;
-                    startProgressPolling();
-                    startDeviceStatusPolling();
-                } else {
-                    showToast('启动传输失败: ' + data.error, { type: 'error' });
-                }
-            } catch (error) {
-                showToast('启动传输失败: ' + error.message, { type: 'error' });
-            }
-        }
-
+    
         async function stopTransfer() {
             try {
                 await fetch('/api/stop_transfer', { method: 'POST' });
             } catch (error) {
                 console.error('停止传输失败:', error);
             }
+        }
+
+        async function pauseTransfer() {
+            try {
+                const resp = await fetch('/api/pause_transfer', { method: 'POST' });
+                const data = await resp.json();
+                if (data && data.success) {
+                    document.getElementById('pauseBtn').style.display = 'none';
+                    document.getElementById('resumeLiveBtn').style.display = 'inline-block';
+                    showToast('已暂停传输', { type: 'info' });
+                }
+            } catch (e) { console.error('暂停失败', e); }
+        }
+
+        async function resumeLive() {
+            try {
+                const resp = await fetch('/api/resume_live', { method: 'POST' });
+                const data = await resp.json();
+                if (data && data.success) {
+                    document.getElementById('resumeLiveBtn').style.display = 'none';
+                    document.getElementById('pauseBtn').style.display = 'inline-block';
+                    showToast('已继续传输', { type: 'success' });
+                }
+            } catch (e) { console.error('继续失败', e); }
         }
 
         function startProgressPolling() {
@@ -2656,20 +2871,49 @@
                     `正在传输: ${status.current} / ${status.total}`;
                 document.getElementById('progressPercent').textContent = percent + '%';
                 document.getElementById('progressBar').style.width = percent + '%';
-                document.getElementById('currentFile').textContent = '当前: ' + status.current_file;
-                // 显示估算速度而不是实时更新的速度
-                if (status.speed_estimated && status.speed_mbps > 0) {
-                    // 使用检测到的USB类型
+                // 当前文件
+                document.getElementById('currentFile').textContent = '当前: ' + (status.current_file || '');
+                // 实时显示速度（使用后端实时EMA速度），附带USB标签；>1000MB显示GB
+                if (status.speed_mbps && status.speed_mbps > 0) {
                     const usbLabel = status.usb_info && status.usb_info.label ? status.usb_info.label : 'USB';
-                    document.getElementById('speedInfo').textContent = `${usbLabel} (估算) · ${status.speed_mbps.toFixed(1)} MB/s`;
-                } else if (status.speed_mbps > 0) {
-                    document.getElementById('speedInfo').textContent = `正在估算速度...`;
+                    document.getElementById('speedInfo').textContent = `${usbLabel} · ${status.speed_mbps.toFixed(1)} MB/s`;
                 } else {
                     document.getElementById('speedInfo').textContent = `速度: 计算中...`;
                 }
-                document.getElementById('sizeInfo').textContent = `已传输: ${doneMB} / ${totalMB} MB`;
-                document.getElementById('etaInfo').textContent = `预计剩余: ${etaText}`;
-                document.getElementById('totalEstInfo').textContent = `总预计: ${totalText}`;
+                // 大小显示：超过1000MB按GB
+                function fmtSizeMBGB(mb) {
+                    if (mb >= 1000) return (mb/1024).toFixed(2) + ' GB';
+                    return mb.toFixed(2) + ' MB';
+                }
+                document.getElementById('sizeInfo').textContent = `已传输: ${fmtSizeMBGB(bytesDone/1024/1024)} / ${fmtSizeMBGB(bytesTotal/1024/1024)}`;
+                // 时间显示：带中文单位（小时/分钟/秒）
+                function fmtTimeCN(sec) {
+                    const t = Math.max(0, Math.floor(sec||0));
+                    const h = Math.floor(t/3600);
+                    const m = Math.floor((t%3600)/60);
+                    const s = t % 60;
+                    let parts = [];
+                    if (h > 0) parts.push(`${h}小时`);
+                    if (m > 0 || h > 0) parts.push(`${m}分钟`);
+                    parts.push(`${s}秒`);
+                    return parts.join('');
+                }
+                document.getElementById('etaInfo').textContent = `预计剩余: ${fmtTimeCN(etaSec)}`;
+                document.getElementById('totalEstInfo').textContent = `总预计: ${fmtTimeCN(totalEstSec)}`;
+
+                // 暂停/继续按钮联动
+                const pauseBtn = document.getElementById('pauseBtn');
+                const resumeLiveBtn = document.getElementById('resumeLiveBtn');
+                if (status.is_running) {
+                    if (status.paused) {
+                        pauseBtn.style.display = 'none';
+                        resumeLiveBtn.style.display = 'inline-block';
+                    } else {
+                        pauseBtn.style.display = 'inline-block';
+                        resumeLiveBtn.style.display = 'none';
+                    }
+                    document.getElementById('stopBtn').style.display = 'inline-block';
+                }
 
                 if (!status.is_running && status.current > 0) {
                     clearInterval(progressInterval);
@@ -2682,6 +2926,8 @@
                     document.getElementById('transferBtn').style.display = 'inline-block';
                     document.getElementById('stopBtn').style.display = 'none';
                     document.getElementById('scanBtn').disabled = false;
+                    document.getElementById('pauseBtn').style.display = 'none';
+                    document.getElementById('resumeLiveBtn').style.display = 'none';
 
                     if (status.failed.length > 0) {
                         console.error('失败的文件:', status.failed);
@@ -2743,11 +2989,13 @@
 
             let html = '';
             html += '<div class="album-grid">';
+            const coverGenList = [];
 
             // 按优先级排序相册
             const sortedAlbums = Object.entries(allAlbums).sort((a, b) => a[1].priority - b[1].priority);
 
             sortedAlbums.forEach(([albumKey, albumData]) => {
+                if ((albumData.total_count || 0) <= 0) return; // 隐藏空相册
                 // 计算相册已选数：整体选中则为 total_count 减去 excluded；否则统计 selectedPhotos 前缀命中
                 let selectedCount = 0;
                 if (selectedAlbumsAll.has(albumKey)) {
@@ -2766,10 +3014,9 @@
                         <div class="album-cover">
                             ${coverPath ? `
                                 <div class="skeleton-cover"></div>
-                                <img src="/api/preview?path=${encodeURIComponent(coverPath)}" alt="${albumData.name}"
+                                <img data-cover="${coverPath}" alt="${albumData.name}"
                                      loading="lazy" decoding="async" fetchpriority="low"
-                                     onload="onCoverLoaded(this)"
-                                     onerror="fallbackCover(this, '${albumData.name.replace(/'/g, "\\'")}')">
+                                     onload="onCoverLoaded(this)" onerror="fallbackCover(this, this.alt)">
                             ` : `
                                 <div class="album-cover-placeholder">${albumIconSVG(albumData.name)}</div>
                             `}
@@ -2816,6 +3063,34 @@
 
             updateStats();
             updateTopActions('album');
+
+            // 优先直接为相册封面设置 src，避免返回列表时封面“丢失”再等待轮询
+            try {
+                const coverImgs = document.querySelectorAll('.album-cover img[data-cover]');
+                coverImgs.forEach(img => {
+                    const p = img.getAttribute('data-cover');
+                    if (!p) return;
+                    // 若内存缓存命中，直接使用 blobUrl；否则先尝试直接请求缩略图
+                    const hit = thumbCacheGet(p);
+                    if (hit && hit.url) {
+                        img.src = hit.url;
+                    } else {
+                        img.src = `/api/thumb?path=${encodeURIComponent(p)}`;
+                    }
+                });
+            } catch (e) { /* ignore */ }
+
+            // 批量触发封面缩略图生成并纳入全局轮询
+            try {
+                // 收集封面路径
+                const imgs = document.querySelectorAll('.album-cover img[data-cover]');
+                const paths = [];
+                imgs.forEach(img => { const p = img.getAttribute('data-cover'); if (p) { paths.push(p); globalPendingThumbs.add(p); } });
+                if (paths.length) {
+                    fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths, batch_size: 50 }) }).catch(()=>{});
+                    thumbPollLoop();
+                }
+            } catch (e) {}
         }
 
         function selectAllAlbums() {
@@ -2824,38 +3099,7 @@
             excludedByAlbum = new Map();
             updateStats();
             if (currentView === 'album') displayAlbums();
-            // 后台真实展开到 selectedPhotos（用于传输等）
-            (async () => {
-                const albums = Object.keys(allAlbums || {});
-                let totalAdded = 0;
-                for (const key of albums) {
-                    try {
-                        let offset = 0;
-                        let total = 0;
-                        const pageSize = 500;
-                        // 首次获取，得到总数
-                        const r0 = await fetch(`/api/album_photos?album=${encodeURIComponent(key)}&offset=${offset}&limit=${pageSize}`);
-                        const d0 = await r0.json();
-                        if (!d0 || !d0.success) continue;
-                        const list0 = d0.photos || [];
-                        total = Number(d0.total || list0.length);
-                        list0.forEach(p => { if (!selectedPhotos.has(p.path)) { selectedPhotos.add(p.path); totalAdded++; } });
-                        offset += list0.length;
-                        // 继续分页
-                        while (offset < total) {
-                            const rn = await fetch(`/api/album_photos?album=${encodeURIComponent(key)}&offset=${offset}&limit=${pageSize}`);
-                            const dn = await rn.json();
-                            const ln = (dn && dn.success) ? (dn.photos || []) : [];
-                            ln.forEach(p => { if (!selectedPhotos.has(p.path)) { selectedPhotos.add(p.path); totalAdded++; } });
-                            offset += ln.length;
-                            if (ln.length === 0) break;
-                        }
-                    } catch (e) { /* ignore */ }
-                }
-                updateStats();
-                if (currentView === 'album') displayAlbums();
-                showToast(`已选择所有相册，共 ${totalAdded} 项`, { type: 'success' });
-            })();
+            showToast('已选择所有相册', { type: 'success' });
         }
 
         function invertAllAlbums() {
@@ -2865,32 +3109,11 @@
             keys.forEach(k => { if (!selectedAlbumsAll.has(k)) newSelected.add(k); });
             selectedAlbumsAll = newSelected;
             excludedByAlbum = new Map();
-            // 清空具体项，后台重建（避免与相册级标记冲突）
+            // 清空具体项（避免与相册级标记冲突）
             selectedPhotos.clear();
             updateStats();
             if (currentView === 'album') displayAlbums();
-            // 后台扩展具体路径
-            (async ()=>{
-                for (const key of selectedAlbumsAll) {
-                    try {
-                        let offset = 0; const pageSize = 500; let total = 0;
-                        const r0 = await fetch(`/api/album_photos?album=${encodeURIComponent(key)}&offset=${offset}&limit=${pageSize}`);
-                        const d0 = await r0.json();
-                        if (!d0 || !d0.success) continue;
-                        const list0 = d0.photos || []; total = Number(d0.total || list0.length);
-                        list0.forEach(p => selectedPhotos.add(p.path)); offset += list0.length;
-                        while (offset < total) {
-                            const rn = await fetch(`/api/album_photos?album=${encodeURIComponent(key)}&offset=${offset}&limit=${pageSize}`);
-                            const dn = await rn.json();
-                            const ln = (dn && dn.success) ? (dn.photos || []) : [];
-                            ln.forEach(p => selectedPhotos.add(p.path)); offset += ln.length;
-                            if (ln.length === 0) break;
-                        }
-                    } catch (e) {}
-                }
-                updateStats();
-                if (currentView === 'album') displayAlbums();
-            })();
+            // 不再后台展开具体路径，由服务端在开始传输时展开
         }
 
         // 扁平化图标（Material风格）
@@ -2956,59 +3179,81 @@
         function toggleAlbumSelection(albumKey) {
             const albumData = allAlbums[albumKey];
             if (!albumData) return;
-            const total = albumData.photos.length;
-            let selectedInAlbum = 0;
-            albumData.photos.forEach(p => { if (selectedPhotos.has(p.path)) selectedInAlbum++; });
-
-            if (selectedInAlbum === total && total > 0) {
-                // 反选（全部选中时）
-                albumData.photos.forEach(p => {
-                    if (selectedPhotos.has(p.path)) selectedPhotos.delete(p.path); else selectedPhotos.add(p.path);
-                });
-                showToast(`已对 ${albumData.name} 进行反选`, { type: 'info' });
+            // 使用相册级选择语义，避免必须展开全部具体路径
+            if (selectedAlbumsAll.has(albumKey)) {
+                const excl = excludedByAlbum.get(albumKey);
+                if (excl && excl.size > 0) {
+                    // 已整体选择且有排除项：清除排除，变为真正的全选
+                    excludedByAlbum.delete(albumKey);
+                    showToast(`已选择 ${albumData.name} 全部 (${albumData.total_count})`, { type: 'success' });
+                } else {
+                    // 已整体选择且无排除：取消选择
+                    selectedAlbumsAll.delete(albumKey);
+                    showToast(`已取消选择 ${albumData.name}`, { type: 'info' });
+                }
             } else {
-                // 全选
-                let added = 0;
-                albumData.photos.forEach(p => { if (!selectedPhotos.has(p.path)) { selectedPhotos.add(p.path); added++; } });
-                showToast(`已选择 ${albumData.name} 相册中的 ${added} 张照片`, { type: 'success' });
+                // 设置为整体选中并清除排除
+                selectedAlbumsAll.add(albumKey);
+                excludedByAlbum.delete(albumKey);
+                showToast(`已选择 ${albumData.name} 全部 (${albumData.total_count})`, { type: 'success' });
             }
 
+            // 刷新UI与统计
             if (currentView === 'album') {
                 displayAlbums();
-            } else {
-                displayPhotos();
+            } else if (currentView === 'preview' && (previewState.albumKey === albumKey || currentAlbumKey === albumKey)) {
+                refreshPreviewSelectionUI();
             }
             updateStats();
         }
 
         // 新的相册预览（缩略图网格 + 分批加载）
-        let previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 60, attached: false };
+        let previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 120, attached: false };
 
         async function openAlbumPreview(albumKey) {
             currentAlbumKey = albumKey;
             const albumData = allAlbums[albumKey];
             if (!albumData) return;
             currentView = 'preview';
-            let photosArr = (albumData.photos || []);
-            if (!photosArr.length) {
-                // 延迟拉取相册内文件列表（仅一次，分页加载）
-                try {
-                    const resp = await fetch(`/api/album_photos?album=${encodeURIComponent(albumKey)}&offset=0&limit=240`);
-                    const data = await resp.json();
-                    if (data && data.success) {
-                        photosArr = data.photos || [];
-                        allAlbums[albumKey].photos = photosArr;
-                    }
-                } catch (e) { /* ignore */ }
-            }
-            const photosSorted = photosArr.slice().sort((a,b)=> (b.mtime||0) - (a.mtime||0));
-            previewState = { albumKey, photos: photosSorted, loaded: 0, batchSize: 60, attached: false };
-            renderAlbumPreviewGrid(true);
-            attachPreviewScroll();
             document.getElementById('filterBar').style.display = 'none';
-            showToast(`正在预览 ${albumData.name} 相册 (${albumData.total_count} 张)`, { type: 'info' });
-            try { localStorage.setItem('at_last_album_key', albumKey); } catch (e) {}
             updateTopActions('preview');
+            try { localStorage.setItem('at_last_album_key', albumKey); } catch (e) {}
+
+            // 立即渲染占位骨架，避免点击卡顿
+            const photoList = document.getElementById('photoList');
+            const skeletonCount = 24;
+            let skHTML = '<div class="thumb-grid" id="thumbGrid">';
+            for (let i=0;i<skeletonCount;i++) { skHTML += '<div class="thumb-item"><div class="thumb-skeleton"></div></div>'; }
+            skHTML += '</div>';
+            photoList.innerHTML = skHTML;
+
+            // 初始状态（空列表，稍后填充）
+            previewState = { albumKey, photos: [], loaded: 0, batchSize: 120, attached: false };
+            attachPreviewScroll();
+            showToast(`正在载入 ${albumData.name} (${albumData.total_count} 张)…`, { type: 'info' });
+
+            // 异步获取第一页并渲染，避免阻塞点击
+            (async () => {
+                try {
+                    let photosArr = (albumData.photos || []);
+                    if (!photosArr.length) {
+                        const resp = await fetch(`/api/album_photos?album=${encodeURIComponent(albumKey)}&offset=0&limit=500`);
+                        const data = await resp.json();
+                        if (data && data.success) {
+                            photosArr = data.photos || [];
+                            allAlbums[albumKey].photos = photosArr;
+                        }
+                    }
+                    const photosSorted = photosArr.slice().sort((a,b)=> (b.mtime||0) - (a.mtime||0));
+                    previewState.photos = photosSorted;
+                    previewState.loaded = 0;
+                    renderAlbumPreviewGrid(true);
+                } catch (e) {
+                    console.error('加载相册列表失败', e);
+                    // 占位退化
+                    document.getElementById('thumbGrid').innerHTML = '<div style="padding:16px;color:#666;">加载失败</div>';
+                }
+            })();
         }
 
         function renderAlbumPreviewGrid(reset = false) {
@@ -3025,16 +3270,17 @@
                 const p = previewState.photos[i];
                 const isImg = hasPreviewImageExt(p.path);
                 const isVid = hasPreviewVideoExt(p.path);
-                const canPreview = isImg || isVid;
+                const canPreview = isImg || isVid || true; // 无扩展名也尝试预览（后端侦测类型）
                 const selected = selectedPhotos.has(p.path);
                 const tile = document.createElement('div');
                 tile.className = 'thumb-item';
                 tile.dataset.path = p.path;
                 tile.innerHTML = `
                     <div class="thumb-skeleton"></div>
-                    ${canPreview ? `<img class="thumb-img" decoding="async" data-path="${p.path}" alt="${p.name}">` : ''}
+                    ${canPreview ? `<img class="thumb-img" decoding="async" data-path="${p.path}" alt="${p.name}" title="${p.name}">` : ''}
                     ${selected ? '<div class="thumb-overlay">✓</div>' : ''}
                     ${isVid ? '<div class="thumb-video-badge">视频</div>' : ''}
+                    <div class="thumb-name" title="${p.name}">${p.name}</div>
                 `;
                 // 点击选择/取消
                 tile.addEventListener('click', () => {
@@ -3072,51 +3318,19 @@
                     }
                 }
 
-                // 改为后台批量生成，前端轮询就绪后再设置src，避免滚动阻塞
-                if (canPreview) pendingPaths.push(p.path);
+                // 改为后台批量生成，由全局轮询器批量检测状态并设置src（包括无扩展名）
+                pendingPaths.push(p.path);
+                globalPendingThumbs.add(p.path);
             }
             previewState.loaded = end;
 
-            // 批量触发后台生成（每批最多30）
+            // 批量触发后台生成（每批最多30），并启动全局批处理轮询
             if (pendingPaths.length) {
                 try {
                     fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pendingPaths, batch_size: 30 }) });
                 } catch (e) {}
-                // 轮询就绪状态并填充src
-                const poll = async () => {
-                    try {
-                        const resp = await fetch('/api/thumb_status', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pendingPaths }) });
-                        const data = await resp.json();
-                        if (data && data.success) {
-                            let readyCount = 0;
-                            data.ready.forEach((ok, idx) => {
-                                if (!ok) return;
-                                const path = pendingPaths[idx];
-                                const img = document.querySelector(`#thumbGrid .thumb-item[data-path="${CSS.escape(path)}"] img`);
-                                if (img && (img.getAttribute('data-ph') === '1' || !img.src)) {
-                                    img.onload = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
-                                    img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
-                                    img.src = `/api/thumb?path=${encodeURIComponent(path)}`;
-                                    img.removeAttribute('data-ph');
-                                }
-                                readyCount++;
-                            });
-                            // 更新相册总进度（就绪图片数/总数）
-                            const grid = document.getElementById('thumbGrid');
-                            const tTotal = previewState.photos.length;
-                            const loadedImgs = grid ? grid.querySelectorAll('.thumb-img.loaded').length : 0;
-                            const percent = tTotal > 0 ? Math.round((loadedImgs / tTotal) * 100) : 0;
-                            const bar = document.getElementById('thumbProgressBar');
-                            const txt = document.getElementById('thumbProgressText');
-                            if (bar) bar.style.width = `${percent}%`;
-                            if (txt) txt.textContent = `${loadedImgs}/${tTotal} (${percent}%)`;
-                            if (loadedImgs < tTotal) setTimeout(poll, 600);
-                        } else {
-                            setTimeout(poll, 800);
-                        }
-                    } catch (e) { setTimeout(poll, 800); }
-                };
-                setTimeout(poll, 400);
+                // 启动（或保持）全局轮询循环
+                thumbPollLoop();
             }
         }
 
@@ -3151,23 +3365,8 @@
             excludedByAlbum.delete(currentAlbumKey);
             refreshPreviewSelectionUI();
             updateStats();
-            // 后台扩展具体路径（保证传输/导出使用）
-            (async () => {
-                let offset = 0; const pageSize = 500; let total = 0; let added=0;
-                try {
-                    do {
-                        const r = await fetch(`/api/album_photos?album=${encodeURIComponent(currentAlbumKey)}&offset=${offset}&limit=${pageSize}`);
-                        const d = await r.json();
-                        if (!d || !d.success) break;
-                        const list = d.photos || [];
-                        list.forEach(p => { if (!selectedPhotos.has(p.path)) { selectedPhotos.add(p.path); added++; } });
-                        if (!total) total = Number(d.total || list.length);
-                        offset += list.length; if (list.length === 0) break;
-                    } while (offset < total);
-                } catch(e) {}
-                updateStats();
-                showToast(`已选择本相册 ${added} 项`, { type: 'success' });
-            })();
+            // 不再后台展开具体路径，由服务端在开始传输时展开
+            showToast('已选择整相册', { type: 'success' });
         }
 
         function invertSelectionInCurrentAlbum() {
@@ -3176,19 +3375,7 @@
                 // 取消整相册选中
                 selectedAlbumsAll.delete(currentAlbumKey);
                 excludedByAlbum.delete(currentAlbumKey);
-                // 后台从 selectedPhotos 移除该相册全部条目
-                (async ()=>{
-                    let offset=0,pageSize=500,total=0;
-                    try{
-                        do{
-                            const r=await fetch(`/api/album_photos?album=${encodeURIComponent(currentAlbumKey)}&offset=${offset}&limit=${pageSize}`);
-                            const d=await r.json(); if(!d||!d.success) break; const list=d.photos||[];
-                            list.forEach(p=>{ if(selectedPhotos.has(p.path)) selectedPhotos.delete(p.path); });
-                            if(!total) total=Number(d.total||list.length); offset+=list.length; if(list.length===0) break;
-                        }while(offset<total);
-                    }catch(e){}
-                    updateStats();
-                })();
+                updateStats();
             } else {
                 // 整相册反选为选中
                 selectAllInCurrentAlbum();
@@ -3204,7 +3391,7 @@
             const photoList = document.getElementById('photoList');
             const onScroll = () => {
                 if (currentView !== 'preview') return;
-                const nearBottom = photoList.scrollTop + photoList.clientHeight >= photoList.scrollHeight - 120;
+                const nearBottom = photoList.scrollTop + photoList.clientHeight >= photoList.scrollHeight - 300;
                 if (nearBottom) {
                     // 如果还有未渲染的，继续渲染
                     if (previewState.loaded < previewState.photos.length) {
@@ -3216,7 +3403,7 @@
                     const total = (allAlbums[album] && allAlbums[album].total_count) ? allAlbums[album].total_count : previewState.photos.length;
                     if (previewState.photos.length < total) {
                         const offset = previewState.photos.length;
-                        const limit = 240;
+                        const limit = 500;
                         fetch(`/api/album_photos?album=${encodeURIComponent(album)}&offset=${offset}&limit=${limit}`)
                             .then(r=>r.json()).then(d=>{
                                 if (d && d.success) {
@@ -3240,6 +3427,8 @@
                 delete photoList.__previewScroll;
             }
             previewState.attached = false;
+            // 离开预览时，减少无用的缩略图轮询
+            stopThumbPolling();
         }
 
         function backToAlbumCollection() {
@@ -3256,9 +3445,27 @@
             updateTopActions('album');
         }
 
-        // Override startTransfer to handle album transfers
+        // Override startTransfer to handle album transfers（服务端展开，避免前端海量分页请求）
         async function startTransfer() {
-            if (selectedPhotos.size === 0) {
+            // 开始传输时停止缩略图轮询，释放请求与CPU
+            stopThumbPolling();
+            // 计算实际选中的照片数量（包括相册整体选择）
+            let totalSelectedCount = 0;
+            const albums = allAlbums || {};
+            selectedAlbumsAll.forEach(k => {
+                totalSelectedCount += (albums[k]?.total_count || 0) - ((excludedByAlbum.get(k)?.size) || 0);
+            });
+            // 去重：从独立选择中剔除已计入相册整体选择的路径
+            selectedPhotos.forEach(p => {
+                let covered = false;
+                for (const k of selectedAlbumsAll) {
+                    const prefix = k.replace(/\/+$/,'') + '/';
+                    if (p.startsWith(prefix)) { covered = true; break; }
+                }
+                if (!covered) totalSelectedCount++;
+            });
+
+            if (totalSelectedCount === 0) {
                 showToast('请至少选择一张照片或一个相册', 'warning');
                 return;
             }
@@ -3269,16 +3476,33 @@
                 return;
             }
 
-            const photos = allPhotos.filter(photo => selectedPhotos.has(photo.path));
-
             try {
                 const response = await fetch('/api/transfer', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        photos: photos,
-                        output_dir: outputPath
-                    })
+                    body: JSON.stringify((() => {
+                        // 仅提交选择摘要，服务端自行展开，避免前端加载海量分页
+                        const albumsArr = Array.from(selectedAlbumsAll || []);
+                        const excludeMap = {};
+                        albumsArr.forEach(k => {
+                            const ex = excludedByAlbum.get(k);
+                            if (ex && ex.size) excludeMap[k] = Array.from(ex);
+                        });
+                        // singles: 未被相册整体选择覆盖的独立选择
+                        const singles = [];
+                        selectedPhotos.forEach(p => {
+                            let covered = false;
+                            for (const k of albumsArr) {
+                                const prefix = k.replace(/\/+$/,'') + '/';
+                                if (p.startsWith(prefix)) { covered = true; break; }
+                            }
+                            if (!covered) singles.push(p);
+                        });
+                        return {
+                            selection: { albums: albumsArr, exclude: excludeMap, singles },
+                            output_dir: outputPath
+                        };
+                    })())
                 });
 
                 const data = await response.json();
@@ -3289,6 +3513,8 @@
                     document.getElementById('stopBtn').style.display = 'inline-block';
                     document.getElementById('scanBtn').disabled = true;
                     document.getElementById('currentFile').textContent = `保存到: ${outputPath}`;
+                    const pt = document.getElementById('progressText');
+                    if (pt) pt.textContent = '正在初始化（测速/预估大小）…';
                     startProgressPolling();
                     startDeviceStatusPolling();
                 } else {
