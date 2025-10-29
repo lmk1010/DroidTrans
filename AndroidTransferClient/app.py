@@ -202,6 +202,8 @@ usb_speed_cache = {
 
 usb_speed_probe_running = False
 usb_speed_probe_device = None
+usb_speed_probe_lock = threading.Lock()
+usb_speed_probe_ts = 0.0
 
 # 缩略图后台执行器与任务去重
 THUMB_MAX_WORKERS = int(os.getenv('THUMB_MAX_WORKERS', '16'))
@@ -537,7 +539,16 @@ def check_adb_connection():
         selected_device = None
 
     if connected and just_connected:
-        trigger_usb_speed_probe(force=True)
+        # 抑制重复触发：同一瞬间多线程或多路检查导致的抖动
+        try:
+            from time import time as _now
+            now = _now()
+            last_cts = device_status.get('last_connect_ts', 0)
+            if now - float(last_cts or 0) > 5:
+                device_status['last_connect_ts'] = now
+                trigger_usb_speed_probe()
+        except Exception:
+            trigger_usb_speed_probe()
 
     return connected, devices
 
@@ -834,6 +845,21 @@ def scan_photos_thread():
                                     break
                 except Exception:
                     pass
+                # 提前投递预览占位，便于前端首屏尽快展示相册卡片
+                try:
+                    album_name_quick = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
+                    if 'albums_preview' not in scan_status or not isinstance(scan_status['albums_preview'], dict):
+                        scan_status['albums_preview'] = {}
+                    scan_status['albums_preview'][dir_path] = {
+                        'name': album_name_quick,
+                        'icon': '📁',
+                        'priority': 10,
+                        'total_count': 0,
+                        'total_size': 0,
+                        'cover': cover,
+                    }
+                except Exception:
+                    pass
                 # 统计文件数（快速方式，可能包含少量非媒体）
                 total_count = 0
                 try:
@@ -855,6 +881,14 @@ def scan_photos_thread():
                 album_name = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
                 # 跳过空相册（0 文件）
                 if total_count <= 0:
+                    # 同步预览（保持为0），但不纳入最终albums
+                    try:
+                        ap = scan_status.get('albums_preview') or {}
+                        if dir_path in ap:
+                            ap[dir_path]['total_count'] = 0
+                            ap[dir_path]['total_size'] = 0
+                    except Exception:
+                        pass
                     continue
                 albums[dir_path] = {
                     'name': album_name,
@@ -865,6 +899,14 @@ def scan_photos_thread():
                     'total_size': total_size,
                     'cover': cover
                 }
+                # 增量更新预览计数
+                try:
+                    ap = scan_status.get('albums_preview') or {}
+                    if dir_path in ap:
+                        ap[dir_path]['total_count'] = total_count
+                        ap[dir_path]['total_size'] = total_size
+                except Exception:
+                    pass
             scan_status['albums'] = albums
             scan_status['stage'] = 'done'
             # 异步封面缩略图生成
@@ -873,11 +915,10 @@ def scan_photos_thread():
                 print(f"🎯 封面预生成(后台): {len(covers)}")
                 for c in covers:
                     try:
-                        lp = _preview_local_path(c)
                         tp = _thumb_local_path(c, size=256)
                         if os.path.exists(tp) and os.path.getsize(tp) > 0:
                             continue
-                        thumb_executor.submit(lambda p=c, l=lp, t=tp: _ensure_local_and_thumb(p, l, t, -1))
+                        thumb_executor.submit(lambda p=c, t=tp: _ensure_thumb_from_remote(p, t, 256))
                     except Exception:
                         pass
             except Exception:
@@ -892,8 +933,13 @@ def scan_photos_thread():
             # 定期检查设备连接状态
             connected, _ = check_adb_connection()
             if not connected:
-                print(f"\n❌ 设备已断开，停止扫描")
-                scan_status['error'] = '设备连接已断开'
+                # 区分“未连接设备”与“设备断开”两种场景，避免在从未连接过时提示断开
+                if device_status.get('was_connected', False):
+                    msg = '设备连接已断开'
+                else:
+                    msg = '未检测到设备连接'
+                print(f"\n❌ {msg}，停止扫描")
+                scan_status['error'] = msg
                 scan_status['stage'] = 'error'
                 scan_status['is_running'] = False
                 return
@@ -1337,8 +1383,13 @@ def transfer_photos_thread(photos, output_dir, resume=False):
             if current_time - last_device_check > device_check_interval:
                 connected, _ = check_adb_connection()
                 if not connected:
-                    print(f"\n❌ 设备已断开，停止传输！")
-                    transfer_status['error'] = '设备连接已断开'
+                    # 区分“未连接设备”与“设备断开”两种场景
+                    if device_status.get('was_connected', False):
+                        msg = '设备连接已断开'
+                    else:
+                        msg = '未检测到设备连接'
+                    print(f"\n❌ {msg}，停止传输！")
+                    transfer_status['error'] = msg
                     transfer_status['is_running'] = False
                     for f in list(futures.keys()):
                         f.cancel()
@@ -1463,6 +1514,16 @@ def transfer_photos_thread(photos, output_dir, resume=False):
         except Exception:
             pass
 
+    # 结束前对齐一次状态，保证最终快照一致
+    try:
+        with transfer_status_lock:
+            transfer_status['current'] = transfer_status.get('total', 0)
+            # 若已完成字节统计可对齐到总字节
+            if transfer_status.get('bytes_total', 0) > 0:
+                transfer_status['bytes_done'] = max(transfer_status.get('bytes_done', 0), transfer_status['bytes_total'])
+            transfer_status['eta_sec'] = 0.0
+    except Exception:
+        pass
     transfer_status['is_running'] = False
     transfer_status['current_file'] = '完成'
     
@@ -1490,8 +1551,14 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     else:
         print(f"\n💡 有 {len(transfer_status['failed'])} 个文件失败")
         print(f"   可以点击「继续传输」重试失败的文件")
-    
+
     print(f"{'='*60}\n")
+
+    # 将本次USB批次写入数据库（基于输出目录扫描），便于历史记录立即可见
+    try:
+        save_usb_batch_from_folder(output_dir)
+    except Exception as e:
+        print(f"⚠️ 保存USB批次到数据库失败: {e}")
 
 @app.route('/')
 def index():
@@ -1664,7 +1731,7 @@ def api_select_device():
     if serial not in devices:
         return jsonify({'success': False, 'error': '设备不在连接列表中'}), 400
     selected_device = serial
-    trigger_usb_speed_probe(force=True)
+    trigger_usb_speed_probe()
     return jsonify({'success': True, 'selected': selected_device})
 
 
@@ -1719,19 +1786,33 @@ def scan():
 @app.route('/api/scan_status')
 def get_scan_status():
     """获取扫描状态"""
-    return jsonify({
-        'is_running': scan_status['is_running'],
-        'stage': scan_status['stage'],
-        'current_dir': scan_status['current_dir'],
-        'files_found': scan_status['files_found'],
-        'files_processed': scan_status['files_processed'],
-        'total_files': scan_status['total_files'],
-        'photo_count': len(scan_status['photos']),
-        'error': scan_status['error'],
-        'albums_preview': scan_status.get('albums_preview', {}),
-        'thumbs_total': scan_status.get('thumbs_total', 0),
-        'thumbs_done': scan_status.get('thumbs_done', 0)
-    })
+    try:
+        st = {
+            'is_running': scan_status['is_running'],
+            'stage': scan_status['stage'],
+            'current_dir': scan_status['current_dir'],
+            'files_found': scan_status['files_found'],
+            'files_processed': scan_status['files_processed'],
+            'total_files': scan_status['total_files'],
+            'photo_count': len(scan_status['photos']),
+            'error': scan_status['error'],
+            'albums_preview': scan_status.get('albums_preview', {}),
+            'thumbs_total': scan_status.get('thumbs_total', 0),
+            'thumbs_done': scan_status.get('thumbs_done', 0)
+        }
+        # 诊断日志：若出现 idle 但已有相册或预览，打印并兜底为 done
+        try:
+            ap_len = len(st.get('albums_preview') or {})
+        except Exception:
+            ap_len = 0
+        has_albums = bool(scan_status.get('albums'))
+        if (not st['is_running']) and st.get('stage') == 'idle' and (ap_len > 0 or has_albums):
+            print(f"[SCAN_STATUS] Unexpected idle with data: albums_preview={ap_len}, has_albums={has_albums}")
+            st['stage'] = 'done'
+        return jsonify(st)
+    except Exception as e:
+        # 避免接口异常导致前端中断
+        return jsonify({'is_running': False, 'stage': 'idle', 'error': str(e), 'albums_preview': {}})
 
 @app.route('/api/scan_result')
 def get_scan_result():
@@ -1785,6 +1866,224 @@ def _preview_local_path(remote_path: str) -> str:
     h = hashlib.sha1(norm_remote.encode('utf-8', errors='ignore')).hexdigest()
     dev = _get_current_device_label()
     return os.path.join(PREVIEW_DIR, dev, f"{h}{ext}")
+
+def _adb_prefix() -> str:
+    try:
+        if selected_device:
+            return f"adb -s {selected_device}"
+    except Exception:
+        pass
+    return "adb"
+
+def _adb_cat_bytes(remote_path: str, timeout: int = 20) -> bytes | None:
+    """通过 adb exec-out cat 读取远程文件的原始字节，不落地缓存。"""
+    try:
+        rp = normalize_remote_path(remote_path)
+        esc = rp.replace("'", "'\\''")
+        cmd = f"{_adb_prefix()} exec-out cat '{esc}'"
+        env = os.environ.copy()
+        if ADB_BURST_MODE_ENABLED == '1':
+            env['ADB_DELAYED_ACK'] = '1'
+        p = subprocess.run(cmd, shell=True, capture_output=True, text=False, timeout=timeout, env=env)
+        if p.returncode == 0 and p.stdout:
+            return p.stdout
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception:
+        return None
+    return None
+
+def _ensure_thumbnail_from_bytes(data: bytes, dst_thumb_path: str, max_size: int = 512, quality: int = 70) -> bool:
+    try:
+        from PIL import Image, ImageOps, ImageFile
+        if not data:
+            return False
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        from io import BytesIO
+        bio = BytesIO(data)
+        with Image.open(bio) as im:
+            try:
+                im.draft('RGB', (max_size * 2, max_size * 2))
+            except Exception:
+                pass
+            try:
+                im = ImageOps.exif_transpose(im)
+            except Exception:
+                pass
+            if im.mode not in ('RGB', 'L'):
+                im = im.convert('RGB')
+            try:
+                from PIL import Image as _I
+                Resampling = getattr(_I, 'Resampling', None)
+                resample = Resampling.BILINEAR if Resampling else 2
+            except Exception:
+                resample = 2
+            im.thumbnail((max_size, max_size), resample)
+            os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+            tmp = dst_thumb_path + '.part.jpg'
+            im.save(tmp, format='JPEG', quality=quality, optimize=True)
+            _safe_atomic_replace(tmp, dst_thumb_path)
+            if not _is_valid_jpeg(dst_thumb_path):
+                try:
+                    os.remove(dst_thumb_path)
+                except Exception:
+                    pass
+                return False
+        return True
+    except Exception:
+        return False
+
+def _ensure_video_thumb_stream(remote_path: str, dst_thumb_path: str, max_size: int = 320, quality: int = 6, ss: float = 0.5) -> bool:
+    """通过管道从设备读取视频并在本机ffmpeg抽帧，不缓存原视频。"""
+    try:
+        rp = normalize_remote_path(remote_path)
+        esc = rp.replace("'", "'\\''")
+        vf = f"scale={max_size}:-2:force_original_aspect_ratio=decrease"
+        tmp = dst_thumb_path + '.part.jpg'
+        os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+        adb = _adb_prefix()
+        cmd = (
+            f"{adb} exec-out cat '{esc}' | "
+            f"ffmpeg -v error -nostdin -y -i - -ss {ss} -an -map 0:v:0 -frames:v 1 -vf '{vf}' -vcodec mjpeg -q:v {quality} -f image2 '{tmp}'"
+        )
+        env = os.environ.copy()
+        if ADB_BURST_MODE_ENABLED == '1':
+            env['ADB_DELAYED_ACK'] = '1'
+        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=12, env=env)
+        if p.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0 and _safe_atomic_replace(tmp, dst_thumb_path):
+            if not _is_valid_jpeg(dst_thumb_path):
+                try:
+                    os.remove(dst_thumb_path)
+                except Exception:
+                    pass
+                print(f"[preview] video thumb failed: not a jpeg (header) -> {dst_thumb_path}")
+                return False
+            return True
+        else:
+            msg = (p.stderr or '').strip()
+            if msg:
+                print(f"[preview] video stream ffmpeg failed rc={p.returncode}: {msg[:400]}" )
+            # 若检测到部分内容/无效数据，直接生成视频占位图，避免重复重试
+            lowered = (p.stderr or '').lower()
+            if ('partial file' in lowered) or ('invalid data found when processing input' in lowered):
+                if _write_video_placeholder_jpeg(dst_thumb_path, size=max_size):
+                    print(f"[preview] video placeholder generated (stream-fallback): {dst_thumb_path}")
+                    return True
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+            return False
+    except subprocess.TimeoutExpired:
+        print("[preview] video stream ffmpeg timeout")
+        return False
+    except Exception as e:
+        print(f"[preview] video stream exception: {e}")
+        return False
+
+def _ensure_video_thumb_via_temp_pull(remote_path: str, dst_thumb_path: str, max_size: int = 320, quality: int = 6, ss: float = 0.5) -> bool:
+    """稳定路径：临时拉取到本地临时文件后，用本机ffmpeg抽帧并删除临时文件。"""
+    try:
+        rp = normalize_remote_path(remote_path)
+        # 建立临时文件路径（不进入 previews，避免被误认为缓存）
+        tmpdir = os.path.join(OUTPUT_DIR, 'tmp')
+        os.makedirs(tmpdir, exist_ok=True)
+        base = hashlib.sha1(rp.encode('utf-8', errors='ignore')).hexdigest()
+        tmp_local = os.path.join(tmpdir, base + '.mp4')
+        # 若意外存在同名目录，避让到唯一临时文件路径（不删除未知目录）
+        if os.path.isdir(tmp_local):
+            try:
+                import tempfile
+                fd, alt_path = tempfile.mkstemp(prefix=base + '_', suffix='.mp4', dir=tmpdir)
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
+                tmp_local = alt_path
+            except Exception:
+                # 回退到带时间戳的路径
+                tmp_local = os.path.join(tmpdir, f"{base}_{int(time.time()*1000)}.mp4")
+        else:
+            try:
+                if os.path.exists(tmp_local):
+                    os.remove(tmp_local)
+            except Exception:
+                pass
+
+        # 拉取（允许 Burst）
+        quoted_remote = rp.replace('"', '\\"')
+        quoted_local = tmp_local.replace('"', '\\"')
+        ok, _, _ = run_adb_command(f'adb pull "{quoted_remote}" "{quoted_local}"', timeout=60, enable_burst=True)
+        if (not ok) or (not os.path.exists(tmp_local)) or (os.path.getsize(tmp_local) <= 0):
+            try:
+                if os.path.exists(tmp_local):
+                    os.remove(tmp_local)
+            except Exception:
+                pass
+            return False
+
+        vf = f"scale={max_size}:-2:force_original_aspect_ratio=decrease"
+        tmp_jpg = dst_thumb_path + '.part.jpg'
+        cmd = [
+            'ffmpeg', '-v', 'error', '-nostdin', '-y',
+            '-ss', str(ss), '-i', tmp_local,
+            '-an', '-map', '0:v:0',
+            '-frames:v', '1', '-vf', vf,
+            '-vcodec', 'mjpeg', '-q:v', str(quality),
+            '-f', 'image2', tmp_jpg
+        ]
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            os.remove(tmp_local)
+        except Exception:
+            pass
+        if p.returncode == 0 and os.path.exists(tmp_jpg) and os.path.getsize(tmp_jpg) > 0 and _safe_atomic_replace(tmp_jpg, dst_thumb_path):
+            if not _is_valid_jpeg(dst_thumb_path):
+                try: os.remove(dst_thumb_path)
+                except Exception: pass
+                return False
+            return True
+        else:
+            try:
+                if os.path.exists(tmp_jpg): os.remove(tmp_jpg)
+            except Exception:
+                pass
+            if p.stderr:
+                print(f"[preview] video temp pull ffmpeg failed rc={p.returncode}: {p.stderr[:400]}")
+                lowered = p.stderr.lower()
+                if ('partial file' in lowered) or ('invalid data found when processing input' in lowered):
+                    if _write_video_placeholder_jpeg(dst_thumb_path, size=max_size):
+                        print(f"[preview] video placeholder generated (temp-pull-fallback): {dst_thumb_path}")
+                        return True
+            return False
+    except Exception as e:
+        print(f"[preview] video temp pull exception: {e}")
+        try:
+            if os.path.exists(tmp_local): os.remove(tmp_local)
+        except Exception:
+            pass
+        return False
+
+def _ensure_thumb_from_remote(remote_path: str, thumb_path: str, size: int) -> bool:
+    """不缓存原文件，直接从设备流式生成缩略图（JPEG）。"""
+    try:
+        suf = PurePosixPath(remote_path).suffix.lower()
+        if suf in PREVIEW_IMAGE_EXTS:
+            data = _adb_cat_bytes(remote_path, timeout=20)
+            if not data:
+                return False
+            return _ensure_thumbnail_from_bytes(data, thumb_path, max_size=size, quality=THUMB_IMG_QUALITY)
+        else:
+            # 优先无缓存流式；失败则走临时拉取稳定路径；仍失败才出占位
+            ok = _ensure_video_thumb_stream(remote_path, thumb_path, max_size=size, quality=THUMB_VIDEO_QV, ss=0.5)
+            if not ok:
+                ok = _ensure_video_thumb_via_temp_pull(remote_path, thumb_path, max_size=size, quality=THUMB_VIDEO_QV, ss=0.5)
+            if not ok:
+                return _write_video_placeholder_jpeg(thumb_path, size=max(128, size))
+            return True
+    except Exception:
+        return False
 
 def _slug(s: str) -> str:
     s = s.strip().replace(' ', '_')
@@ -1860,15 +2159,51 @@ def _safe_atomic_replace(tmp_path: str, final_path: str):
         return False
 
 def _write_placeholder_jpeg(dst_thumb_path: str, size: int = 192) -> bool:
+    """生成图片类占位缩略图：使用资源图 video-bac.jpeg。"""
+    # 直接使用资源图，统一风格
+    ok = _write_placeholder_from_asset(dst_thumb_path, size=size, asset_name='video-bac.jpeg')
+    if ok:
+        return True
+    # 回退到简易绘制（极少数找不到资源时）
+    try:
+        from PIL import Image, ImageDraw
+        s = max(64, int(size))
+        os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+        tmp = dst_thumb_path + '.tmp'
+        img = Image.new('RGB', (s, s), color=(244, 246, 248))
+        d = ImageDraw.Draw(img)
+        d.rectangle([(int(s*0.2), int(s*0.2)), (int(s*0.8), int(s*0.8))], outline=(200,200,200), width=max(2, s//64))
+        img.save(tmp, format='JPEG', quality=60, optimize=True)
+        return _safe_atomic_replace(tmp, dst_thumb_path)
+    except Exception:
+        return False
+
+def _write_video_placeholder_jpeg(dst_thumb_path: str, size: int = 192) -> bool:
+    """生成视频类占位缩略图：使用资源图 video-bac.jpeg。"""
+    ok = _write_placeholder_from_asset(dst_thumb_path, size=size, asset_name='video-bac.jpeg')
+    if ok:
+        return True
+    # 回退（极少数情况）：简易播放图标
     try:
         from PIL import Image, ImageDraw
         os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
-        tmp = dst_thumb_path + '.tmp'
-        img = Image.new('RGB', (size, size), color=(232, 240, 254))
+        tmp = dst_thumb_path + '.part.jpg'
+        s = max(64, int(size))
+        img = Image.new('RGB', (s, s), color=(30, 30, 30))
         d = ImageDraw.Draw(img)
-        d.rectangle([(int(size*0.2), int(size*0.2)), (int(size*0.8), int(size*0.8))], outline=(66,133,244), width=3)
+        cx = cy = s // 2
+        tri = [(cx - s*0.15, cy - s*0.22), (cx - s*0.15, cy + s*0.22), (cx + s*0.28, cy)]
+        d.polygon(tri, fill=(255, 255, 255))
         img.save(tmp, format='JPEG', quality=60, optimize=True)
         return _safe_atomic_replace(tmp, dst_thumb_path)
+    except Exception:
+        return False
+
+def _is_valid_jpeg(path: str) -> bool:
+    try:
+        with open(path, 'rb') as f:
+            hdr = f.read(3)
+        return hdr == b'\xff\xd8\xff'
     except Exception:
         return False
 
@@ -1880,9 +2215,9 @@ def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 
         return False
 
     try:
-        # 源文件必须存在且非空
+        # 源文件必须存在、是常规文件且非空
         try:
-            if (not os.path.exists(src_local_path)) or os.path.getsize(src_local_path) <= 0:
+            if (not os.path.exists(src_local_path)) or (not os.path.isfile(src_local_path)) or os.path.getsize(src_local_path) <= 0:
                 return False
         except Exception:
             return False
@@ -1914,9 +2249,15 @@ def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 
             except Exception:
                 resample = 2
             im.thumbnail((max_size, max_size), resample)
-            tmp = dst_thumb_path + '.tmp'
+            tmp = dst_thumb_path + '.part.jpg'
             im.save(tmp, format='JPEG', quality=quality, optimize=True)
             _safe_atomic_replace(tmp, dst_thumb_path)
+            if not _is_valid_jpeg(dst_thumb_path):
+                try:
+                    os.remove(dst_thumb_path)
+                except Exception:
+                    pass
+                return False
         try:
             sz = os.path.getsize(dst_thumb_path)
             print(f"[preview] thumb generated: {dst_thumb_path} ({sz/1024:.1f} KB) | thread={threading.current_thread().name}")
@@ -1927,15 +2268,27 @@ def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 
         # Pillow失败时，优先尝试ffmpeg对图像进行一次转码/缩放（不限格式）
         try:
             import shutil, subprocess
+            # 若源不是常规文件，直接放弃（ffmpeg 也无法处理目录）
+            try:
+                if (not os.path.exists(src_local_path)) or (not os.path.isfile(src_local_path)):
+                    return False
+            except Exception:
+                return False
             if shutil.which('ffmpeg'):
                 os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
                 vf = f"scale=if(gt(iw,ih),{max_size},-2):if(gt(iw,ih),-2,{max_size})"
-                tmp = dst_thumb_path + '.tmp'
+                tmp = dst_thumb_path + '.part.jpg'
                 cmd = ['ffmpeg','-v','error','-y','-i',src_local_path,
                        '-frames:v','1','-vf',vf,'-q:v','6',
                        '-f','image2','-vcodec','mjpeg', tmp]
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
                 if os.path.exists(tmp) and os.path.getsize(tmp) > 0 and _safe_atomic_replace(tmp, dst_thumb_path):
+                    if not _is_valid_jpeg(dst_thumb_path):
+                        try:
+                            os.remove(dst_thumb_path)
+                        except Exception:
+                            pass
+                        return False
                     print(f"[preview] ffmpeg(image) thumb generated: {dst_thumb_path}")
                     return True
         except Exception:
@@ -1955,65 +2308,71 @@ def _ensure_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 
 def _ensure_video_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: int = 320, quality: int = 6) -> bool:
     """使用ffmpeg从视频提取封面帧并保存为jpeg缩略图。quality为ffmpeg -q:v (2~31，越小越好)。"""
     import shutil, subprocess
+    # 若源不是常规文件（可能被误建为目录），直接生成视频占位图避免ffmpeg报错
+    try:
+        if (not os.path.exists(src_local_path)) or (not os.path.isfile(src_local_path)):
+            return _write_video_placeholder_jpeg(dst_thumb_path, size=max_size)
+    except Exception:
+        return False
     if not shutil.which('ffmpeg'):
-        # 尝试占位图生成
-        try:
-            from PIL import Image, ImageDraw
-            os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
-            img = Image.new('RGB', (max_size, max_size), (32, 32, 32))
-            d = ImageDraw.Draw(img)
-            # 画一个播放三角形
-            w, h = max_size, max_size
-            tri = [(w*0.35, h*0.3), (w*0.35, h*0.7), (w*0.7, h*0.5)]
-            d.polygon(tri, fill=(220,220,220))
-            img.save(dst_thumb_path, format='JPEG', quality=65, optimize=True)
-            return True
-        except Exception:
-            return False
+        # 无ffmpeg时，使用统一的视频占位图样式（居中播放图标）
+        return _write_video_placeholder_jpeg(dst_thumb_path, size=max_size)
     try:
         os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
-        # 简化滤镜，提升兼容性
         vf = f"scale={max_size}:-2:force_original_aspect_ratio=decrease"
-        tmp = dst_thumb_path + '.tmp'
-        attempts = []
-        # 先尝试一次硬件加速（如失败将快速落回CPU）
-        base_hw = ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-hwaccel', 'auto']
-        attempts.append(('hw', base_hw + ['-ss', '0.5', '-i', src_local_path, '-an', '-frames:v', '1', '-vf', vf, '-q:v', str(quality), '-f', 'image2', '-vcodec', 'mjpeg', tmp]))
-        # CPU 回退（一次标准命令）
-        base_sw = ['ffmpeg', '-v', 'error', '-nostdin', '-y']
-        attempts.append(('sw-seek', base_sw + ['-ss', '0.5', '-i', src_local_path, '-an', '-frames:v', '1', '-vf', vf, '-q:v', str(quality), '-f', 'image2', '-vcodec', 'mjpeg', tmp]))
-        # 备用：若 seek 在前不兼容，再尝试不带提前seek
-        attempts.append(('sw', base_sw + ['-i', src_local_path, '-an', '-frames:v', '1', '-vf', vf, '-q:v', str(quality), '-f', 'image2', '-vcodec', 'mjpeg', tmp]))
-        for idx, (mode, cmd) in enumerate(attempts, start=1):
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if proc.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0 and _safe_atomic_replace(tmp, dst_thumb_path):
-                try:
-                    sz = os.path.getsize(dst_thumb_path)
-                    print(f"[preview] video thumb generated: {dst_thumb_path} ({sz/1024:.1f} KB) | mode={mode} | thread={threading.current_thread().name}")
-                except Exception:
-                    pass
-                return True
-            # 记录失败信息，保留最多400字符以免日志撑满
-            err = (proc.stderr or '').strip()
-            if err:
-                msg = err if len(err) <= 400 else err[:400] + '…'
-            else:
-                msg = ''
-            print(f"[preview] video thumb attempt#{idx} ({mode}) failed rc={proc.returncode}: {msg}")
+        tmp = dst_thumb_path + '.part.jpg'
+        # 单一稳定方案：CPU 解码 + 输入后定位 + 明确输出 JPEG
+        cmd = [
+            'ffmpeg', '-v', 'error', '-nostdin', '-y',
+            '-i', src_local_path, '-ss', '0.5',
+            '-an', '-map', '0:v:0',
+            '-frames:v', '1', '-vf', vf,
+            '-vcodec', 'mjpeg', '-q:v', str(quality),
+            '-f', 'image2', tmp
+        ]
+        try:
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
+        except subprocess.TimeoutExpired:
+            print(f"[preview] video thumb failed: ffmpeg timeout (8s)")
             try:
                 if os.path.exists(tmp):
                     os.remove(tmp)
             except Exception:
                 pass
-        # 全部失败
+            # 生成视频占位图
+            if _write_video_placeholder_jpeg(dst_thumb_path, size=max_size):
+                print(f"[preview] video placeholder generated (timeout): {dst_thumb_path}")
+                return True
+            return False
+        if proc.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0 and _safe_atomic_replace(tmp, dst_thumb_path):
+            if not _is_valid_jpeg(dst_thumb_path):
+                try:
+                    os.remove(dst_thumb_path)
+                except Exception:
+                    pass
+                print(f"[preview] video thumb failed: not a jpeg (header) -> {dst_thumb_path}")
+                return False
+            try:
+                sz = os.path.getsize(dst_thumb_path)
+                print(f"[preview] video thumb generated: {dst_thumb_path} ({sz/1024:.1f} KB) | mode=sw-once | thread={threading.current_thread().name}")
+            except Exception:
+                pass
+            return True
+        # 失败详细日志
+        err = (proc.stderr or '').strip()
+        msg = err if len(err) <= 400 else err[:400] + '…'
+        print(f"[preview] video thumb failed rc={proc.returncode}: {msg}")
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)
         except Exception:
             pass
-        print(f"[preview] video thumb generation failed: all attempts failed for {src_local_path}")
-        # 兜底写入占位
-        return _write_placeholder_jpeg(dst_thumb_path, size=max_size)
+        # 失败：生成视频占位图（轻量）
+        if _write_video_placeholder_jpeg(dst_thumb_path, size=max_size):
+            print(f"[preview] video placeholder generated: {dst_thumb_path}")
+            return True
+        print(f"[preview] video thumb generation failed for {src_local_path}")
+        return False
     except Exception as e:
         try:
             if os.path.exists(dst_thumb_path):
@@ -2021,8 +2380,7 @@ def _ensure_video_thumbnail(src_local_path: str, dst_thumb_path: str, max_size: 
         except Exception:
             pass
         print(f"[preview] video thumb generation failed: {e}")
-        # 兜底写入占位
-        return _write_placeholder_jpeg(dst_thumb_path, size=max_size)
+        return False
 
 def _dir_usage_bytes(dir_path: str):
     total = 0
@@ -2217,14 +2575,38 @@ def photo_thumb():
                     os.remove(thumb_path)
             except Exception:
                 pass
-            # 尝试即时生成一次（同步）
+            # 尝试即时生成一次（同步），不落地原文件
             try:
-                local_path = _preview_local_path(remote_path)
-                ok = _ensure_local_and_thumb(remote_path, local_path, thumb_path, -1)
+                ok = _ensure_thumb_from_remote(remote_path, thumb_path, req_size)
                 if not _size_ok(thumb_path):
-                    return ('', 404)
+                    # 兜底：写入占位图并排队后台生成，避免首屏大量404
+                    suf = PurePosixPath(remote_path).suffix.lower()
+                    if suf in PREVIEW_VIDEO_EXTS:
+                        _write_video_placeholder_jpeg(thumb_path, size=max(64, req_size))
+                    else:
+                        _write_placeholder_jpeg(thumb_path, size=max(64, req_size))
+                    try:
+                        if remote_path not in thumb_inflight:
+                            thumb_inflight.add(remote_path)
+                            def _bg():
+                                try:
+                                    _ensure_thumb_from_remote(remote_path, thumb_path, req_size)
+                                finally:
+                                    try: thumb_inflight.discard(remote_path)
+                                    except Exception: pass
+                            thumb_executor.submit(_bg)
+                    except Exception:
+                        pass
             except Exception:
-                return ('', 404)
+                # 同上兜底
+                try:
+                    suf = PurePosixPath(remote_path).suffix.lower()
+                    if suf in PREVIEW_VIDEO_EXTS:
+                        _write_video_placeholder_jpeg(thumb_path, size=max(64, req_size))
+                    else:
+                        _write_placeholder_jpeg(thumb_path, size=max(64, req_size))
+                except Exception:
+                    pass
     print(f"[thumb-serve] {thumb_path} | thread={threading.current_thread().name}")
     resp = send_file(thumb_path, mimetype='image/jpeg', conditional=True)
     resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
@@ -2272,7 +2654,6 @@ def photo_thumb_batch_generate():
     for p in paths[:batch_size]:
         try:
             p = normalize_remote_path(p)
-            local_path = _preview_local_path(p)
             thumb_path = _thumb_local_path(p, size=size)
             if os.path.exists(thumb_path):
                 try:
@@ -2286,9 +2667,9 @@ def photo_thumb_batch_generate():
             if p in thumb_inflight:
                 continue
             thumb_inflight.add(p)
-            def _task(remote=p, lp=local_path, tp=thumb_path):
+            def _task(remote=p, tp=thumb_path):
                 try:
-                    _ensure_local_and_thumb(remote, lp, tp, -1)
+                    _ensure_thumb_from_remote(remote, tp, size)
                 finally:
                     try:
                         thumb_inflight.discard(remote)
@@ -2526,11 +2907,20 @@ def adb_burst_mode():
 
 def trigger_usb_speed_probe(force: bool = False):
     """后台异步触发USB测速，避免阻塞主流程。"""
-    global usb_speed_probe_running, usb_speed_probe_device
-    if usb_speed_probe_running and usb_speed_probe_device == selected_device:
-        return
+    global usb_speed_probe_running, usb_speed_probe_device, usb_speed_probe_ts
     if not selected_device:
         return
+    # 防抖 + 并发保护：同一设备15秒内只启动一次（即便force也抑制重复）
+    with usb_speed_probe_lock:
+        from time import time as _now
+        now = _now()
+        if (now - usb_speed_probe_ts) < 15:
+            return
+        if usb_speed_probe_running and usb_speed_probe_device == selected_device:
+            return
+        usb_speed_probe_running = True
+        usb_speed_probe_device = selected_device
+        usb_speed_probe_ts = now
 
     def _runner():
         global usb_speed_probe_running, usb_speed_probe_device
@@ -2539,13 +2929,11 @@ def trigger_usb_speed_probe(force: bool = False):
         except Exception as e:
             print(f"⚠️ USB测速任务失败: {e}")
         finally:
-            usb_speed_probe_running = False
-            usb_speed_probe_device = None
+            with usb_speed_probe_lock:
+                usb_speed_probe_running = False
+                usb_speed_probe_device = None
 
     try:
-        # 提前占位，避免竞态重复启动
-        usb_speed_probe_running = True
-        usb_speed_probe_device = selected_device
         t = threading.Thread(target=_runner, daemon=True)
         t.start()
     except Exception as e:
@@ -2578,7 +2966,40 @@ def get_usb_speed(force: bool = False):
                 'gbps': 0
             }
 
-    # 1) sysfs current_speed
+    # 基准测试（独占ADB）：严格按照读写文件进行3轮测速，取最高值
+    try:
+        # 若未在后台测速，标记为运行中，避免重复触发
+        started_here = False
+        with usb_speed_probe_lock:
+            if not usb_speed_probe_running:
+                usb_speed_probe_running = True
+                started_here = True
+        # 若另一处已经在测速，则不重复发起，返回 probing
+        if not started_here:
+            return {
+                'success': True,
+                'probing': True,
+                'label': 'USB 测速中',
+                'measured_mbps': 0,
+                'gbps': 0
+            }
+        bench = _benchmark_usb_speed()
+        if bench and bench.get('measured_mbps', 0) > 0:
+            bench.update({'success': True, 'source': 'bench', 'probing': False})
+            usb_speed_cache.update({'device': selected_device, 'data': bench})
+            return bench
+    except Exception:
+        pass
+    finally:
+        # 仅在本次调用中设置为运行时，负责清理标记
+        try:
+            if 'started_here' in locals() and started_here:
+                with usb_speed_probe_lock:
+                    usb_speed_probe_running = False
+        except Exception:
+            pass
+
+    # 回退：如基准测试失败，再尝试sysfs/dumpsys 以给出基本信息
     try:
         cmd1 = "adb shell 'for f in /sys/class/udc/*/current_speed; do cat \"$f\"; done 2>/dev/null'"
         ok, out, err = run_adb_command(cmd1, timeout=3)
@@ -2602,7 +3023,6 @@ def get_usb_speed(force: bool = False):
     except Exception:
         pass
 
-    # 2) dumpsys usb
     try:
         ok, out, err = run_adb_command("adb shell dumpsys usb", timeout=4)
         if ok and out:
@@ -2621,16 +3041,6 @@ def get_usb_speed(force: bool = False):
     except Exception:
         pass
 
-    # 3) 基准测试
-    try:
-        bench = _benchmark_usb_speed()
-        if bench and bench.get('measured_mbps', 0) > 0:
-            bench.update({'success': True, 'source': 'bench', 'probing': False})
-            usb_speed_cache.update({'device': selected_device, 'data': bench})
-            return bench
-    except Exception:
-        pass
-
     m = _map_usb_speed('')
     m.update({'success': True, 'source': 'none', 'raw': '', 'probing': False})
     usb_speed_cache.update({'device': selected_device, 'data': m})
@@ -2646,29 +3056,48 @@ def api_usb_speed():
 
 
 def _benchmark_usb_speed(size_mb: int = 64):
-    """通过adb在/sdcard/Download生成临时文件并pull到本地，估算实际MB/s。改进版本支持USB 3.2高速检测。"""
+    """通过adb在/sdcard/Download生成临时文件并pull到本地，估算实际MB/s。
+    优化：默认1轮、较小文件，减少抖动与设备负担；可通过环境变量 USB_BENCH_FILE_MB 与 USB_BENCH_ROUNDS 调整。
+    """
     import time as _t
+
+    try:
+        # 允许通过环境变量覆盖
+        env_mb = int(os.getenv('USB_BENCH_FILE_MB', '0'))
+        if env_mb > 0:
+            size_mb = env_mb
+    except Exception:
+        pass
 
     print(f"🚀 开始USB速度基准测试 (测试文件: {size_mb}MB)...")
 
     remote_path = f"/sdcard/Download/.usb_speed_test.bin"
-    local_dir = PREVIEW_DIR if os.path.isdir(PREVIEW_DIR) else OUTPUT_DIR
+    local_dir = OUTPUT_DIR
     os.makedirs(local_dir, exist_ok=True)
     local_path = os.path.join(local_dir, 'usb_speed_test.bin')
 
     # 生成远程测试文件（更大的文件以获得准确的高速测试）
     print(f"📝 生成测试文件: {remote_path} (Burst模式: {ADB_BURST_MODE_ENABLED == '1'})")
-    ok1, _, _ = run_adb_command(f"adb shell 'dd if=/dev/zero of=\"{remote_path}\" bs=1M count={size_mb} 2>/dev/null'", timeout=30)
+    ok1, _, _ = run_adb_command(
+        f"adb shell 'dd if=/dev/zero of=\"{remote_path}\" bs=1M count={size_mb} 2>/dev/null'",
+        timeout=30,
+    )
     if not ok1:
         print("❌ 无法生成测试文件，基准测试失败")
         return None
 
-    # 多次测试以获得更准确的结果
+    # 轮次（默认1轮）：减少抖动
+    try:
+        test_rounds = int(os.getenv('USB_BENCH_ROUNDS', '1'))
+    except Exception:
+        test_rounds = 1
     speed_samples = []
-    test_rounds = 3  # 进行3轮测试
 
     for i in range(test_rounds):
-        print(f"⚡ 第 {i+1}/{test_rounds} 轮测试...")
+        if test_rounds > 1:
+            print(f"⚡ 第 {i+1}/{test_rounds} 轮测试...")
+        else:
+            print("⚡ 测速中...")
 
         # 确保本地文件不存在
         if os.path.exists(local_path):
@@ -2676,7 +3105,9 @@ def _benchmark_usb_speed(size_mb: int = 64):
 
         # 拉取并计时（强制启用Burst模式以获得最佳性能）
         start = _t.time()
-        ok2, _, _ = run_adb_command(f"adb pull \"{remote_path}\" \"{local_path}\"", timeout=60, enable_burst=True)
+        ok2, _, _ = run_adb_command(
+            f"adb pull \"{remote_path}\" \"{local_path}\"", timeout=60, enable_burst=True
+        )
         elapsed = max(0.001, _t.time() - start)
 
         if ok2 and os.path.exists(local_path):
@@ -2694,19 +3125,26 @@ def _benchmark_usb_speed(size_mb: int = 64):
     run_adb_command(f"adb shell 'rm -f \"{remote_path}\"'", timeout=10)
 
     if not speed_samples:
-        print("❌ 所有测试轮次都失败了")
-        return None
+        # 返回一个近似的保守结果，避免上层出现空值抖动
+        measured_mbps = 0
+        avg_speed = max(0, measured_mbps)
+        max_speed = max(0, measured_mbps)
+        min_speed = max(0, measured_mbps)
+        test_rounds = 0
+        size_mb = size_mb
+        # 不中断，继续按照 fallback 逻辑映射 USB 等级
 
     # 计算平均速度和最大速度
     avg_speed = sum(speed_samples) / len(speed_samples)
     max_speed = max(speed_samples)
     min_speed = min(speed_samples)
 
-    print(f"📈 速度测试结果:")
-    print(f"   平均速度: {avg_speed:.1f} MB/s")
-    print(f"   最高速度: {max_speed:.1f} MB/s")
-    print(f"   最低速度: {min_speed:.1f} MB/s")
-    print(f"   速度范围: {max_speed - min_speed:.1f} MB/s")
+    if test_rounds > 1:
+        print(f"📈 速度测试结果:")
+        print(f"   平均速度: {avg_speed:.1f} MB/s")
+        print(f"   最高速度: {max_speed:.1f} MB/s")
+        print(f"   最低速度: {min_speed:.1f} MB/s")
+        print(f"   速度范围: {max_speed - min_speed:.1f} MB/s")
 
     # 使用最高速度作为USB速度等级判断依据（更能反映真实性能）
     measured_mbps = max_speed
@@ -2741,7 +3179,7 @@ def _benchmark_usb_speed(size_mb: int = 64):
         'max_mbps': round(max_speed, 1),
         'min_mbps': round(min_speed, 1),
         'test_rounds': test_rounds,
-        'test_size_mb': size_mb
+        'test_size_mb': size_mb,
     }
 
 @app.route('/api/check_progress')
@@ -2968,6 +3406,13 @@ def transfer():
         ts_folder = 'batch'
     final_output_dir = os.path.join(output_dir, device_label, ts_folder)
     os.makedirs(final_output_dir, exist_ok=True)
+
+    # 记录当前USB设备到 devices 表，便于历史记录显示友好名称
+    try:
+        dev_name = _get_current_device_name()
+        upsert_device_info(device_label, dev_name)
+    except Exception:
+        pass
     # 立即启动后台传输线程
     t1 = threading.Thread(target=transfer_photos_thread, args=(photos, final_output_dir, False), daemon=True)
     t1.start()
@@ -2984,8 +3429,9 @@ def transfer():
 @app.route('/api/transfer_status')
 def get_transfer_status():
     """获取传输状态"""
-    # 复制状态并转换set为list
-    status_copy = transfer_status.copy()
+    # 复制状态并转换set为list（加锁，避免并发读到不一致快照）
+    with transfer_status_lock:
+        status_copy = transfer_status.copy()
     status_copy['completed_count'] = len(transfer_status.get('completed_files', set()))
     status_copy.pop('completed_files', None)  # 移除set，避免JSON序列化错误
     return jsonify(status_copy)
@@ -3074,6 +3520,37 @@ def init_database():
     except Exception as e:
         print(f"❌ 数据库初始化失败: {str(e)}")
         return False
+
+def upsert_device_info(device_id: str, device_name: str):
+    """将设备信息写入 devices 表（若存在则更新名称与心跳）。"""
+    try:
+        init_database()
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        now = datetime.now().isoformat()
+        # 插入或更新设备信息
+        cur.execute('''
+            INSERT INTO devices (device_id, device_name, last_heartbeat, connected_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET
+                device_name=excluded.device_name,
+                last_heartbeat=excluded.last_heartbeat
+        ''', (device_id, device_name, now, now))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"⚠️ 写入设备信息失败: {e}")
+        return False
+
+def _get_current_device_name() -> str:
+    """返回设备名称（仅使用 ro.product.model），用于历史记录展示。"""
+    try:
+        ok_m, out_m, _ = run_adb_command("adb shell getprop ro.product.model", timeout=3)
+        model = (out_m or '').strip()
+        return model or 'Android 设备'
+    except Exception:
+        return 'Android 设备'
 
 def save_batch_to_db(device_id, batch_info):
     """保存单个批次到数据库"""
@@ -3329,6 +3806,116 @@ def scan_and_rebuild_batches():
                 save_batch_to_db(device_id, batch_info)
         print(f"💾 已将 {scanned_batches} 个批次保存到数据库")
 
+def save_usb_batch_from_folder(output_dir: str):
+    """扫描单个USB输出批次目录并保存到数据库。
+
+    output_dir 形如: <OUTPUT_DIR>/<device_label>/<YYYYMMDD_HHMMSS>
+    """
+    try:
+        init_database()
+        if not output_dir:
+            return False
+        # 解析 device_id 与 batch_id
+        batch_id = os.path.basename(output_dir.rstrip(os.sep))
+        device_dir = os.path.dirname(output_dir.rstrip(os.sep))
+        device_id = os.path.basename(device_dir)
+
+        if not os.path.isdir(output_dir):
+            return False
+
+        # 扫描文件
+        photos = []
+        total_size = 0
+        for root, dirs, files in os.walk(output_dir):
+            # 只统计该批次目录下的直接文件（按照保存策略，扁平化存放）
+            for fn in files:
+                if fn.startswith('.'):
+                    continue
+                fp = os.path.join(root, fn)
+                try:
+                    st = os.stat(fp)
+                    size = int(st.st_size)
+                    mtime = datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    size = 0
+                    mtime = ''
+                total_size += size
+                photos.append({
+                    'name': fn,
+                    'path': fn,
+                    'size': size,
+                    'size_mb': round(size / 1024.0 / 1024.0, 2),
+                    'date': mtime,
+                })
+
+        if not photos:
+            return False
+
+        # 解析时间戳
+        try:
+            timestamp_str = datetime.strptime(batch_id, '%Y%m%d_%H%M%S').strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            timestamp_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        batch_info = {
+            'batch_id': batch_id,
+            'timestamp': timestamp_str,
+            'photo_count': len(photos),
+            'total_size': total_size,
+            'total_size_mb': round(total_size / 1024.0 / 1024.0, 2),
+            'photos': photos,
+            'status': 'completed',
+        }
+        save_batch_to_db(device_id, batch_info)
+        return True
+    except Exception as e:
+        print(f"⚠️ save_usb_batch_from_folder 失败: {e}")
+        return False
+
+@app.route('/api/history/clear', methods=['POST'])
+def api_history_clear():
+    """清空历史备份记录。可选是否同时删除本地备份文件。"""
+    try:
+        init_database()
+        data = request.get_json(silent=True) or {}
+        delete_files = bool(data.get('delete_files'))
+
+        # 清空数据库记录
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute('DELETE FROM photos')
+        cur.execute('DELETE FROM batches')
+        conn.commit()
+        conn.close()
+
+        # 清空内存缓存
+        global device_upload_batches, device_photos
+        device_upload_batches = {}
+        device_photos = {}
+
+        removed = 0
+        if delete_files:
+            base = Path(OUTPUT_DIR).expanduser().resolve(strict=False)
+            if base.exists() and base.is_dir():
+                for entry in base.iterdir():
+                    try:
+                        # 仅删除目录或普通文件，忽略隐藏文件
+                        if entry.name.startswith('.'):
+                            continue
+                        if entry.is_dir():
+                            import shutil
+                            shutil.rmtree(entry, ignore_errors=True)
+                            removed += 1
+                        elif entry.is_file():
+                            entry.unlink(missing_ok=True)
+                            removed += 1
+                    except Exception:
+                        pass
+
+        return jsonify({'success': True, 'deleted_files': removed})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 def cleanup_expired_devices():
     """清理超时的设备"""
     global wifi_mode_status
@@ -3345,6 +3932,225 @@ def cleanup_expired_devices():
         print(f"🔌 设备断开: {device_id} (超时)")
 
     return len(expired_devices)
+
+# ==================== 历史备份记录（通用/USB视图） ====================
+
+def _safe_int(v, default=0):
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+def _count_files_recursive(base_dir: str) -> int:
+    try:
+        cnt = 0
+        for root, dirs, files in os.walk(base_dir):
+            # 可选：忽略隐藏目录
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            for f in files:
+                if f.startswith('.'):
+                    continue
+                fp = os.path.join(root, f)
+                try:
+                    if os.path.isfile(fp):
+                        cnt += 1
+                except Exception:
+                    pass
+        return cnt
+    except Exception:
+        return 0
+
+@app.route('/api/history/batches')
+def api_history_batches():
+    """返回历史备份批次摘要（可按当前USB设备或全部设备）。
+
+    Query:
+      - current: '1' 时优先使用当前USB设备标签；若无法获取则返回全部
+      - device: 指定设备标签（与输出目录下的设备文件夹名一致）
+      - q: 模糊查询（匹配 batch_id 或 timestamp）
+    返回字段：device_id, batch_id, timestamp, photo_count, total_size_mb, base_path, exists_count, missing_count
+    """
+    try:
+        # 确保数据库表存在
+        try:
+            init_database()
+        except Exception:
+            pass
+
+        want_current = (request.args.get('current') in ('1', 'true', 'yes', 'on'))
+        q = (request.args.get('q') or '').strip()
+        device = (request.args.get('device') or '').strip()
+
+        # 解析当前USB设备的标签（用于USB页面）
+        if want_current and not device:
+            try:
+                if selected_device:
+                    device = _get_current_device_label()
+            except Exception:
+                device = ''
+
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        sql = "SELECT device_id, batch_id, timestamp, photo_count, total_size_mb, is_legacy FROM batches"
+        params = []
+        conds = []
+        if device:
+            conds.append("device_id = ?")
+            params.append(device)
+        if q:
+            conds.append("(batch_id LIKE ? OR timestamp LIKE ?)")
+            like = f"%{q}%"
+            params.extend([like, like])
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY timestamp DESC, batch_id DESC"
+
+        rows = cur.execute(sql, params).fetchall()
+
+        # 加载设备名称映射（若存在devices表记录则使用，否则回退到从device_id推测）
+        device_name_map = {}
+        try:
+            cur2 = conn.cursor()
+            try:
+                for drow in cur2.execute('SELECT device_id, device_name FROM devices'):
+                    did = drow[0]
+                    dname = drow[1]
+                    if did and dname:
+                        device_name_map[did] = dname
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        def _guess_device_name_from_id(did: str) -> str:
+            try:
+                if not did:
+                    return ''
+                # 尝试去掉首段（可能是序列号），其余替换下划线为空格
+                parts = did.split('_')
+                if len(parts) >= 2:
+                    return ' '.join(parts[1:])
+                return did.replace('_', ' ')
+            except Exception:
+                return did or ''
+
+        # 若数据库为空，尝试从文件系统重建一次（懒加载）
+        if not rows:
+            try:
+                scan_and_rebuild_batches()
+                rows = cur.execute(sql, params).fetchall()
+            except Exception:
+                pass
+
+        results = []
+        for r in rows:
+            device_id = r['device_id']
+            batch_id = r['batch_id']
+            ts = r['timestamp']
+            photo_count = _safe_int(r['photo_count'])
+            total_size_mb = float(r['total_size_mb'] or 0.0)
+            is_legacy = bool(r['is_legacy']) if 'is_legacy' in r.keys() else False
+
+            # 构造本地批次路径
+            if is_legacy:
+                base_path = os.path.join(OUTPUT_DIR, device_id)
+            else:
+                base_path = os.path.join(OUTPUT_DIR, device_id, batch_id)
+
+            exists_count = 0
+            missing_count = 0
+            try:
+                if os.path.isdir(base_path):
+                    exists_count = _count_files_recursive(base_path)
+                    missing_count = max(0, photo_count - exists_count)
+                else:
+                    exists_count = 0
+                    missing_count = max(0, photo_count)
+            except Exception:
+                exists_count = 0
+                missing_count = max(0, photo_count)
+
+            results.append({
+                'device_id': device_id,
+                'device_name': device_name_map.get(device_id) or _guess_device_name_from_id(device_id),
+                'batch_id': batch_id,
+                'timestamp': ts,
+                'photo_count': photo_count,
+                'total_size_mb': round(total_size_mb, 2),
+                'base_path': os.path.abspath(base_path),
+                'exists_count': exists_count,
+                'missing_count': missing_count,
+                'is_legacy': is_legacy,
+            })
+
+        conn.close()
+        return jsonify({'success': True, 'batches': results, 'count': len(results), 'device': device or None})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/history/devices')
+def api_history_devices():
+    """返回历史记录中出现过的设备列表（来自batches表），附带设备名称、批次数和累计照片数量。"""
+    try:
+        try:
+            init_database()
+        except Exception:
+            pass
+
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        rows = cur.execute(
+            'SELECT device_id, COUNT(*) AS batches, SUM(photo_count) AS photos FROM batches GROUP BY device_id'
+        ).fetchall()
+
+        # 若没有数据，尝试从文件系统扫描一次
+        if not rows:
+            try:
+                scan_and_rebuild_batches()
+                rows = cur.execute(
+                    'SELECT device_id, COUNT(*) AS batches, SUM(photo_count) AS photos FROM batches GROUP BY device_id'
+                ).fetchall()
+            except Exception:
+                pass
+
+        # 设备名映射
+        name_map = {}
+        try:
+            for drow in conn.execute('SELECT device_id, device_name FROM devices'):
+                if drow[0] and drow[1]:
+                    name_map[drow[0]] = drow[1]
+        except Exception:
+            pass
+
+        def _guess_name(did: str) -> str:
+            try:
+                if not did:
+                    return ''
+                parts = did.split('_')
+                if len(parts) >= 2:
+                    return ' '.join(parts[1:])
+                return did.replace('_', ' ')
+            except Exception:
+                return did or ''
+
+        devices = []
+        for r in rows:
+            did = r['device_id']
+            devices.append({
+                'device_id': did,
+                'device_name': name_map.get(did) or _guess_name(did),
+                'batches': int(r['batches'] or 0),
+                'photos': int(r['photos'] or 0),
+            })
+
+        conn.close()
+        return jsonify({'success': True, 'devices': devices, 'count': len(devices)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/wifi/connect', methods=['POST'])
 def wifi_connect():
@@ -4723,3 +5529,65 @@ if __name__ == '__main__':
     except TypeError:
         # 兼容旧版本 Flask 没有 use_reloader 参数位置变化
         app.run(host='0.0.0.0', port=9500, threaded=True, debug=debug_flag)
+def _resolve_asset_path(filename: str) -> str | None:
+    """在已知位置查找资源文件，返回可读路径或None。
+
+    优先顺序：
+    1) 与仓库根同级（app.py 所在目录的上级）
+    2) 当前工作目录
+    3) app.py 同级目录
+    """
+    try:
+        here = os.path.dirname(__file__)
+        root = os.path.abspath(os.path.join(here, os.pardir))
+        cand = [
+            os.path.join(root, filename),
+            os.path.join(os.getcwd(), filename),
+            os.path.join(here, filename),
+        ]
+        for p in cand:
+            try:
+                if os.path.isfile(p) and os.path.getsize(p) > 0:
+                    return p
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+def _write_placeholder_from_asset(dst_thumb_path: str, size: int, asset_name: str = 'video-bac.jpeg') -> bool:
+    """用指定资源图片生成占位缩略图（裁剪居中为方形，缩放到 size）。"""
+    try:
+        src = _resolve_asset_path(asset_name)
+        if not src:
+            return False
+        from PIL import Image
+        with Image.open(src) as im:
+            # 转RGB，兼容性更好
+            if im.mode not in ('RGB', 'L'):
+                im = im.convert('RGB')
+            w, h = im.size
+            # 居中裁剪成正方形
+            if w != h:
+                if w > h:
+                    # 裁左右
+                    off = (w - h) // 2
+                    im = im.crop((off, 0, off + h, h))
+                else:
+                    # 裁上下
+                    off = (h - w) // 2
+                    im = im.crop((0, off, w, off + w))
+            # 缩放到目标尺寸
+            try:
+                Resampling = getattr(__import__('PIL.Image', fromlist=['Image']).Image, 'Resampling', None)
+                resample = Resampling.BILINEAR if Resampling else 2
+            except Exception:
+                resample = 2
+            s = max(64, int(size))
+            im = im.resize((s, s), resample)
+            os.makedirs(os.path.dirname(dst_thumb_path), exist_ok=True)
+            tmp = dst_thumb_path + '.part.jpg'
+            im.save(tmp, format='JPEG', quality=70, optimize=True)
+            return _safe_atomic_replace(tmp, dst_thumb_path)
+    except Exception:
+        return False

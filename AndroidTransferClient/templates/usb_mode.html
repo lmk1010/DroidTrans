@@ -99,6 +99,35 @@
             align-items: center;
         }
 
+        /* Status bar: keep single line by default; allow horizontal scroll on narrow widths */
+        .controls .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
+            overflow: hidden;
+            white-space: nowrap;
+            max-width: 100%;
+        }
+        .controls .status > * { flex: 0 0 auto; }
+        .controls .status .status-badge { white-space: nowrap; }
+        .controls .status #historyBtn { white-space: nowrap; }
+        .controls .status #deviceStatus { white-space: nowrap; }
+        .controls .status #usbSpeedBadge { white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
+        .controls .status #deviceSelect { max-width: 50vw; }
+
+        /* 小屏：隐藏细节，仅显示“更多配置”按钮，不再横滑 */
+        @media (max-width: 768px) {
+            .controls .status #usbSpeedBadge,
+            .controls .status #deviceStatus,
+            .controls .status #historyBtn,
+            .controls .status #burstModeToggle,
+            .controls .status #deviceSelect {
+                display: none !important;
+            }
+            .controls .status #moreBtn { display: inline-block !important; }
+        }
+
         .btn {
             padding: 0 24px;
             height: 40px;
@@ -489,26 +518,25 @@
         .snackbar {
             visibility: hidden;
             min-width: 288px;
-            max-width: 568px;
+            max-width: 420px;
             background-color: #323232;
             color: #fff;
             text-align: left;
-            border-radius: 4px;
-            padding: 14px 16px;
+            border-radius: 6px;
+            padding: 12px 14px;
             position: fixed;
             z-index: 10000;
-            left: 50%;
-            bottom: 24px;
-            transform: translateX(-50%);
+            top: 16px;
+            right: 16px;
             font-size: 14px;
             font-weight: 400;
             letter-spacing: 0.25px;
             line-height: 20px;
-            box-shadow: 0 3px 5px -1px rgba(0,0,0,0.2), 0 6px 10px 0 rgba(0,0,0,0.14), 0 1px 18px 0 rgba(0,0,0,0.12);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.18);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
+            gap: 12px;
         }
 
         .snackbar.show {
@@ -537,13 +565,13 @@
         }
 
         @keyframes snackbar-fadein {
-            from { bottom: 0; opacity: 0; }
-            to { bottom: 24px; opacity: 1; }
+            from { transform: translateY(-10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
 
         @keyframes snackbar-fadeout {
-            from { bottom: 24px; opacity: 1; }
-            to { bottom: 0; opacity: 0; }
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(-10px); opacity: 0; }
         }
 
         /* Material Design Dialog */
@@ -579,6 +607,15 @@
             max-height: calc(100% - 96px);
             overflow: hidden;
             animation: dialog-scale-in 0.2s cubic-bezier(0, 0, 0.2, 1);
+        }
+
+        /* Large dialog variant for history view */
+        .dialog.dialog-lg {
+            max-width: 1000px;
+            width: min(96vw, 1000px);
+        }
+        .dialog.dialog-lg .dialog-content {
+            max-height: 72vh;
         }
 
         @keyframes dialog-scale-in {
@@ -619,6 +656,66 @@
         .dialog-content p:last-child {
             margin-bottom: 0;
         }
+
+        /* History table (MD-like) */
+        .history-toolbar { display: flex; align-items: center; gap: 12px; padding: 0 0 12px 0; flex-wrap: wrap; }
+        .history-toolbar .hint { color: #6b7280; font-size: 13px; }
+        .history-toolbar input[type="text"] { flex: 1; min-width: 220px; height: 32px; padding: 0 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 13px; }
+        .history-toolbar button { height: 32px; padding: 0 12px; border: 1px solid #dadce0; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .history-toolbar button:hover { background: #f8f9fb; }
+        .history-device-select { height: 32px; border:1px solid #dadce0; border-radius:6px; padding: 0 8px; font-size:13px; min-width: 220px; }
+        .segmented { display: inline-flex; border:1px solid #dadce0; border-radius: 8px; overflow:hidden; }
+        .segmented .seg-btn { height: 32px; padding: 0 12px; border:0; border-right:1px solid #dadce0; background:#fff; cursor:pointer; font-size:13px; }
+        .segmented .seg-btn:last-child { border-right:0; }
+        .segmented .seg-btn.active { background:#e8f0fe; color:#1967d2; font-weight:600; }
+        .history-table-wrap { width: 100%; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .history-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .history-table th, .history-table td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 13px; color: #374151; }
+        .history-table th { background: #f6f8fa; color: #111827; font-weight: 600; position: sticky; top: 0; z-index: 1; }
+        .history-table tr:hover td { background: #fafafa; }
+        .history-col-idx { width: 44px; color: #6b7280; }
+        .history-col-time { width: 180px; }
+        .history-col-device { width: 220px; word-break: break-all; }
+        .history-col-devname { width: 220px; word-break: break-all; }
+        .history-col-count { width: 100px; }
+        .history-col-path, .history-col-exist, .history-col-missing { display: none; }
+        .history-col-batch { width: 160px; word-break: break-all; }
+        .history-col-size { width: 120px; }
+        .history-toolbar button.danger { border-color: #ef4444; color: #b91c1c; }
+        .history-toolbar button.danger:hover { background: #fee2e2; }
+
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            .history-col-device { display: none; }
+            .history-col-time { width: 160px; }
+            .history-col-devname { width: auto; }
+        }
+        @media (max-width: 768px) {
+            .history-col-idx { display: none; }
+            .history-toolbar input[type="text"],
+            .history-device-select { flex: 1 1 100%; min-width: 0; }
+            .segmented { width: 100%; }
+            .segmented .seg-btn { flex: 1; text-align: center; }
+        }
+        @media (max-width: 480px) {
+            .history-col-devname { display: none; }
+            .history-col-time { width: auto; }
+            .history-col-count { width: 90px; }
+        }
+
+        /* More Settings (MD-style actions) */
+        .md-action-list { display: flex; flex-direction: column; gap: 10px; }
+        .md-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: default; }
+        .md-action:hover { background: #f9fafb; }
+        .md-action .leading { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .md-action .title { font-weight: 600; color: #111827; font-size: 14px; }
+        .md-action .desc { color: #374151; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+        .md-action .trailing { display: flex; align-items: center; gap: 10px; }
+        .md-action .trailing .dialog-button, .md-action .trailing .btn { height: 32px; padding: 0 12px; border-radius: 6px; }
+        .md-inline-select { height: 32px; border:1px solid #dadce0; border-radius:6px; padding: 0 8px; font-size:13px; }
+        .md-pill { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 12px; border-radius:999px; background:#e8f0fe; color:#1967d2; border:1px solid #d7e3fc; font-weight:600; font-size:12px; }
+        .badge-missing { display: inline-block; padding: 0 6px; height: 20px; line-height: 20px; border-radius: 999px; background: #fee2e2; color: #991b1b; font-weight: 600; font-size: 12px; }
+        .badge-ok { display: inline-block; padding: 0 6px; height: 20px; line-height: 20px; border-radius: 999px; background: #e6f4ea; color: #137333; font-weight: 600; font-size: 12px; }
 
         .dialog-actions {
             padding: 8px;
@@ -1234,6 +1331,23 @@
         .burst-mode-toggle-small .toggle-label {
             font-size: 11px;
         }
+
+        .btn-hero {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 18px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 10px;
+            color: #fff;
+            background: #2563eb;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+        }
+        .btn-hero:hover { background: #1d4ed8; }
+        .btn-hero svg { width: 20px; height: 20px; }
     </style>
 </head>
 <body>
@@ -1264,6 +1378,8 @@
             </div>
         </div>
 
+        
+
         <div class="controls">
             <button class="btn btn-primary" id="checkDeviceBtn" onclick="checkDevice()">检查设备</button>
             <button class="btn btn-primary" id="scanBtn" onclick="scanPhotos()" disabled>扫描照片</button>
@@ -1275,6 +1391,7 @@
             <div class="status" style="display:flex;align-items:center;gap:8px;">
                 <span class="status-badge status-speed" id="usbSpeedBadge" style="display:none;">USB</span>
                 <span class="status-badge status-disconnected" id="deviceStatus">未连接</span>
+                <button class="btn btn-tonal" id="historyBtn" onclick="openHistoryDialog2()">历史备份记录</button>
                 <div class="burst-mode-toggle-small" id="burstModeToggle" style="display: inline-flex;">
                     <label class="toggle-label">
                         <input type="checkbox" id="burstModeSwitch" onchange="toggleBurstMode()">
@@ -1284,6 +1401,7 @@
                 </div>
                 <select id="deviceSelect" style="display:none;height:32px;border:1px solid #dadce0;border-radius:6px;padding:0 8px;font-size:13px;">
                 </select>
+                <button class="btn btn-tonal more-btn" id="moreBtn" onclick="openMoreSettings()" title="更多配置" style="display:none;">更多配置</button>
             </div>
         </div>
 
@@ -1299,7 +1417,7 @@
 
         <div class="progress-container" id="progressContainer">
             <div class="progress-info">
-                <span id="progressText">准备中...</span>
+                <span id="progressText">等待开始...</span>
                 <span id="progressPercent">0%</span>
             </div>
             <div class="progress-bar-container">
@@ -1430,6 +1548,112 @@
         const THUMB_GRID_SIZE = 128; // 网格缩略图目标尺寸（更快）
         const COVER_THUMB_SIZE = 128; // 封面缩略图尺寸（极致快）
 
+        // 本地持久化键
+        const LS_ALBUMS_CACHE = 'usb_cache_albums_v1';
+        const LS_SELECTED_ALBUMS = 'usb_state_selected_albums_all_v1';
+        const LS_EXCLUDED_BY_ALBUM = 'usb_state_excluded_by_album_v1';
+        const LS_SELECTED_PHOTOS = 'usb_state_selected_photos_v1';
+        const LS_LAST_ALBUM_KEY = 'at_last_album_key';
+        const LS_LAST_VIEW = 'usb_last_view_mode';
+
+        function saveAlbumsCache() {
+            try {
+                // 仅缓存相册信息（不触发传输UI状态）
+                const slim = {};
+                Object.entries(allAlbums || {}).forEach(([k, v]) => {
+                    slim[k] = {
+                        name: v.name,
+                        icon: v.icon,
+                        priority: v.priority,
+                        total_count: v.total_count || 0,
+                        total_size: v.total_size || 0,
+                        cover: v.cover || ((Array.isArray(v.photos) && v.photos[0]) ? v.photos[0].path : ''),
+                    };
+                });
+                const payload = { ts: Date.now(), albums: slim };
+                localStorage.setItem(LS_ALBUMS_CACHE, JSON.stringify(payload));
+            } catch (e) { /* ignore */ }
+        }
+
+        function saveSelections() {
+            try {
+                localStorage.setItem(LS_SELECTED_ALBUMS, JSON.stringify(Array.from(selectedAlbumsAll || new Set())));
+                const ex = {};
+                for (const [k, v] of (excludedByAlbum || new Map()).entries()) {
+                    ex[k] = Array.from(v || new Set());
+                }
+                localStorage.setItem(LS_EXCLUDED_BY_ALBUM, JSON.stringify(ex));
+                if (selectedPhotos && selectedPhotos.size > 0) {
+                    const cap = 5000;
+                    const arr = [];
+                    let i = 0;
+                    for (const p of selectedPhotos) { arr.push(p); if (++i >= cap) break; }
+                    localStorage.setItem(LS_SELECTED_PHOTOS, JSON.stringify(arr));
+                } else {
+                    localStorage.removeItem(LS_SELECTED_PHOTOS);
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        function clearAlbumsCache() {
+            try {
+                localStorage.removeItem(LS_ALBUMS_CACHE);
+                localStorage.removeItem(LS_SELECTED_ALBUMS);
+                localStorage.removeItem(LS_EXCLUDED_BY_ALBUM);
+            } catch (e) { /* ignore */ }
+        }
+
+        function restoreFromLocal() {
+            try {
+                const raw = localStorage.getItem(LS_ALBUMS_CACHE);
+                if (raw) {
+                    // 存在历史相册缓存，但默认不自动加载，等待用户点击“开始扫描”
+                    // const payload = JSON.parse(raw);
+                    // 可在此设置标记，如需要：window.__hasCachedAlbums = true;
+                }
+            } catch (e) { /* ignore */ }
+            try {
+                const sa = localStorage.getItem(LS_SELECTED_ALBUMS);
+                if (sa) selectedAlbumsAll = new Set(JSON.parse(sa));
+            } catch (e) { /* ignore */ }
+            try {
+                const ex = localStorage.getItem(LS_EXCLUDED_BY_ALBUM);
+                if (ex) {
+                    const obj = JSON.parse(ex) || {};
+                    const mp = new Map();
+                    Object.entries(obj).forEach(([k, arr]) => { mp.set(k, new Set(arr || [])); });
+                    excludedByAlbum = mp;
+                }
+            } catch (e) { /* ignore */ }
+            try {
+                const sp = localStorage.getItem(LS_SELECTED_PHOTOS);
+                if (sp) selectedPhotos = new Set(JSON.parse(sp));
+            } catch (e) { /* ignore */ }
+        }
+
+        function renderScanHero() {
+            try {
+                const photoList = document.getElementById('photoList');
+                if (!photoList) return;
+                const hasAlbums = (window.__hasAlbums === true) || (Object.keys(allAlbums || {}).length > 0);
+                // 显示条件：已连接、未在扫描中、且无相册内容
+                const shouldShow = window.__lastDeviceConnected === true && !scanStatusInterval && !window.__scanStarting && !hasAlbums && !window.__albumViewActive;
+                if (!shouldShow) return;
+                const html = `
+                    <div style="min-height: 420px; display:flex; align-items:center; justify-content:center;">
+                        <div style="text-align:center;">
+                            <h3 style="margin:0 0 10px; color:#111827; font-size:18px;">准备好传输照片与视频</h3>
+                            <p style="margin:0 0 16px; color:#4b5563;">点击下方按钮开始扫描手机中的相册与视频文件。扫描只在你需要时执行。</p>
+                            <button class="btn-hero" onclick="scanPhotos()" id="heroScanBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"/></svg>
+                                开始扫描相册与视频
+                            </button>
+                        </div>
+                    </div>`;
+                photoList.innerHTML = html;
+            } catch (e) { /* ignore */ }
+        }
+
         function thumbCacheGet(key) {
             const v = thumbCache.get(key);
             if (!v) return null;
@@ -1515,6 +1739,9 @@
         // 相册级快速选择（即时显示数量）
         let selectedAlbumsAll = new Set();
         let excludedByAlbum = new Map(); // albumKey -> Set(paths)
+        // 设备与扫描状态标记
+        try { window.__lastDeviceConnected = false; } catch (e) {}
+        try { window.__scanStarting = false; } catch (e) {}
         let scanStatusInterval = null;
         let deviceStatusInterval = null;
         let progressInterval = null;
@@ -1830,14 +2057,20 @@
 
         function hideDialog(options = {}) {
             const { suppressResolve = false } = options;
+            try { console.log('[Dialog] hide', { suppressResolve, time: new Date().toISOString() }); } catch (e) {}
             dialogOverlay.classList.remove('show');
             dialogActionsElement.innerHTML = '';
             if (!suppressResolve) {
                 resolvePendingConfirmation(false);
             }
+            try {
+                const dialogEl = dialogOverlay.querySelector('.dialog');
+                dialogEl.classList.remove('dialog-lg');
+            } catch (e) {}
         }
 
         function showDialog({ title = '提示', message = '', actions = [] } = {}) {
+            try { console.log('[Dialog] show', { title, message, actionsCount: (actions && actions.length) || 0, time: new Date().toISOString() }); } catch (e) {}
             dialogTitleElement.textContent = title;
             renderDialogContent(message);
 
@@ -1859,6 +2092,41 @@
                 });
                 dialogActionsElement.appendChild(button);
             });
+
+            try {
+                const dialogEl = dialogOverlay.querySelector('.dialog');
+                dialogEl.classList.remove('dialog-lg');
+            } catch (e) {}
+            dialogOverlay.classList.add('show');
+        }
+
+        function showDialogWithOptions({ title = '提示', html = '', actions = [], dialogClass = '' } = {}) {
+            dialogTitleElement.textContent = title;
+            dialogContentElement.innerHTML = html || '';
+
+            dialogActionsElement.innerHTML = '';
+            const finalActions = actions.length ? actions : [{ label: '确定', type: 'primary' }];
+            finalActions.forEach(action => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'dialog-button' + (action.type ? ` ${action.type}` : '');
+                button.textContent = action.label || '确定';
+                button.addEventListener('click', () => {
+                    if (typeof action.onClick === 'function') {
+                        action.onClick();
+                    }
+                    if (!action.keepOpen) {
+                        hideDialog();
+                    }
+                });
+                dialogActionsElement.appendChild(button);
+            });
+
+            try {
+                const dialogEl = dialogOverlay.querySelector('.dialog');
+                dialogEl.classList.remove('dialog-lg');
+                if (dialogClass) dialogEl.classList.add(dialogClass);
+            } catch (e) {}
 
             dialogOverlay.classList.add('show');
         }
@@ -2101,23 +2369,29 @@
                         hideDialog({ suppressResolve: true });
                         window.__adbIssueDialogVisible = false;
                     }
-                    // 不在轮询中重复测速/取速率，避免干扰缩略图生成
+                    try { renderScanHero(); } catch (e) {}
                 } else {
                     statusBadge.className = 'status-badge status-disconnected';
                     statusBadge.textContent = '未连接';
                     const usbBadge = document.getElementById('usbSpeedBadge');
                     if (usbBadge) usbBadge.style.display = 'none';
+                    try { renderScanHero(); } catch (e) {}
                 }
 
                 // 处理设备连接事件
                 if (data.connect_detected) {
+                    try { console.log('[DeviceEvent] connect_detected'); } catch (e) {}
                     handleDeviceConnect();
                     refreshDevices();
+                    try { renderScanHero(); } catch (e) {}
                 }
 
-                if (data.disconnect_detected || !data.connected) {
+                // 仅依赖后端“断开事件”触发断开弹窗；避免未接设备时误报
+                if (data.disconnect_detected) {
+                    try { console.log('[DeviceEvent] disconnect_detected'); } catch (e) {}
                     handleDeviceDisconnect();
                     refreshDevices();
+                    try { renderScanHero(); } catch (e) {}
                 }
 
                 // ADB异常提示（非阻塞）
@@ -2132,6 +2406,9 @@
                         ]
                     });
                 }
+
+                // 在本轮末尾更新连接状态标记
+                window.__lastDeviceConnected = !!data.connected;
             } catch (error) {
                 console.error('检查设备状态失败:', error);
             }
@@ -2142,23 +2419,26 @@
                 const resp = await fetch('/api/adb_restart', { method: 'POST' });
                 const data = await resp.json();
                 if (data.success) {
+                    try { console.log('[ADB] restart ok'); } catch (e) {}
                     showToast('ADB 服务已重启', { type: 'success' });
                     window.__adbIssueDialogVisible = false;
                 } else {
+                    try { console.log('[ADB] restart failed', data); } catch (e) {}
                     showToast('重启失败: ' + (data.error || '未知错误'), { type: 'error' });
                 }
             } catch (e) {
+                try { console.log('[ADB] restart error', e); } catch (ex) {}
                 showToast('重启失败: ' + e.message, { type: 'error' });
             }
         }
 
         function handleDeviceConnect() {
-            // 设备连接时自动开始扫描
+            // 设备连接时不再自动扫描，由用户主动点击
             const scanBtn = document.getElementById('scanBtn');
             scanBtn.disabled = false; // 启用扫描按钮
 
             // 避免在扫描或传输进行中重复触发
-            if (scanStatusInterval || progressInterval) {
+            if (window.__scanStarting || scanStatusInterval || progressInterval) {
                 showToast('📱 设备已连接', { type: 'info' });
                 if (window.__disconnectDialogVisible) {
                     hideDialog({ suppressResolve: true });
@@ -2169,16 +2449,16 @@
                 return;
             }
 
-            showToast('🎉 检测到新设备连接，自动开始扫描照片...', { type: 'success' });
+            showToast('📱 设备已连接', { type: 'success' });
             if (window.__disconnectDialogVisible) {
                 hideDialog({ suppressResolve: true });
                 window.__disconnectDialogVisible = false;
             }
             updateUsbSpeedInfo();
             setTimeout(() => updateUsbSpeedInfo(), 2000);
-            setTimeout(() => {
-                scanPhotos();
-            }, 800);
+            // 显示大按钮引导用户点击开始扫描
+            try { window.__lastDeviceConnected = true; } catch (e) {}
+            try { renderScanHero(); } catch (e) {}
         }
 
         function resetStateAfterDisconnect() {
@@ -2200,10 +2480,15 @@
             currentView = 'list';
             previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 120, attached: false };
 
+            // 不再恢复上次相册；清空本地缓存并显示空态
+            try { clearAlbumsCache(); } catch (e) {}
+            try { localStorage.removeItem('at_last_album_key'); localStorage.removeItem('usb_last_view_mode'); localStorage.removeItem('at_last_scan_done'); } catch (e) {}
             const photoList = document.getElementById('photoList');
             if (photoList) {
                 photoList.innerHTML = '<div class="empty-state"><h3>设备未连接</h3><p>请连接设备后点击“扫描照片”</p></div>';
             }
+            try { window.__lastDeviceConnected = false; } catch (e) {}
+            try { renderScanHero(); } catch (e) {}
 
             const scanBtnEl = document.getElementById('scanBtn');
             if (scanBtnEl) {
@@ -2230,21 +2515,47 @@
             const burstToggle = document.getElementById('burstModeToggle');
             if (burstToggle) burstToggle.style.display = 'none';
 
+            const pc = document.getElementById('progressContainer');
+            if (pc) pc.classList.remove('active');
             const progressTextEl = document.getElementById('progressText');
             if (progressTextEl) progressTextEl.textContent = '等待扫描';
+            const progressPercentEl = document.getElementById('progressPercent');
+            if (progressPercentEl) progressPercentEl.textContent = '0%';
             const progressBarEl = document.getElementById('progressBar');
             if (progressBarEl) {
+                progressBarEl.classList.remove('indeterminate');
                 progressBarEl.style.width = '0%';
                 progressBarEl.textContent = '0%';
             }
+            // 隐藏进度明细，避免断开后仍显示上次数据
+            try {
+                ['speedInfo','sizeInfo','etaInfo','totalEstInfo'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) { el.textContent = ''; el.style.display = 'none'; }
+                });
+            } catch (e) {}
             const currentFileEl = document.getElementById('currentFile');
             if (currentFileEl) currentFileEl.textContent = '等待开始...';
 
+            try { window.__albumViewActive = false; window.__hasAlbums = false; } catch (e) {}
             updateTopActions('list');
             updateStats();
+            saveSelections();
         }
 
         function handleDeviceDisconnect() {
+            // 仅在“此前曾连接过”的场景下展示断开弹窗，避免初始未连接时误报
+            if (window.__lastDeviceConnected !== true) {
+                // 仍做基本UI降级，但不弹窗
+                try { console.log('[Disconnect] suppressed (never connected before)'); } catch (e) {}
+                const statusBadge = document.getElementById('deviceStatus');
+                statusBadge.className = 'status-badge status-disconnected';
+                statusBadge.textContent = '未连接';
+                document.getElementById('scanBtn').disabled = true;
+                document.getElementById('transferBtn').disabled = true;
+                resetStateAfterDisconnect();
+                return;
+            }
             // 不停止设备状态轮询，便于重新连接后自动检测
 
             if (scanStatusInterval) {
@@ -2262,6 +2573,7 @@
             }
 
             if (!window.__disconnectDialogVisible) {
+                try { console.log('[Disconnect] showing dialog'); } catch (e) {}
                 showDialog({
                     title: '设备已断开',
                     message: '⚠️ USB设备已断开！\n\n请重新连接设备后再继续操作。'
@@ -2284,10 +2596,13 @@
         window.addEventListener('DOMContentLoaded', () => {
             // 初始化Burst模式状态
             loadBurstModeStatus();
+            // 优先从本地缓存恢复（即使未连接也可浏览上一次相册）
+            restoreFromLocal();
 
             startDeviceStatusPolling();
             initialDeviceCheck();
             checkResumeProgress();
+            try { renderScanHero(); } catch (e) {}
         });
 
         async function initialDeviceCheck() {
@@ -2310,19 +2625,21 @@
                     // 优先复用已有扫描结果
                     const stResp = await fetch('/api/scan_status');
                     const st = await stResp.json();
-                    if (st && st.stage === 'done' && st.photo_count > 0) {
-                        await loadScanResult();
-                        restoreLastView();
-                    } else if (st && (st.is_running || st.stage === 'finding' || st.stage === 'getting_info')) {
+                    window.__lastDeviceConnected = true;
+                    if (st && (st.is_running || st.stage === 'finding' || st.stage === 'getting_info')) {
                         startScanStatusPolling();
+                        try { renderScanHero(); } catch (e) {}
                     } else {
-                        // 不再默认自动扫描：首屏先可交互，让用户手动点击“扫描照片”
+                        // 不自动加载上次结果：首屏展示按钮，由用户决定是否扫描
                         const scanBtnNow = document.getElementById('scanBtn');
                         if (scanBtnNow) scanBtnNow.disabled = false;
+                        try { renderScanHero(); } catch (e) {}
                     }
                 } else {
                     statusBadge.className = 'status-badge status-disconnected';
                     statusBadge.textContent = '未连接';
+                    window.__lastDeviceConnected = false;
+                    try { renderScanHero(); } catch (e) {}
                 }
             } catch (error) {
                 console.error('初始设备检测失败:', error);
@@ -2375,16 +2692,19 @@
 
                 if (info && info.success) {
                     if (info.probing) {
+                        try { console.log('[USB] probing...'); } catch (e) {}
                         usbBadge.textContent = 'USB 测速中…';
                     } else {
                         const label = info.label || 'USB 未知';
                         const mbps = typeof info.measured_mbps === 'number' && info.measured_mbps > 0 ? ` · ${info.measured_mbps.toFixed(1)} MB/s` : '';
+                        try { console.log('[USB] speed info', { label, measured_mbps: info.measured_mbps }); } catch (e) {}
                         usbBadge.textContent = label + mbps;
                     }
                     usbBadge.style.display = 'inline-flex';
                     if (burstToggle) burstToggle.style.display = 'inline-flex';
                 } else {
                     // 显示未知占位，避免位置抖动
+                    try { console.log('[USB] speed unknown'); } catch (e) {}
                     usbBadge.textContent = 'USB 未知';
                     usbBadge.style.display = 'inline-flex';
                     if (burstToggle) burstToggle.style.display = 'none';
@@ -2498,6 +2818,7 @@
                 } else {
                     statusBadge.className = 'status-badge status-disconnected';
                     statusBadge.textContent = '未连接';
+                    try { console.log('[DialogTrigger] manual check: no device'); } catch (e) {}
                     showDialog({
                         title: '未检测到设备',
                         message: '请确保：\n1. 手机已通过USB连接\n2. 已开启USB调试\n3. 已授权此电脑的ADB访问'
@@ -2515,6 +2836,11 @@
             const btn = document.getElementById('scanBtn');
             const photoList = document.getElementById('photoList');
 
+            if (window.__scanStarting) {
+                showToast('扫描已在启动中…', { type: 'info' });
+                return;
+            }
+
             btn.disabled = true;
             btn.textContent = '扫描中...';
 
@@ -2522,6 +2848,8 @@
             selectedPhotos.clear();
             allPhotos = [];
             filteredPhotos = [];
+            // 显式重扫：清除本地相册缓存
+            clearAlbumsCache();
             document.getElementById('transferBtn').disabled = true;
             document.getElementById('stats').style.display = 'none';
             document.getElementById('filterBar').style.display = 'none';
@@ -2529,20 +2857,48 @@
             photoList.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在扫描手机照片，请稍候...</p></div>';
 
             try {
+                // 若已有扫描在进行，直接进入轮询，避免二次触发导致“扫描正在进行中”
+                try {
+                    const sresp = await fetch('/api/scan_status');
+                    const s = await sresp.json();
+                    if (s && (s.is_running || s.stage === 'finding' || s.stage === 'getting_info')) {
+                        startScanStatusPolling();
+                        startDeviceStatusPolling();
+                        btn.disabled = true;
+                        btn.textContent = '扫描中...';
+                        return;
+                    }
+                } catch (_) { /* ignore */ }
+
+                window.__scanStarting = true;
                 const response = await fetch('/api/scan', { method: 'POST' });
                 const data = await response.json();
 
                 if (data.success) {
                     startScanStatusPolling();
                     startDeviceStatusPolling();
+                    try { renderScanHero(); } catch (e) {}
                 } else {
                     throw new Error(data.error || '扫描启动失败');
                 }
             } catch (error) {
-                showToast('扫描失败: ' + error.message, { type: 'error' });
-                photoList.innerHTML = '<div class="empty-state"><h3>扫描失败</h3><p>' + error.message + '</p></div>';
-                btn.disabled = false;
-                btn.textContent = '重新扫描';
+                // 若后端提示“扫描正在进行中”，视为成功进入扫描流程
+                const msg = (error && error.message) ? String(error.message) : '';
+                if (msg.includes('扫描正在进行中')) {
+                    startScanStatusPolling();
+                    startDeviceStatusPolling();
+                    showToast('扫描已在进行中', { type: 'info' });
+                    btn.disabled = true;
+                    btn.textContent = '扫描中...';
+                } else {
+                    showToast('扫描失败: ' + msg, { type: 'error' });
+                    photoList.innerHTML = '<div class="empty-state"><h3>扫描失败</h3><p>' + msg + '</p></div>';
+                    btn.disabled = false;
+                    btn.textContent = '重新扫描';
+                }
+            }
+            finally {
+                window.__scanStarting = false;
             }
         }
 
@@ -2565,6 +2921,13 @@
             try {
                 const response = await fetch('/api/scan_status');
                 const status = await response.json();
+                // 若拿到预览/在运行，记录活动时间用于抖动防护
+                try {
+                    const ap = status.albums_preview || {};
+                    if (status.is_running || (ap && Object.keys(ap).length > 0)) {
+                        window.__lastScanActiveTs = Date.now();
+                    }
+                } catch (e) {}
 
                 if (status.stage === 'error' || status.error) {
                     throw new Error(status.error || '扫描失败');
@@ -2682,12 +3045,18 @@
 
                 if (status.stage === 'done') {
                     stopScanStatusPolling();
-                    stopDeviceStatusPolling();
+                    // 继续保持设备状态轮询，作为断开/重连监听器
+                    try { window.__hasAlbums = true; } catch (e) {}
                     await loadScanResult();
+                    try { renderScanHero(); } catch (e) {}
                     return;
                 }
 
-                if (!status.is_running && status.stage === 'idle' && !isInitial) {
+                // 抖动防护：短时间内出现 idle 但此前有活动，忽略本轮，不清空UI
+                const nowTs = Date.now();
+                const guardMs = 3000;
+                const recentActive = (typeof window.__lastScanActiveTs === 'number') && ((nowTs - window.__lastScanActiveTs) < guardMs);
+                if (!status.is_running && status.stage === 'idle' && !isInitial && !recentActive) {
                     stopScanStatusPolling();
                     const btn = document.getElementById('scanBtn');
                     btn.disabled = false;
@@ -2721,9 +3090,13 @@
 
             // 显示相册视图
             switchToAlbumView();
+            try { window.__hasAlbums = (Object.keys(allAlbums||{}).length>0); window.__albumViewActive = true; } catch (e) {}
 
                 // 标记已有扫描结果，避免刷新后重复自动扫描
                 localStorage.setItem('at_last_scan_done', '1');
+                // 缓存相册与选择，便于刷新后立即恢复
+                saveAlbumsCache();
+                saveSelections();
 
                 updateStats();
                 document.getElementById('stats').style.display = 'grid';
@@ -2801,6 +3174,7 @@
             if (cb) cb.checked = allSelected;
             displayPhotos();
             updateStats();
+            saveSelections();
         }
 
         function togglePhoto(path) {
@@ -2810,6 +3184,7 @@
                 selectedPhotos.add(path);
             }
             updateStats();
+            saveSelections();
         }
 
         function toggleSelectAll() {
@@ -2983,6 +3358,8 @@
             } catch (e) { console.error('继续失败', e); }
         }
 
+        let __transferPreparing = false;
+        let __lastProgressPercent = 0;
         function startProgressPolling() {
             progressInterval = setInterval(updateProgress, 500);
         }
@@ -2991,8 +3368,21 @@
             try {
                 const response = await fetch('/api/transfer_status');
                 const status = await response.json();
-
-                const percent = status.total > 0 ? Math.round((status.current / status.total) * 100) : 0;
+                // 计算百分比（单调不降，避免偶发归零闪烁）
+                const computed = (status && typeof status.total === 'number' && status.total > 0)
+                    ? Math.round((status.current / status.total) * 100)
+                    : null;
+                let percent = (computed !== null)
+                    ? computed
+                    : (__transferPreparing ? __lastProgressPercent : 0);
+                // Clamp: 不允许在一次传输中倒退
+                if (computed !== null && __lastProgressPercent > 0) {
+                    percent = Math.max(__lastProgressPercent, percent);
+                }
+                // 完成态强制100%
+                if (status && status.total > 0 && status.current >= status.total) {
+                    percent = 100;
+                }
 
                 // 时间格式化：>=1小时显示 hh:mm:ss，否则 mm:ss
                 function fmtTime(sec) {
@@ -3020,10 +3410,19 @@
                 const elapsedSec = Math.floor(status.elapsed_sec || 0);
                 const totalEstSec = Math.floor(elapsedSec + etaSec);
                 const totalText = fmtTime(totalEstSec);
-                document.getElementById('progressText').textContent =
-                    `正在传输: ${status.current} / ${status.total}`;
-                document.getElementById('progressPercent').textContent = percent + '%';
-                document.getElementById('progressBar').style.width = percent + '%';
+                const pbEl = document.getElementById('progressBar');
+                const ptEl = document.getElementById('progressText');
+                const ppEl = document.getElementById('progressPercent');
+                if (status.is_running) {
+                    __transferPreparing = false;
+                    if (pbEl) pbEl.classList.remove('indeterminate');
+                    if (ptEl) ptEl.textContent = `正在传输: ${status.current} / ${status.total}`;
+                } else if (__transferPreparing) {
+                    if (ptEl) ptEl.textContent = '传输准备中…';
+                }
+                if (ppEl) ppEl.textContent = (__transferPreparing && percent === 0) ? '…' : (percent + '%');
+                if (pbEl) { pbEl.style.width = percent + '%'; if (!pbEl.classList.contains('indeterminate')) pbEl.textContent = percent + '%'; }
+                __lastProgressPercent = percent;
                 // 当前文件
                 document.getElementById('currentFile').textContent = '当前: ' + (status.current_file || '');
                 // 实时显示速度（使用后端实时EMA速度），附带USB标签；>1000MB显示GB
@@ -3070,17 +3469,23 @@
 
                 if (!status.is_running && status.current > 0) {
                     clearInterval(progressInterval);
-                    stopDeviceStatusPolling();
                     document.getElementById('progressText').textContent = '传输完成!';
                     document.getElementById('currentFile').textContent =
                         status.failed.length > 0 ?
                         `完成! ${status.failed.length} 个文件失败` :
                         '所有文件传输成功!';
+                    // 最终强制100%
+                    const pb2 = document.getElementById('progressBar');
+                    const pp2 = document.getElementById('progressPercent');
+                    if (pb2) { pb2.classList.remove('indeterminate'); pb2.style.width = '100%'; pb2.textContent = '100%'; }
+                    if (pp2) { pp2.textContent = '100%'; }
                     document.getElementById('transferBtn').style.display = 'inline-block';
                     document.getElementById('stopBtn').style.display = 'none';
                     document.getElementById('scanBtn').disabled = false;
                     document.getElementById('pauseBtn').style.display = 'none';
                     document.getElementById('resumeLiveBtn').style.display = 'none';
+                    const pb = document.getElementById('progressBar');
+                    if (pb) { pb.classList.remove('indeterminate'); }
 
                     if (status.failed.length > 0) {
                         console.error('失败的文件:', status.failed);
@@ -3097,6 +3502,7 @@
             currentView = 'album';
             currentAlbumKey = null;
             detachPreviewScroll();
+            try { window.__albumViewActive = true; window.__hasAlbums = (Object.keys(allAlbums||{}).length>0); } catch (e) {}
 
             document.getElementById('albumViewBtn').classList.add('active');
             document.getElementById('listViewBtn').classList.remove('active');
@@ -3111,6 +3517,7 @@
         function switchToListView() {
             currentView = 'list';
             detachPreviewScroll();
+            try { window.__albumViewActive = false; } catch (e) {}
 
             document.getElementById('listViewBtn').classList.add('active');
             document.getElementById('albumViewBtn').classList.remove('active');
@@ -3269,6 +3676,7 @@
             selectedAlbumsAll = new Set(Object.keys(allAlbums || {}));
             excludedByAlbum = new Map();
             updateStats();
+            saveSelections();
             if (currentView === 'album') displayAlbums();
             showToast('已选择所有相册', { type: 'success' });
         }
@@ -3283,6 +3691,7 @@
             // 清空具体项（避免与相册级标记冲突）
             selectedPhotos.clear();
             updateStats();
+            saveSelections();
             if (currentView === 'album') displayAlbums();
             // 不再后台展开具体路径，由服务端在开始传输时展开
         }
@@ -3548,6 +3957,7 @@
             excludedByAlbum.delete(currentAlbumKey);
             refreshPreviewSelectionUI();
             updateStats();
+            saveSelections();
             // 不再后台展开具体路径，由服务端在开始传输时展开
             showToast('已选择整相册', { type: 'success' });
         }
@@ -3566,6 +3976,7 @@
             }
             refreshPreviewSelectionUI();
             updateStats();
+            saveSelections();
             showToast('已对本相册进行反选', { type: 'info' });
         }
 
@@ -3630,17 +4041,78 @@
             updateTopActions('album');
         }
 
+        // 帮助函数：等待两帧，确保UI先渲染
+        function nextFrame() {
+            return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
+
+        function enterPreparingUI(outputPath) {
+            const pcEl = document.getElementById('progressContainer');
+            const ptEl = document.getElementById('progressText');
+            const ppEl = document.getElementById('progressPercent');
+            const pbEl = document.getElementById('progressBar');
+            __transferPreparing = true;
+            __lastProgressPercent = 0;
+            if (pcEl) pcEl.classList.add('active');
+            if (ptEl) ptEl.textContent = '传输准备中…';
+            if (ppEl) ppEl.textContent = '…';
+            if (pbEl) { pbEl.classList.add('indeterminate'); pbEl.style.width = '30%'; pbEl.textContent = ''; }
+            // 展示进度明细（断开后可能被隐藏）
+            try {
+                ['speedInfo','sizeInfo','etaInfo','totalEstInfo'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+            } catch (e) {}
+            const tBtn = document.getElementById('transferBtn');
+            if (tBtn) tBtn.disabled = true;
+            const sBtn = document.getElementById('scanBtn');
+            if (sBtn) sBtn.disabled = true;
+            const cfEl = document.getElementById('currentFile');
+            if (cfEl && outputPath) cfEl.textContent = `保存到: ${outputPath}`;
+        }
+
+        function exitPreparingUI() {
+            const pcEl = document.getElementById('progressContainer');
+            const ptEl = document.getElementById('progressText');
+            const ppEl = document.getElementById('progressPercent');
+            const pbEl = document.getElementById('progressBar');
+            __transferPreparing = false;
+            if (pcEl) pcEl.classList.remove('active');
+            if (ptEl) ptEl.textContent = '等待开始...';
+            if (ppEl) ppEl.textContent = '0%';
+            if (pbEl) { pbEl.classList.remove('indeterminate'); pbEl.style.width = '0%'; pbEl.textContent = '0%'; }
+            const tBtn = document.getElementById('transferBtn');
+            if (tBtn) { tBtn.disabled = false; tBtn.style.display = 'inline-block'; }
+            const sBtn = document.getElementById('scanBtn');
+            if (sBtn) sBtn.disabled = false;
+            const stopBtn = document.getElementById('stopBtn');
+            if (stopBtn) stopBtn.style.display = 'none';
+        }
+
         // Override startTransfer to handle album transfers（服务端展开，避免前端海量分页请求）
         async function startTransfer() {
             // 开始传输时停止缩略图轮询，释放请求与CPU
             stopThumbPolling();
+            // 先做轻量校验，避免无选择/无路径时误进入准备UI
+            if ((selectedAlbumsAll?.size || 0) === 0 && (selectedPhotos?.size || 0) === 0) {
+                showToast('请至少选择一张照片或一个相册', 'warning');
+                return;
+            }
+
+            const outputPath = outputPathInput.value.trim();
+            if (!outputPath) {
+                showToast('请输入输出目录路径', 'warning');
+                return;
+            }
+
+            // 先立即切换到“传输准备中”并让浏览器渲染一帧，缓解点击后的空白等待
+            enterPreparingUI(outputPath);
+            await nextFrame();
+
             // 计算实际选中的照片数量（包括相册整体选择）
             let totalSelectedCount = 0;
             const albums = allAlbums || {};
             selectedAlbumsAll.forEach(k => {
                 totalSelectedCount += (albums[k]?.total_count || 0) - ((excludedByAlbum.get(k)?.size) || 0);
             });
-            // 去重：从独立选择中剔除已计入相册整体选择的路径
             selectedPhotos.forEach(p => {
                 let covered = false;
                 for (const k of selectedAlbumsAll) {
@@ -3651,13 +4123,8 @@
             });
 
             if (totalSelectedCount === 0) {
+                exitPreparingUI();
                 showToast('请至少选择一张照片或一个相册', 'warning');
-                return;
-            }
-
-            const outputPath = outputPathInput.value.trim();
-            if (!outputPath) {
-                showToast('请输入输出目录路径', 'warning');
                 return;
             }
 
@@ -3693,20 +4160,19 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    document.getElementById('progressContainer').classList.add('active');
+                    // 服务端接受后，切换到可停止的传输UI
                     document.getElementById('transferBtn').style.display = 'none';
                     document.getElementById('stopBtn').style.display = 'inline-block';
                     document.getElementById('scanBtn').disabled = true;
-                    document.getElementById('currentFile').textContent = `保存到: ${outputPath}`;
-                    const pt = document.getElementById('progressText');
-                    if (pt) pt.textContent = '正在初始化（测速/预估大小）…';
                     startProgressPolling();
                     startDeviceStatusPolling();
                 } else {
                     showToast('启动传输失败: ' + data.error, { type: 'error' });
+                    exitPreparingUI();
                 }
             } catch (error) {
                 showToast('启动传输失败: ' + error.message, { type: 'error' });
+                exitPreparingUI();
             }
         }
 
@@ -3779,6 +4245,349 @@
                     <button class="btn btn-tonal" onclick="selectAllAlbums()">全选所有相册</button>
                     <button class="btn btn-tonal" onclick="invertAllAlbums()">反选所有相册</button>
                 `;
+            }
+        }
+
+        // 更多配置（小屏聚合）
+        async function openMoreSettings() {
+            try {
+                // 并行获取当前状态
+                const [devResp, usbResp, burstResp, devicesResp] = await Promise.all([
+                    fetch('/api/device_status').then(r=>r.json()).catch(()=>({})),
+                    fetch('/api/usb/speed').then(r=>r.json()).catch(()=>({})),
+                    fetch('/api/usb/burst_mode').then(r=>r.json()).catch(()=>({})),
+                    fetch('/api/devices').then(r=>r.json()).catch(()=>({}))
+                ]);
+                const connected = !!(devResp && devResp.connected);
+                const selected = (devResp && devResp.selected) || (devicesResp && devicesResp.selected) || '';
+                const devices = (devicesResp && devicesResp.devices) || [];
+                const usbLabel = (usbResp && usbResp.success) ? ((usbResp.label || 'USB 未知') + (usbResp.measured_mbps>0?` · ${usbResp.measured_mbps.toFixed(1)} MB/s`:'')) : 'USB 未知';
+                const burstEnabled = !!(burstResp && burstResp.enabled);
+
+                const deviceOptions = devices.map(d => `<option value="${d}" ${d===selected?'selected':''}>${d}</option>`).join('');
+                const html = `
+                    <div class=\"md-action-list\">
+                        <div class=\"md-action\">
+                            <div class=\"leading\">
+                                <div class=\"title\">USB 速度</div>
+                                <div class=\"desc\"><span class=\"md-pill\" id=\"moreUsbLabel\">${escapeHtml(usbLabel)}</span></div>
+                            </div>
+                            <div class=\"trailing\"> 
+                                <button class=\"dialog-button\" id=\"btnRetestUsb\">重新检测</button> 
+                            </div> 
+                        </div>
+                        <div class=\"md-action\">
+                            <div class=\"leading\">
+                                <div class=\"title\">设备</div>
+                                <div class=\"desc\">${connected?`已连接 (${escapeHtml(selected||'')})`:'未连接'}</div>
+                            </div>
+                            <div class=\"trailing\">
+                                <select id=\"moreDeviceSelect\" class=\"md-inline-select\">${deviceOptions}</select>
+                            </div>
+                        </div>
+                        <div class=\"md-action\">
+                            <div class=\"leading\">
+                                <div class=\"title\">ADB Burst 模式</div>
+                                <div class=\"desc\">提升 ADB 传输性能（可能更快）</div>
+                            </div>
+                            <div class=\"trailing\">
+                                <label class=\"toggle-label\" title=\"启用/禁用 ADB Burst\">
+                                    <input type=\"checkbox\" id=\"moreBurstSwitch\" ${burstEnabled?'checked':''}>
+                                    <span class=\"toggle-slider-small\"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class=\"md-action\" id=\"moreHistoryAction\" style=\"cursor:pointer;\">
+                            <div class=\"leading\">
+                                <div class=\"title\">历史备份记录</div>
+                                <div class=\"desc\">按时间查看本机历史批次与照片数量</div>
+                            </div>
+                            <div class=\"trailing\">
+                                <button class=\"dialog-button\" id=\"moreHistoryBtn\">打开</button>
+                            </div>
+                        </div>
+                        <div class=\"md-action\" id=\"moreClearHistoryAction\" style=\"cursor:pointer;\">
+                            <div class=\"leading\">
+                                <div class=\"title\">清空历史备份记录</div>
+                                <div class=\"desc\">可选择同时删除本地备份文件（不可恢复）</div>
+                            </div>
+                            <div class=\"trailing\">
+                                <button class=\"dialog-button danger\" id=\"moreClearHistoryBtn\">清空</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                showDialogWithOptions({ title: '更多配置', html, actions: [{ label: '关闭', type: 'primary' }], dialogClass: 'dialog-lg' });
+
+                // 事件绑定
+                const sel = document.getElementById('moreDeviceSelect');
+                if (sel) {
+                    sel.addEventListener('change', async () => {
+                        const serial = sel.value;
+                        try {
+                            const r = await fetch('/api/select_device', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serial }) });
+                            const j = await r.json();
+                            if (j.success) {
+                                try { document.getElementById('deviceSelect').value = serial; } catch (e) {}
+                                showToast(`已切换到设备: ${serial}`, { type: 'success' });
+                                updateUsbSpeedInfo();
+                            } else {
+                                showToast('切换设备失败: ' + (j.error||'未知'), { type: 'error' });
+                            }
+                        } catch (e) {
+                            showToast('切换设备失败: ' + e.message, { type: 'error' });
+                        }
+                    });
+                }
+
+                const burstSw = document.getElementById('moreBurstSwitch');
+                if (burstSw) {
+                    burstSw.addEventListener('change', async () => {
+                        const enabled = burstSw.checked;
+                        try {
+                            const resp = await fetch('/api/usb/burst_mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
+                            const data = await resp.json();
+                            if (data.success) {
+                                try { const sw = document.getElementById('burstModeSwitch'); if (sw) sw.checked = enabled; } catch (e) {}
+                                showToast(`ADB Burst模式已${enabled ? '启用' : '禁用'}`, { type: 'success' });
+                            } else {
+                                burstSw.checked = !enabled;
+                                showToast('操作失败: ' + (data.error||'未知错误'), { type: 'error' });
+                            }
+                        } catch (e) {
+                            burstSw.checked = !enabled;
+                            showToast('操作失败: ' + e.message, { type: 'error' });
+                        }
+                    });
+                }
+
+                const moreHist = document.getElementById('moreHistoryBtn');
+                const moreHistTile = document.getElementById('moreHistoryAction');
+                const openHist = () => { openHistoryDialog2(); };
+                if (moreHist) moreHist.addEventListener('click', openHist);
+                if (moreHistTile) moreHistTile.addEventListener('click', (e)=>{ if (e.target && e.target.id === 'moreHistoryBtn') return; openHist(); });
+
+                const clearBtn = document.getElementById('moreClearHistoryBtn');
+                const clearTile = document.getElementById('moreClearHistoryAction');
+                const openClear = () => { openClearHistoryDialog(); };
+                if (clearBtn) clearBtn.addEventListener('click', openClear);
+                if (clearTile) clearTile.addEventListener('click', (e)=>{ if (e.target && e.target.id === 'moreClearHistoryBtn') return; openClear(); });
+
+                const btnRetest = document.getElementById('btnRetestUsb');
+                if (btnRetest) {
+                    btnRetest.addEventListener('click', async () => {
+                        const lbl = document.getElementById('moreUsbLabel');
+                        if (lbl) lbl.textContent = '测速中…';
+                        try {
+                            const r = await fetch('/api/usb/speed');
+                            const j = await r.json();
+                            const text = (j && j.success) ? ((j.label || 'USB 未知') + (j.measured_mbps>0?` · ${j.measured_mbps.toFixed(1)} MB/s`:'')) : 'USB 未知';
+                            if (lbl) lbl.textContent = text;
+                        } catch (e) {
+                            if (lbl) lbl.textContent = 'USB 未知';
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('打开更多配置失败:', e);
+                showToast('打开更多配置失败: ' + e.message, { type: 'error' });
+            }
+        }
+
+        // 历史备份记录（USB视图，增强版）
+        async function openHistoryDialog2() {
+            async function fetchHistory(q = '') {
+                const url = q ? `/api/history/batches?current=1&q=${encodeURIComponent(q)}` : '/api/history/batches?current=1';
+                const resp = await fetch(url);
+                return await resp.json();
+            }
+
+            async function fetchDevices() {
+                try {
+                    const resp = await fetch('/api/history/devices');
+                    const data = await resp.json();
+                    if (data && data.success) return data.devices || [];
+                } catch (e) { console.warn('加载设备列表失败', e); }
+                return [];
+            }
+
+            function renderHistoryContent(list, deviceLabel, q, devices, mode) {
+                const deviceInfo = deviceLabel ? `设备: ${deviceLabel}` : '设备: 全部';
+                const deviceOptions = (devices || []).map(d => {
+                    const label = (d.device_name && d.device_name.trim()) ? `${d.device_name} (${d.device_id})` : d.device_id;
+                    return `<option value=\"${escapeHtml(d.device_id)}\" ${d.device_id === deviceLabel ? 'selected' : ''}>${escapeHtml(label)} · ${d.photos || 0}</option>`;
+                }).join('');
+                const rows = list.map((b, idx) => {
+                    const sz = (typeof b.total_size_mb === 'number') ? (b.total_size_mb >= 1024 ? (b.total_size_mb/1024).toFixed(2) + ' GB' : b.total_size_mb.toFixed(2) + ' MB') : '';
+                    return `
+                        <tr>
+                            <td class=\"history-col-idx\">${idx + 1}</td>
+                            <td class=\"history-col-time\">${escapeHtml(b.timestamp || '')}</td>
+                            <td class=\"history-col-batch\">${escapeHtml(b.batch_id || '')}</td>
+                            <td class=\"history-col-device\">${escapeHtml(b.device_id || '')}</td>
+                            <td class=\"history-col-devname\">${escapeHtml(b.device_name || '')}</td>
+                            <td class=\"history-col-count\">${b.photo_count ?? ''}</td>
+                            <td class=\"history-col-size\">${sz}</td>
+                        </tr>`;
+                }).join('');
+                const empty = list.length === 0 ? `<div class=\"history-empty\" style=\"padding:16px 0;color:#6b7280;\">暂无历史记录</div>` : '';
+                return `
+                    <div class=\"history-toolbar\">
+                        <div class=\"segmented\">
+                            <button id=\"segCur\" class=\"seg-btn ${mode==='current' ? 'active' : ''}\">当前设备</button>
+                            <button id=\"segAll\" class=\"seg-btn ${mode==='all' ? 'active' : ''}\">全部设备</button>
+                        </div>
+                        <select id=\"historyDeviceSelect\" class=\"history-device-select\">
+                            <option value=\"\">选择设备</option>
+                            ${deviceOptions}
+                        </select>
+                        <input id=\"historySearchInput\" type=\"text\" placeholder=\"按时间/批次搜索，例如 2025-01 或 20250101\" value=\"${q ? escapeHtml(q) : ''}\">
+                        <button id=\"historySearchBtn\">搜索</button>
+                        <button id=\"historyClearBtn\" class=\"danger\" title=\"清空历史备份记录\">清空</button>
+                    </div>
+                    ${empty}
+                    ${list.length ? `
+                    <div class=\"history-table-wrap\">
+                        <table class=\"history-table\">
+                            <thead>
+                                <tr>
+                                    <th class=\"history-col-idx\">#</th>
+                                    <th class=\"history-col-time\">时间</th>
+                                    <th class=\"history-col-batch\">批次号</th>
+                                    <th class=\"history-col-device\">设备ID</th>
+                                    <th class=\"history-col-devname\">设备名称</th>
+                                    <th class=\"history-col-count\">照片数量</th>
+                                    <th class=\"history-col-size\">大小</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows}
+                            </tbody>
+                        </table>
+                    </div>` : ''}
+                `;
+            }
+
+            try {
+                const data = await fetchHistory('');
+                const devs = await fetchDevices();
+                if (!data.success) {
+                    showToast('读取历史记录失败: ' + (data.error || '未知错误'), { type: 'error' });
+                    return;
+                }
+                const list = data.batches || [];
+                const device = data.device || '';
+                // 状态：current 默认使用 /current=1; 若无device则进入 all 模式
+                let state = { mode: device ? 'current' : 'all', device: device || '', q: '' };
+                const html = renderHistoryContent(list, device, state.q, devs, state.mode);
+                showDialogWithOptions({ title: '历史备份记录', html, actions: [{ label: '关闭', type: 'primary' }], dialogClass: 'dialog-lg' });
+
+                async function reload() {
+                    let url = '/api/history/batches';
+                    const params = new URLSearchParams();
+                    if (state.mode === 'current') {
+                        params.set('current', '1');
+                    } else if (state.mode === 'device' && state.device) {
+                        params.set('device', state.device);
+                    }
+                    if (state.q) params.set('q', state.q);
+                    const resp = await fetch(url + (params.toString() ? ('?' + params.toString()) : ''));
+                    const r = await resp.json();
+                    const list2 = (r && r.batches) || [];
+                    const deviceLabel = (r && r.device) || state.device || '';
+                    dialogContentElement.innerHTML = renderHistoryContent(list2, deviceLabel, state.q, devs, state.mode);
+                    // 重新绑定事件
+                    bindHandlers();
+                }
+
+                function bindHandlers() {
+                    const input = document.getElementById('historySearchInput');
+                    const btn = document.getElementById('historySearchBtn');
+                    const segCur = document.getElementById('segCur');
+                    const segAll = document.getElementById('segAll');
+                    const sel = document.getElementById('historyDeviceSelect');
+                    const clear = document.getElementById('historyClearBtn');
+                    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { state.q = (input.value || '').trim(); reload(); } });
+                    btn.addEventListener('click', () => { state.q = (input.value || '').trim(); reload(); });
+                    segCur.addEventListener('click', () => { state.mode = 'current'; state.device = ''; reload(); });
+                    segAll.addEventListener('click', () => { state.mode = 'all'; state.device = ''; reload(); });
+                    sel.addEventListener('change', () => { const v = sel.value; if (v) { state.mode = 'device'; state.device = v; } else { state.mode = 'all'; state.device = ''; } reload(); });
+                    if (clear) clear.addEventListener('click', () => openClearHistoryDialog());
+                }
+                bindHandlers();
+            } catch (e) {
+                console.error('加载历史备份失败:', e);
+                showToast('加载历史备份失败: ' + e.message, { type: 'error' });
+            }
+        }
+
+        async function openClearHistoryDialog() {
+            const html = `
+                <div style="padding: 8px 0; color:#374151;">此操作将清空应用内的历史备份记录（数据库）。</div>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                    <input type="checkbox" id="chkDeleteFiles">
+                    <span>同时删除本地备份文件（${escapeHtml((defaultOutputPath||'').toString()) || '输出目录'}）</span>
+                </label>
+                <div style="margin-top:8px; color:#b91c1c;">注意：删除备份文件不可恢复，请谨慎操作。</div>
+            `;
+            showDialogWithOptions({
+                title: '清空历史备份记录',
+                html,
+                actions: [
+                    { label: '取消' },
+                    { label: '清空', type: 'danger', onClick: async () => {
+                        try {
+                            const del = document.getElementById('chkDeleteFiles')?.checked === true;
+                            const resp = await fetch('/api/history/clear', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ delete_files: del })
+                            });
+                            const data = await resp.json();
+                            if (data && data.success) {
+                                const extra = (typeof data.deleted_files === 'number') ? `（已删除 ${data.deleted_files} 项文件/目录）` : '';
+                                showToast('已清空历史备份记录' + (del ? extra : ''), { type: 'success' });
+                            } else {
+                                showToast('清空失败: ' + (data.error || '未知错误'), { type: 'error' });
+                            }
+                        } catch (e) {
+                            showToast('清空失败: ' + e.message, { type: 'error' });
+                        }
+                    }}
+                ]
+            });
+        }
+
+        // 历史备份记录（USB视图）
+        async function openHistoryDialog() {
+            try {
+                const resp = await fetch('/api/history/batches?current=1');
+                const data = await resp.json();
+                if (!data.success) {
+                    showToast('读取历史记录失败: ' + (data.error || '未知错误'), { type: 'error' });
+                    return;
+                }
+                const list = data.batches || [];
+                if (!list.length) {
+                    showDialog({ title: '历史备份记录', message: '暂无历史记录' });
+                    return;
+                }
+                const lines = list.map((b, idx) => {
+                    const miss = (typeof b.missing_count === 'number' && b.missing_count > 0) ? ` | 缺失: ${b.missing_count}` : '';
+                    const exist = (typeof b.exists_count === 'number') ? ` | 本地存在: ${b.exists_count}` : '';
+                    return `${idx+1}. 设备: ${b.device_id} | 批次: ${b.batch_id} | 时间: ${b.timestamp} | 记录: ${b.photo_count} 张${exist}${miss}\n路径: ${b.base_path}`;
+                });
+                try { console.log('[History] batches', list); } catch (e) {}
+                showDialog({
+                    title: '历史备份记录',
+                    message: lines,
+                    actions: [
+                        { label: '关闭', type: 'primary' }
+                    ]
+                });
+            } catch (e) {
+                console.error('加载历史备份失败:', e);
+                showToast('加载历史备份失败: ' + e.message, { type: 'error' });
             }
         }
     </script>
