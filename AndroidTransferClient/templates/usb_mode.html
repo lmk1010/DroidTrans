@@ -287,7 +287,45 @@
         }
 
         .content {
+            position: relative;
             padding: 32px;
+        }
+
+        .transfer-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(3px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            pointer-events: all;
+        }
+
+        .transfer-overlay.active {
+            display: flex;
+        }
+
+        .transfer-overlay .overlay-card {
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 16px;
+            padding: 24px 32px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+            text-align: center;
+            color: #202124;
+            min-width: 260px;
+            max-width: 360px;
+        }
+
+        .transfer-overlay .overlay-card .overlay-text {
+            font-size: 16px;
+            letter-spacing: 0.2px;
+            line-height: 1.6;
+        }
+
+        .transfer-overlay .overlay-card .spinner {
+            margin: 0 auto 16px auto;
         }
 
         .stats {
@@ -611,11 +649,11 @@
 
         /* Large dialog variant for history view */
         .dialog.dialog-lg {
-            max-width: 1000px;
-            width: min(96vw, 1000px);
+            max-width: 1320px;
+            width: min(98vw, 1320px);
         }
         .dialog.dialog-lg .dialog-content {
-            max-height: 72vh;
+            max-height: 80vh;
         }
 
         @keyframes dialog-scale-in {
@@ -670,23 +708,34 @@
         .segmented .seg-btn.active { background:#e8f0fe; color:#1967d2; font-weight:600; }
         .history-table-wrap { width: 100%; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
         .history-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .history-table th, .history-table td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 13px; color: #374151; }
+        .history-table th, .history-table td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 13px; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 20px; }
         .history-table th { background: #f6f8fa; color: #111827; font-weight: 600; position: sticky; top: 0; z-index: 1; }
         .history-table tr:hover td { background: #fafafa; }
         .history-col-idx { width: 44px; color: #6b7280; }
         .history-col-time { width: 180px; }
-        .history-col-device { width: 220px; word-break: break-all; }
-        .history-col-devname { width: 220px; word-break: break-all; }
+        .history-col-device { width: 200px; }
+        .history-col-devname { width: 160px; }
         .history-col-count { width: 100px; }
-        .history-col-path, .history-col-exist, .history-col-missing { display: none; }
-        .history-col-batch { width: 160px; word-break: break-all; }
+        .history-col-batch { width: 160px; }
         .history-col-size { width: 120px; }
+        /* 在大弹窗中强制展示所有列，且不换行 */
+        .dialog.dialog-lg .history-table .history-col-device,
+        .dialog.dialog-lg .history-table .history-col-devname,
+        .dialog.dialog-lg .history-table .history-col-idx,
+        .dialog.dialog-lg .history-table .history-col-time,
+        .dialog.dialog-lg .history-table .history-col-batch,
+        .dialog.dialog-lg .history-table .history-col-count,
+        .dialog.dialog-lg .history-table .history-col-size {
+            display: table-cell !important;
+            white-space: nowrap;
+        }
+        /* 避免横向滚动条，若列内容过长以省略号显示 */
+        .history-table-wrap { width: 100%; overflow-x: hidden; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
         .history-toolbar button.danger { border-color: #ef4444; color: #b91c1c; }
         .history-toolbar button.danger:hover { background: #fee2e2; }
 
         /* Responsive adjustments */
         @media (max-width: 1024px) {
-            .history-col-device { display: none; }
             .history-col-time { width: 160px; }
             .history-col-devname { width: auto; }
         }
@@ -698,7 +747,6 @@
             .segmented .seg-btn { flex: 1; text-align: center; }
         }
         @media (max-width: 480px) {
-            .history-col-devname { display: none; }
             .history-col-time { width: auto; }
             .history-col-count { width: 90px; }
         }
@@ -1484,6 +1532,12 @@
                     <p>请先检查设备连接，然后扫描照片</p>
                 </div>
             </div>
+            <div class="transfer-overlay" id="transferOverlay" aria-hidden="true">
+                <div class="overlay-card">
+                    <div class="spinner" aria-hidden="true"></div>
+                    <div class="overlay-text" id="transferOverlayText">传输进行中，请勿操作</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1846,18 +1900,44 @@
                             const img = document.querySelector(`#thumbGrid .thumb-item[data-path="${CSS.escape(path)}"] img`);
                             if (img && (img.getAttribute('data-ph') === '1' || !img.src)) {
                                 const done = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
-                                img.onload = done;
-                                img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
-                                img.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`;
-                                if (img.complete && img.naturalWidth > 0) done();
-                                img.removeAttribute('data-ph');
+                                const hit = thumbCacheGet(path);
+                                if (hit && hit.url) {
+                                    img.onload = done;
+                                    img.src = hit.url;
+                                    if (img.complete && img.naturalWidth > 0) done();
+                                    img.removeAttribute('data-ph');
+                                } else {
+                                    fetch(`/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`)
+                                      .then(r => r.ok ? r.blob() : null)
+                                      .then(blob => {
+                                          if (!blob) return;
+                                          const entry = thumbCachePut(path, blob);
+                                          img.onload = done;
+                                          img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class=\"thumb-video-badge\">预览失败</div>'); };
+                                          img.src = (entry && entry.url) ? entry.url : URL.createObjectURL(blob);
+                                          if (img.complete && img.naturalWidth > 0) done();
+                                          img.removeAttribute('data-ph');
+                                      }).catch(()=>{});
+                                }
                             }
                             // 相册封面
                             const cover = document.querySelector(`.album-cover img[data-cover="${CSS.escape(path)}"]`);
                             if (cover && !cover.src) {
-                                cover.onload = () => { onCoverLoaded(cover); };
-                                cover.onerror = () => { fallbackCover(cover, cover.alt || '') };
-                                cover.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${COVER_THUMB_SIZE}`;
+                                const hit2 = thumbCacheGet(path);
+                                if (hit2 && hit2.url) {
+                                    cover.onload = () => { onCoverLoaded(cover); };
+                                    cover.src = hit2.url;
+                                } else {
+                                    fetch(`/api/thumb?path=${encodeURIComponent(path)}&size=${COVER_THUMB_SIZE}`)
+                                      .then(r => r.ok ? r.blob() : null)
+                                      .then(blob => {
+                                          if (!blob) return;
+                                          const entry2 = thumbCachePut(path, blob);
+                                          cover.onload = () => { onCoverLoaded(cover); };
+                                          cover.onerror = () => { fallbackCover(cover, cover.alt || '') };
+                                          cover.src = (entry2 && entry2.url) ? entry2.url : URL.createObjectURL(blob);
+                                      }).catch(()=>{});
+                                }
                             }
                             readyCount++;
                         }
@@ -2786,6 +2866,7 @@
                     document.getElementById('stopBtn').style.display = 'inline-block';
                     document.getElementById('scanBtn').disabled = true;
                     document.getElementById('transferBtn').disabled = true;
+                    setContentMask(true, '传输进行中，请勿操作');
                     startProgressPolling();
                     startDeviceStatusPolling();
                     showToast(data.message, { type: 'success' });
@@ -3423,6 +3504,17 @@
                 if (ppEl) ppEl.textContent = (__transferPreparing && percent === 0) ? '…' : (percent + '%');
                 if (pbEl) { pbEl.style.width = percent + '%'; if (!pbEl.classList.contains('indeterminate')) pbEl.textContent = percent + '%'; }
                 __lastProgressPercent = percent;
+
+                const shouldMask = (status && status.is_running) || __transferPreparing;
+                if (shouldMask) {
+                    const overlayMsg = (status && status.is_running)
+                        ? (status.paused ? '传输已暂停，等待继续' : '传输进行中，请勿操作')
+                        : '传输准备中，请勿操作';
+                    setContentMask(true, overlayMsg);
+                } else {
+                    setContentMask(false);
+                }
+
                 // 当前文件
                 document.getElementById('currentFile').textContent = '当前: ' + (status.current_file || '');
                 // 实时显示速度（使用后端实时EMA速度），附带USB标签；>1000MB显示GB
@@ -3491,6 +3583,7 @@
                         console.error('失败的文件:', status.failed);
                         setTimeout(checkResumeProgress, 1000);
                     }
+                    setContentMask(false);
                 }
             } catch (error) {
                 console.error('更新进度失败:', error);
@@ -3624,19 +3717,28 @@
             updateStats();
             updateTopActions('album');
 
-            // 优先直接为相册封面设置 src，避免返回列表时封面“丢失”再等待轮询
+            // 优先使用内存缓存；未命中则fetch为blob并写入缓存，避免返回列表时再次请求
             try {
                 const coverImgs = document.querySelectorAll('.album-cover img[data-cover]');
                 coverImgs.forEach(img => {
                     const p = img.getAttribute('data-cover');
                     if (!p) return;
-                    // 若内存缓存命中，直接使用 blobUrl；否则先尝试直接请求缩略图
                     const hit = thumbCacheGet(p);
                     if (hit && hit.url) {
                         img.src = hit.url;
-                    } else {
-                        img.src = `/api/thumb?path=${encodeURIComponent(p)}&size=${COVER_THUMB_SIZE}`;
+                        return;
                     }
+                    const done = () => { const sk = img.parentElement?.querySelector('.skeleton-cover'); if (sk) sk.remove(); img.classList.add('loaded'); };
+                    fetch(`/api/thumb?path=${encodeURIComponent(p)}&size=${COVER_THUMB_SIZE}`)
+                      .then(r => r.ok ? r.blob() : null)
+                      .then(blob => {
+                          if (!blob) { img.src = `/api/thumb?path=${encodeURIComponent(p)}&size=${COVER_THUMB_SIZE}`; return; }
+                          const entry = thumbCachePut(p, blob);
+                          img.onload = done;
+                          img.onerror = () => { fallbackCover(img, img.alt || ''); };
+                          img.src = (entry && entry.url) ? entry.url : URL.createObjectURL(blob);
+                      })
+                      .catch(() => { img.src = `/api/thumb?path=${encodeURIComponent(p)}&size=${COVER_THUMB_SIZE}`; });
                 });
             } catch (e) { /* ignore */ }
 
@@ -4046,6 +4148,23 @@
             return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         }
 
+        const DEFAULT_TRANSFER_OVERLAY_TEXT = '传输进行中，请勿操作';
+
+        function setContentMask(masked, message) {
+            const overlay = document.getElementById('transferOverlay');
+            if (!overlay) return;
+            const textEl = document.getElementById('transferOverlayText');
+            if (masked) {
+                overlay.classList.add('active');
+                overlay.setAttribute('aria-hidden', 'false');
+                if (textEl) textEl.textContent = message || DEFAULT_TRANSFER_OVERLAY_TEXT;
+            } else {
+                overlay.classList.remove('active');
+                overlay.setAttribute('aria-hidden', 'true');
+                if (textEl) textEl.textContent = DEFAULT_TRANSFER_OVERLAY_TEXT;
+            }
+        }
+
         function enterPreparingUI(outputPath) {
             const pcEl = document.getElementById('progressContainer');
             const ptEl = document.getElementById('progressText');
@@ -4067,6 +4186,7 @@
             if (sBtn) sBtn.disabled = true;
             const cfEl = document.getElementById('currentFile');
             if (cfEl && outputPath) cfEl.textContent = `保存到: ${outputPath}`;
+            setContentMask(true, '传输准备中，请勿操作');
         }
 
         function exitPreparingUI() {
@@ -4085,6 +4205,7 @@
             if (sBtn) sBtn.disabled = false;
             const stopBtn = document.getElementById('stopBtn');
             if (stopBtn) stopBtn.style.display = 'none';
+            setContentMask(false);
         }
 
         // Override startTransfer to handle album transfers（服务端展开，避免前端海量分页请求）
@@ -4164,6 +4285,7 @@
                     document.getElementById('transferBtn').style.display = 'none';
                     document.getElementById('stopBtn').style.display = 'inline-block';
                     document.getElementById('scanBtn').disabled = true;
+                    setContentMask(true, '传输进行中，请勿操作');
                     startProgressPolling();
                     startDeviceStatusPolling();
                 } else {

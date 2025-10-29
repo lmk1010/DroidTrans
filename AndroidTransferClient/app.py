@@ -352,14 +352,17 @@ def normalize_remote_path(path):
 def save_progress(photos, output_dir, completed_files, failed_files):
     """保存传输进度到文件"""
     try:
+        pending_list = [p for p in photos if p['path'] not in completed_files]
+        total_count = len(completed_files) + len(pending_list)
+
         progress_data = {
             'timestamp': datetime.now().isoformat(),
             'output_dir': output_dir,
-            'total': len(photos),
+            'total': total_count,
             'completed': len(completed_files),
             'completed_files': list(completed_files),
             'failed_files': failed_files,
-            'pending_photos': [p for p in photos if p['path'] not in completed_files]
+            'pending_photos': pending_list
         }
         
         with open(PROGRESS_FILE, 'w', encoding='utf-8') as f:
@@ -1276,18 +1279,26 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     import time
     import concurrent.futures as cf
 
-    transfer_status['is_running'] = True
-    transfer_status['paused'] = False
-    transfer_status['total'] = len(photos)
-    transfer_status['current'] = 0
-    transfer_status['failed'] = []
-    transfer_status['error'] = None
-    transfer_status['output_dir'] = output_dir
-
-    if not resume:
-        transfer_status['completed_files'] = set()
+    with transfer_status_lock:
+        transfer_status['is_running'] = True
+        transfer_status['paused'] = False
+        if resume:
+            existing_completed = transfer_status.get('completed_files', set())
+            if not isinstance(existing_completed, set):
+                existing_completed = set(existing_completed or [])
+                transfer_status['completed_files'] = existing_completed
+        else:
+            transfer_status['completed_files'] = set()
+        completed_count = len(transfer_status.get('completed_files', set()))
+        transfer_status['total'] = len(photos) + completed_count
+        transfer_status['current'] = completed_count
+        transfer_status['failed'] = []
+        transfer_status['error'] = None
+        transfer_status['output_dir'] = output_dir
 
     os.makedirs(output_dir, exist_ok=True)
+
+    resume_base = completed_count
 
     print(f"\n{'='*60}")
     if resume:
@@ -1434,7 +1445,8 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                     result_photo, success, msg = res
                 except Exception as e:
                     completed += 1
-                    transfer_status['current'] = completed
+                    overall_done = completed + resume_base
+                    transfer_status['current'] = overall_done
                     transfer_status['failed'].append({
                         'path': photo.get('path', ''),
                         'error': str(e)
@@ -1443,7 +1455,8 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                     continue
 
                 completed += 1
-                transfer_status['current'] = completed
+                overall_done = completed + resume_base
+                transfer_status['current'] = overall_done
                 transfer_status['current_file'] = result_photo['name']
 
                 if not success:
@@ -1490,19 +1503,19 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                 
                 # 定期自动保存进度
                 if completed - last_save_count >= AUTO_SAVE_INTERVAL:
-                    print(f"\n💾 自动保存进度... ({completed}/{transfer_status['total']})")
+                    print(f"\n💾 自动保存进度... ({overall_done}/{transfer_status['total']})")
                     all_photos = photos  # 保存原始照片列表
                     save_progress(all_photos, output_dir, transfer_status['completed_files'], transfer_status['failed'])
                     last_save_count = completed
                 
                 # 优化进度显示：只在进度变化5%或每完成100个文件时显示
-                progress = int(completed / transfer_status['total'] * 100)
-                if (progress - last_progress >= 5) or (completed % 100 == 0) or (completed == transfer_status['total']):
+                progress = int(overall_done / transfer_status['total'] * 100) if transfer_status['total'] else 100
+                if (progress - last_progress >= 5) or (completed % 100 == 0) or (overall_done == transfer_status['total']):
                     elapsed = time.time() - start_time
                     speed = completed / elapsed if elapsed > 0 else 0
-                    eta = (transfer_status['total'] - completed) / speed if speed > 0 else 0
+                    eta = (transfer_status['total'] - overall_done) / speed if speed > 0 else 0
                     
-                    print(f"⚡ 进度: {progress}% ({completed}/{transfer_status['total']}) | "
+                    print(f"⚡ 进度: {progress}% ({overall_done}/{transfer_status['total']}) | "
                           f"速度: {speed:.1f}文件/秒 | "
                           f"预计剩余: {int(eta)}秒 | "
                           f"已跳过: {skipped_count}")
@@ -3076,15 +3089,27 @@ def _benchmark_usb_speed(size_mb: int = 64):
     os.makedirs(local_dir, exist_ok=True)
     local_path = os.path.join(local_dir, 'usb_speed_test.bin')
 
-    # 生成远程测试文件（更大的文件以获得准确的高速测试）
-    print(f"📝 生成测试文件: {remote_path} (Burst模式: {ADB_BURST_MODE_ENABLED == '1'})")
-    ok1, _, _ = run_adb_command(
-        f"adb shell 'dd if=/dev/zero of=\"{remote_path}\" bs=1M count={size_mb} 2>/dev/null'",
-        timeout=30,
-    )
-    if not ok1:
-        print("❌ 无法生成测试文件，基准测试失败")
-        return None
+    # 生成/复用远程测试文件（持久化以加速下次测速）
+    expected_bytes = int(size_mb) * 1024 * 1024
+    try:
+        ok_stat, out_stat, _ = run_adb_command(
+            f"adb shell 'stat -c %s \"{remote_path}\" 2>/dev/null || echo 0'", timeout=5
+        )
+        current_size = int(out_stat.strip().split()[0]) if ok_stat and out_stat.strip().split()[0].isdigit() else 0
+    except Exception:
+        current_size = 0
+
+    if current_size >= expected_bytes:
+        print(f"📝 复用已存在的测试文件: {remote_path} ({current_size/1024/1024:.0f}MB)")
+    else:
+        print(f"📝 生成测试文件: {remote_path} (Burst模式: {ADB_BURST_MODE_ENABLED == '1'})")
+        ok1, _, _ = run_adb_command(
+            f"adb shell 'dd if=/dev/zero of=\"{remote_path}\" bs=1M count={size_mb} 2>/dev/null'",
+            timeout=60,
+        )
+        if not ok1:
+            print("❌ 无法生成测试文件，基准测试失败")
+            return None
 
     # 轮次（默认1轮）：减少抖动
     try:
@@ -3121,8 +3146,7 @@ def _benchmark_usb_speed(size_mb: int = 64):
         else:
             print(f"❌ 第 {i+1} 轮测试失败")
 
-    # 清理远程文件
-    run_adb_command(f"adb shell 'rm -f \"{remote_path}\"'", timeout=10)
+    # 不再清理远程文件（持久化保留，加速下次测速）
 
     if not speed_samples:
         # 返回一个近似的保守结果，避免上层出现空值抖动
@@ -3205,14 +3229,39 @@ def resume_transfer():
     """恢复未完成的传输"""
     global transfer_status
 
-    if transfer_status['is_running']:
-        return jsonify({
-            'success': False,
-            'error': '传输正在进行中'
-        }), 400
+    with transfer_status_lock:
+        if transfer_status['is_running']:
+            return jsonify({
+                'success': False,
+                'error': '传输正在进行中'
+            }), 400
+        transfer_status['is_running'] = True
+        transfer_status['paused'] = False
+        transfer_status['error'] = None
+        transfer_status['current'] = 0
+        transfer_status['total'] = 0
+        transfer_status['failed'] = []
+        transfer_status['current_file'] = ''
+        transfer_status['bytes_done'] = 0
+        transfer_status['bytes_total'] = 0
+        transfer_status['start_ts'] = time.time()
+        transfer_status['elapsed_sec'] = 0.0
+        transfer_status['eta_sec'] = 0.0
+        transfer_status['speed_mbps'] = 0.0
+        transfer_status['speed_samples'] = []
+        transfer_status['usb_info'] = {}
+        transfer_status['completed_files'] = set()
+
+    def reset_running_state():
+        with transfer_status_lock:
+            transfer_status['is_running'] = False
+            transfer_status['paused'] = False
+            transfer_status['current_file'] = ''
+            transfer_status['eta_sec'] = 0.0
 
     progress = load_progress()
     if not progress:
+        reset_running_state()
         return jsonify({
             'success': False,
             'error': '没有找到未完成的传输任务'
@@ -3220,25 +3269,40 @@ def resume_transfer():
 
     pending_photos = progress.get('pending_photos', [])
     if not pending_photos:
+        reset_running_state()
         return jsonify({
             'success': False,
             'error': '所有文件已传输完成'
         }), 400
 
     output_dir = progress.get('output_dir', OUTPUT_DIR)
-    
+
     # 恢复已完成文件列表
-    transfer_status['completed_files'] = progress.get('completed_files', set())
+    completed_set = progress.get('completed_files', set())
+    if not isinstance(completed_set, set):
+        completed_set = set(completed_set or [])
+    with transfer_status_lock:
+        transfer_status['completed_files'] = completed_set
+        transfer_status['total'] = len(pending_photos) + len(completed_set)
+        transfer_status['current'] = len(completed_set)
+        transfer_status['output_dir'] = output_dir
 
     # 启动后台传输线程（resume=True）
-    thread = threading.Thread(target=transfer_photos_thread, args=(pending_photos, output_dir, True))
-    thread.daemon = True
-    thread.start()
+    transfer_started = False
+    try:
+        thread = threading.Thread(target=transfer_photos_thread, args=(pending_photos, output_dir, True))
+        thread.daemon = True
+        thread.start()
+        transfer_started = True
 
-    return jsonify({
-        'success': True,
-        'message': f'继续传输 {len(pending_photos)} 个文件'
-    })
+        return jsonify({
+            'success': True,
+            'message': f'继续传输 {len(pending_photos)} 个文件'
+        })
+    except Exception:
+        if not transfer_started:
+            reset_running_state()
+        raise
 
 @app.route('/api/clear_progress', methods=['POST'])
 def api_clear_progress():
@@ -3254,13 +3318,41 @@ def transfer():
     """开始传输照片"""
     global transfer_status
 
-    if transfer_status['is_running']:
-        return jsonify({
-            'success': False,
-            'error': '传输正在进行中'
-        }), 400
+    with transfer_status_lock:
+        if transfer_status['is_running']:
+            return jsonify({
+                'success': False,
+                'error': '传输正在进行中'
+            }), 400
+        transfer_status['is_running'] = True
+        transfer_status['paused'] = False
+        transfer_status['error'] = None
+        transfer_status['current'] = 0
+        transfer_status['total'] = 0
+        transfer_status['failed'] = []
+        transfer_status['current_file'] = ''
+        transfer_status['bytes_done'] = 0
+        transfer_status['bytes_total'] = 0
+        transfer_status['start_ts'] = time.time()
+        transfer_status['elapsed_sec'] = 0.0
+        transfer_status['eta_sec'] = 0.0
+        transfer_status['speed_mbps'] = 0.0
+        transfer_status['speed_samples'] = []
+        transfer_status['usb_info'] = {}
+        transfer_status['completed_files'] = set()
 
-    data = request.get_json()
+    def reset_running_state():
+        with transfer_status_lock:
+            transfer_status['is_running'] = False
+            transfer_status['paused'] = False
+            transfer_status['current_file'] = ''
+            transfer_status['eta_sec'] = 0.0
+
+    try:
+        data = request.get_json()
+    except Exception:
+        reset_running_state()
+        raise
     print(f"DEBUG: 接收到的数据: keys={list(data.keys()) if isinstance(data, dict) else type(data)}")
 
     photos = []
@@ -3318,6 +3410,7 @@ def transfer():
                 pass
         except Exception as e:
             print(f"ERROR: 展开 selection 失败: {e}")
+            reset_running_state()
             return jsonify({'success': False, 'error': f'展开选择失败: {e}'}), 400
     else:
         photos = (data.get('photos') if isinstance(data, dict) else None) or []
@@ -3331,6 +3424,7 @@ def transfer():
             pass
 
     if not photos:
+        reset_running_state()
         return jsonify({
             'success': False,
             'error': '没有选择照片'
@@ -3413,18 +3507,26 @@ def transfer():
         upsert_device_info(device_label, dev_name)
     except Exception:
         pass
-    # 立即启动后台传输线程
-    t1 = threading.Thread(target=transfer_photos_thread, args=(photos, final_output_dir, False), daemon=True)
-    t1.start()
-    # 异步启动USB速度和大小预估
-    t2 = threading.Thread(target=_async_prefetch, daemon=True)
-    t2.start()
 
-    return jsonify({
-        'success': True,
-        'message': '传输已开始',
-        'output_dir': final_output_dir
-    })
+    # 立即启动后台传输线程
+    transfer_started = False
+    try:
+        t1 = threading.Thread(target=transfer_photos_thread, args=(photos, final_output_dir, False), daemon=True)
+        t1.start()
+        transfer_started = True
+        # 异步启动USB速度和大小预估
+        t2 = threading.Thread(target=_async_prefetch, daemon=True)
+        t2.start()
+
+        return jsonify({
+            'success': True,
+            'message': '传输已开始',
+            'output_dir': final_output_dir
+        })
+    except Exception:
+        if not transfer_started:
+            reset_running_state()
+        raise
 
 @app.route('/api/transfer_status')
 def get_transfer_status():
