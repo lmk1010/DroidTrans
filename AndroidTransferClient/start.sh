@@ -46,10 +46,29 @@ echo "🔍 检查设备连接..."
 adb devices
 echo ""
 
-# 启动服务
-echo "🚀 启动服务..."
-echo "浏览器访问: http://127.0.0.1:9500"
+# 确保安装 Gunicorn
+if ! python -c "import gunicorn" 2>/dev/null; then
+    echo "📦 安装 Gunicorn..."
+    pip install gunicorn >/dev/null
+    echo ""
+fi
+
+# 启动服务（Gunicorn）
+HOST="0.0.0.0"
+PORT="9500"
+WORKERS=${GUNICORN_WORKERS:-2}
+THREADS=${GUNICORN_THREADS:-4}
+
+echo "🚀 使用 Gunicorn 启动服务..."
+echo "监听地址: http://$HOST:$PORT"
+echo "Workers: $WORKERS  Threads: $THREADS"
 echo "按 Ctrl+C 停止服务"
 echo ""
 
-python app.py
+exec gunicorn \
+  --bind "$HOST:$PORT" \
+  --workers "$WORKERS" \
+  --threads "$THREADS" \
+  --timeout 120 \
+  --preload \
+  app:app

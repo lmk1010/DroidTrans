@@ -1412,9 +1412,23 @@
     <script src="{{ url_for('static', filename='usb_mode.js') if config.get('USE_SEPARATE_JS') else '' }}"></script>
     <script>
         // USB Mode JavaScript
+        // Polyfill CSS.escape if missing (older Safari)
+        try {
+            if (typeof CSS === 'undefined' || typeof CSS.escape !== 'function') {
+                window.CSS = window.CSS || {};
+                window.CSS.escape = function(value) {
+                    return String(value).replace(/[^a-zA-Z0-9_\-\u00A0-\uFFFF]/g, function(ch) {
+                        const hex = ch.charCodeAt(0).toString(16).toUpperCase();
+                        return '\\' + hex + ' ';
+                    });
+                };
+            }
+        } catch (e) { /* no-op */ }
         // 全局缩略图内存缓存（LRU，最多保留 10000 张，避免滚动后重复加载）
         const THUMB_CACHE_LIMIT = 10000;
         const thumbCache = new Map(); // key: photo.path, value: { url: blobUrl, ts: number, size: number }
+        const THUMB_GRID_SIZE = 128; // 网格缩略图目标尺寸（更快）
+        const COVER_THUMB_SIZE = 128; // 封面缩略图尺寸（极致快）
 
         function thumbCacheGet(key) {
             const v = thumbCache.get(key);
@@ -1451,32 +1465,43 @@
             if (!imgEl || !path) return;
             const hit = thumbCacheGet(path);
             if (hit) {
-                imgEl.onload = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                const done0 = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                imgEl.onload = done0;
+                imgEl.onerror = () => { const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
                 imgEl.src = hit.url;
+                if (imgEl.complete && imgEl.naturalWidth > 0) done0();
                 return;
             }
             try {
                 // 不使用 no-cache，避免频繁 304；如返回304，改为直接img.src触发浏览器缓存
-                const resp = await fetch(`/api/thumb?path=${encodeURIComponent(path)}`);
+                    const resp = await fetch(`/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`);
                 if (!resp.ok) {
                     if (resp.status === 304) {
-                        imgEl.onload = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
-                        imgEl.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                        const done1 = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                        imgEl.onload = done1;
+                        imgEl.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`;
+                        if (imgEl.complete && imgEl.naturalWidth > 0) done1();
                         return;
                     }
                     throw new Error(`HTTP ${resp.status}`);
                 }
                 const blob = await resp.blob();
                 const entry = thumbCachePut(path, blob);
-                imgEl.onload = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                const done = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                imgEl.onload = done;
                 imgEl.onerror = () => { const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
                 imgEl.src = entry ? entry.url : URL.createObjectURL(blob);
+                imgEl.removeAttribute('data-ph');
+                if (imgEl.complete && imgEl.naturalWidth > 0) done();
             } catch (e) {
                 // 兜底：仍尝试直接指向原URL，让浏览器利用缓存
                 try {
-                    imgEl.onload = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                    const done2 = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                    imgEl.onload = done2;
                     imgEl.onerror = () => { const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
-                    imgEl.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                    imgEl.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`;
+                    imgEl.removeAttribute('data-ph');
+                    if (imgEl.complete && imgEl.naturalWidth > 0) done2();
                 } catch (err) {
                     const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove();
                     imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>');
@@ -1499,8 +1524,57 @@
         const globalPendingThumbs = new Set(); // 待检测缩略图路径
         const MAX_STATUS_BATCH = 200; // 每次状态轮询的最大路径数，避免请求体过大
         const MAX_THUMB_RETRY = 120;   // 单个缩略图最大重试次数（~60s, 500ms间隔）
-        const PROBE_FETCH_LIMIT = 20;  // 每轮最多主动探测的数量
+        const PROBE_FETCH_LIMIT = 48;  // 每轮最多主动探测的数量（提升可见区未缓存的就绪速度）
         const thumbRetryCount = new Map();
+        // 相册首屏预取（进入前提前准备照片清单与部分缩略图）
+        const albumPrefetching = new Set();
+        async function prefetchAlbumPhotos(albumKey, limit = 500) {
+            try {
+                if (!albumKey) return;
+                const a = allAlbums[albumKey];
+                if (!a) return;
+                if (Array.isArray(a.photos) && a.photos.length) return; // 已有
+                if (albumPrefetching.has(albumKey)) return;
+                albumPrefetching.add(albumKey);
+                const resp = await fetch(`/api/album_photos?album=${encodeURIComponent(albumKey)}&offset=0&limit=${limit}`);
+                const data = await resp.json().catch(()=>({success:false}));
+                if (data && data.success) {
+                    allAlbums[albumKey].photos = data.photos || [];
+                    // 预热前60张缩略图，提升点击后首屏速度
+                    const pre = (allAlbums[albumKey].photos || []).slice(0, 60).map(p=>p.path);
+                    if (pre.length) {
+                        pre.forEach(p => globalPendingThumbs.add(p));
+                        try { fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pre, batch_size: 50 }) }); } catch (e) {}
+                        thumbPollLoop();
+                    }
+                }
+            } catch (e) {
+            } finally {
+                albumPrefetching.delete(albumKey);
+            }
+        }
+        // 可见区域优先：IntersectionObserver 懒加载
+        let thumbIO = null;
+        function ensureThumbIO() {
+            if (thumbIO) return thumbIO;
+            try {
+                thumbIO = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (!entry.isIntersecting) continue;
+                        const img = entry.target;
+                        thumbIO.unobserve(img);
+                        const p = img.getAttribute('data-path');
+                        if (!p) continue;
+                        // 直接尝试加载，突破仅靠后台轮询的滞后
+                        loadThumbInto(img, p);
+                    }
+                }, { root: document.getElementById('photoList'), rootMargin: '300px', threshold: 0.01 });
+            } catch (e) {
+                thumbIO = null;
+            }
+            return thumbIO;
+        }
+        function disconnectThumbIO() { try { if (thumbIO) { thumbIO.disconnect(); } } catch (e) {} finally { thumbIO = null; } }
 
         function stopThumbPolling() {
             if (thumbPollTimer) {
@@ -1521,14 +1595,9 @@
                         thumbPollRunning = false; // 无任务则停止
                         return;
                     }
-                    // 取一批进行轮询
-                    const batch = [];
-                    const it = globalPendingThumbs.values();
-                    for (let i = 0; i < MAX_STATUS_BATCH; i++) {
-                        const n = it.next();
-                        if (n.done) break;
-                        batch.push(n.value);
-                    }
+                    // 取一批进行轮询：优先处理最新加入的（靠近当前视口更可能是新加入）
+                    const arr = Array.from(globalPendingThumbs);
+                    const batch = arr.length > MAX_STATUS_BATCH ? arr.slice(-MAX_STATUS_BATCH) : arr;
                     if (batch.length === 0) {
                         thumbPollRunning = false;
                         return;
@@ -1536,7 +1605,7 @@
                     const resp = await fetch('/api/thumb_status', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ paths: batch })
+                        body: JSON.stringify({ paths: batch, size: THUMB_GRID_SIZE })
                     });
                     const data = await resp.json().catch(() => ({}));
                     if (data && data.success && Array.isArray(data.ready)) {
@@ -1549,9 +1618,11 @@
                             // 预览缩略图
                             const img = document.querySelector(`#thumbGrid .thumb-item[data-path="${CSS.escape(path)}"] img`);
                             if (img && (img.getAttribute('data-ph') === '1' || !img.src)) {
-                                img.onload = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
-                                img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
-                                img.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                                const done = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                img.onload = done;
+                                img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
+                                img.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`;
+                                if (img.complete && img.naturalWidth > 0) done();
                                 img.removeAttribute('data-ph');
                             }
                             // 相册封面
@@ -1559,7 +1630,7 @@
                             if (cover && !cover.src) {
                                 cover.onload = () => { onCoverLoaded(cover); };
                                 cover.onerror = () => { fallbackCover(cover, cover.alt || '') };
-                                cover.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                                cover.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${COVER_THUMB_SIZE}`;
                             }
                             readyCount++;
                         }
@@ -1580,7 +1651,7 @@
                                 }
                                 if (cnt % 3 !== 0) continue; // 每3轮探测一次
                                 probes++;
-                                fetch(`/api/thumb?path=${encodeURIComponent(path)}`, { method: 'GET' })
+                                fetch(`/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`, { method: 'GET' })
                                   .then(r => {
                                       if (r.ok) return r.blob();
                                       if (r.status === 304) return 'USE_CACHE';
@@ -1590,13 +1661,19 @@
                                       if (!blob) return;
                                       const img = document.querySelector(`#thumbGrid .thumb-item[data-path="${CSS.escape(path)}"] img`);
                                       if (img && blob !== 'USE_CACHE') {
-                                          img.onload = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                          const done = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                          img.onload = done;
+                                          img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
                                           img.src = URL.createObjectURL(blob);
+                                          if (img.complete && img.naturalWidth > 0) done();
                                           img.removeAttribute('data-ph');
                                       } else if (img && blob === 'USE_CACHE') {
                                           // 304：直接指向同URL，浏览器会使用本地缓存
-                                          img.onload = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
-                                          img.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                                          const done = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                          img.onload = done;
+                                          img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
+                                          img.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${THUMB_GRID_SIZE}`;
+                                          if (img.complete && img.naturalWidth > 0) done();
                                           img.removeAttribute('data-ph');
                                       }
                                       const cover = document.querySelector(`.album-cover img[data-cover="${CSS.escape(path)}"]`);
@@ -1606,7 +1683,7 @@
                                               cover.src = URL.createObjectURL(blob);
                                           } else {
                                               cover.onload = () => { onCoverLoaded(cover); };
-                                              cover.src = `/api/thumb?path=${encodeURIComponent(path)}`;
+                                              cover.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${COVER_THUMB_SIZE}`;
                                           }
                                       }
                                       globalPendingThumbs.delete(path);
@@ -1628,8 +1705,8 @@
                 } catch (e) {
                     // 忽略错误，稍后重试
                 } finally {
-                    // 根据队列大小调整轮询频率（队列大时稍微放缓）
-                    const delay = globalPendingThumbs.size > 2000 ? 1200 : globalPendingThumbs.size > 500 ? 900 : 600;
+                    // 根据队列大小调整轮询频率（队列大时稍微放缓）并兼顾响应速度
+                    const delay = globalPendingThumbs.size > 2000 ? 900 : globalPendingThumbs.size > 500 ? 600 : 400;
                     thumbPollTimer = setTimeout(doOne, delay);
                 }
             };
@@ -2079,7 +2156,7 @@
             // 设备连接时自动开始扫描
             const scanBtn = document.getElementById('scanBtn');
             scanBtn.disabled = false; // 启用扫描按钮
-            
+
             // 避免在扫描或传输进行中重复触发
             if (scanStatusInterval || progressInterval) {
                 showToast('📱 设备已连接', { type: 'info' });
@@ -2087,6 +2164,8 @@
                     hideDialog({ suppressResolve: true });
                     window.__disconnectDialogVisible = false;
                 }
+                updateUsbSpeedInfo();
+                setTimeout(() => updateUsbSpeedInfo(), 2000);
                 return;
             }
 
@@ -2095,9 +2174,74 @@
                 hideDialog({ suppressResolve: true });
                 window.__disconnectDialogVisible = false;
             }
+            updateUsbSpeedInfo();
+            setTimeout(() => updateUsbSpeedInfo(), 2000);
             setTimeout(() => {
                 scanPhotos();
             }, 800);
+        }
+
+        function resetStateAfterDisconnect() {
+            stopThumbPolling();
+            globalPendingThumbs.clear();
+            thumbRetryCount.clear();
+            thumbCache.clear();
+            albumPrefetching.clear();
+            disconnectThumbIO();
+            detachPreviewScroll();
+
+            allPhotos = [];
+            filteredPhotos = [];
+            selectedPhotos.clear();
+            selectedAlbumsAll.clear();
+            excludedByAlbum.clear();
+            allAlbums = {};
+            currentAlbumKey = null;
+            currentView = 'list';
+            previewState = { albumKey: null, photos: [], loaded: 0, batchSize: 120, attached: false };
+
+            const photoList = document.getElementById('photoList');
+            if (photoList) {
+                photoList.innerHTML = '<div class="empty-state"><h3>设备未连接</h3><p>请连接设备后点击“扫描照片”</p></div>';
+            }
+
+            const scanBtnEl = document.getElementById('scanBtn');
+            if (scanBtnEl) {
+                scanBtnEl.disabled = true;
+                scanBtnEl.textContent = '扫描照片';
+            }
+
+            const stopBtn = document.getElementById('stopBtn');
+            if (stopBtn) stopBtn.style.display = 'none';
+            const transferBtn = document.getElementById('transferBtn');
+            if (transferBtn) {
+                transferBtn.style.display = 'inline-block';
+                transferBtn.disabled = true;
+            }
+            const resumeBtn = document.getElementById('resumeBtn');
+            if (resumeBtn) resumeBtn.style.display = 'none';
+
+            const usbBadge = document.getElementById('usbSpeedBadge');
+            if (usbBadge) {
+                usbBadge.style.display = 'none';
+                usbBadge.textContent = '';
+            }
+
+            const burstToggle = document.getElementById('burstModeToggle');
+            if (burstToggle) burstToggle.style.display = 'none';
+
+            const progressTextEl = document.getElementById('progressText');
+            if (progressTextEl) progressTextEl.textContent = '等待扫描';
+            const progressBarEl = document.getElementById('progressBar');
+            if (progressBarEl) {
+                progressBarEl.style.width = '0%';
+                progressBarEl.textContent = '0%';
+            }
+            const currentFileEl = document.getElementById('currentFile');
+            if (currentFileEl) currentFileEl.textContent = '等待开始...';
+
+            updateTopActions('list');
+            updateStats();
         }
 
         function handleDeviceDisconnect() {
@@ -2131,6 +2275,8 @@
 
             document.getElementById('scanBtn').disabled = true;
             document.getElementById('transferBtn').disabled = true;
+
+            resetStateAfterDisconnect();
         }
 
         // 页面加载：启动设备状态轮询与静默检测，并检查是否需要恢复任务
@@ -2228,14 +2374,20 @@
                 if (!usbBadge) return;
 
                 if (info && info.success) {
-                    const label = info.label || 'USB 未知';
-                    const mbps = typeof info.measured_mbps === 'number' && info.measured_mbps > 0 ? ` · ${info.measured_mbps.toFixed(1)} MB/s` : '';
-                    usbBadge.textContent = label + mbps;
+                    if (info.probing) {
+                        usbBadge.textContent = 'USB 测速中…';
+                    } else {
+                        const label = info.label || 'USB 未知';
+                        const mbps = typeof info.measured_mbps === 'number' && info.measured_mbps > 0 ? ` · ${info.measured_mbps.toFixed(1)} MB/s` : '';
+                        usbBadge.textContent = label + mbps;
+                    }
                     usbBadge.style.display = 'inline-flex';
+                    if (burstToggle) burstToggle.style.display = 'inline-flex';
                 } else {
                     // 显示未知占位，避免位置抖动
                     usbBadge.textContent = 'USB 未知';
                     usbBadge.style.display = 'inline-flex';
+                    if (burstToggle) burstToggle.style.display = 'none';
                 }
 
                 // 加载Burst模式状态
@@ -2247,6 +2399,7 @@
                     usbBadge.textContent = 'USB 未知';
                     usbBadge.style.display = 'inline-flex';
                 }
+                if (burstToggle) burstToggle.style.display = 'none';
                 // 仍然尝试加载Burst模式状态
                 await loadBurstModeStatus();
             }
@@ -3010,7 +3163,7 @@
                 const sizeText = (sizeBytes >= 100*1024*1024) ? (sizeBytes/1024/1024/1024).toFixed(2) + ' GB' : (sizeBytes/1024/1024).toFixed(2) + ' MB';
 
                 html += `
-                    <div class="album-card" onclick="openAlbumPreview('${albumKey}')">
+                    <div class="album-card" data-album="${albumKey}" onclick="openAlbumPreview('${albumKey}')">
                         <div class="album-cover">
                             ${coverPath ? `
                                 <div class="skeleton-cover"></div>
@@ -3075,7 +3228,7 @@
                     if (hit && hit.url) {
                         img.src = hit.url;
                     } else {
-                        img.src = `/api/thumb?path=${encodeURIComponent(p)}`;
+                        img.src = `/api/thumb?path=${encodeURIComponent(p)}&size=${COVER_THUMB_SIZE}`;
                     }
                 });
             } catch (e) { /* ignore */ }
@@ -3087,9 +3240,27 @@
                 const paths = [];
                 imgs.forEach(img => { const p = img.getAttribute('data-cover'); if (p) { paths.push(p); globalPendingThumbs.add(p); } });
                 if (paths.length) {
-                    fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths, batch_size: 50 }) }).catch(()=>{});
+                    fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths, batch_size: 50, size: COVER_THUMB_SIZE }) }).catch(()=>{});
                     thumbPollLoop();
                 }
+            } catch (e) {}
+
+            // 预取最可能点击的相册：上次打开的相册，否则第一个
+            try {
+                const last = localStorage.getItem('at_last_album_key');
+                const prefer = (last && allAlbums[last]) ? last : (sortedAlbums.length ? sortedAlbums[0][0] : null);
+                if (prefer) prefetchAlbumPhotos(prefer);
+            } catch (e) {}
+
+            // 悬停预取：鼠标移入时提前准备该相册首屏
+            try {
+                const cards = document.querySelectorAll('.album-card[data-album]');
+                cards.forEach(card => {
+                    const k = card.getAttribute('data-album');
+                    card.addEventListener('mouseenter', () => prefetchAlbumPhotos(k));
+                    // 触屏设备：首次触摸也可触发
+                    card.addEventListener('touchstart', () => prefetchAlbumPhotos(k), { passive: true });
+                });
             } catch (e) {}
         }
 
@@ -3221,7 +3392,7 @@
 
             // 立即渲染占位骨架，避免点击卡顿
             const photoList = document.getElementById('photoList');
-            const skeletonCount = 24;
+            const skeletonCount = 120; // 足够多的骨架，占满首屏，允许立即滚动
             let skHTML = '<div class="thumb-grid" id="thumbGrid">';
             for (let i=0;i<skeletonCount;i++) { skHTML += '<div class="thumb-item"><div class="thumb-skeleton"></div></div>'; }
             skHTML += '</div>';
@@ -3307,6 +3478,18 @@
                 });
                 grid.appendChild(tile);
 
+                // 可见优先：监听进入视口时立刻加载
+                const imgNode = tile.querySelector('img.thumb-img');
+                if (imgNode) {
+                    const io = ensureThumbIO();
+                    if (io) {
+                        try { io.observe(imgNode); } catch (e) { /* ignore */ }
+                    } else {
+                        // 无 IO 支持则直接尝试一次，避免长时间骨架
+                        loadThumbInto(imgNode, p.path);
+                    }
+                }
+
                 // 视频默认封面（数据URI），之后就绪会替换
                 if (isVid) {
                     const img = tile.querySelector('img');
@@ -3327,7 +3510,7 @@
             // 批量触发后台生成（每批最多30），并启动全局批处理轮询
             if (pendingPaths.length) {
                 try {
-                    fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pendingPaths, batch_size: 30 }) });
+                    fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pendingPaths, batch_size: 30, size: THUMB_GRID_SIZE }) });
                 } catch (e) {}
                 // 启动（或保持）全局轮询循环
                 thumbPollLoop();
@@ -3429,6 +3612,8 @@
             previewState.attached = false;
             // 离开预览时，减少无用的缩略图轮询
             stopThumbPolling();
+            // 断开可见性观察，释放引用
+            disconnectThumbIO();
         }
 
         function backToAlbumCollection() {
