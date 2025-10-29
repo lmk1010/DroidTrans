@@ -1867,13 +1867,13 @@
                     for (const entry of entries) {
                         if (!entry.isIntersecting) continue;
                         const img = entry.target;
-                        thumbIO.unobserve(img);
+                        try { thumbIO.unobserve(img); } catch (e) {}
                         const p = img.getAttribute('data-path');
                         if (!p) continue;
                         // 直接尝试加载，突破仅靠后台轮询的滞后
                         loadThumbInto(img, p);
                     }
-                }, { root: document.getElementById('photoList'), rootMargin: '300px', threshold: 0.01 });
+                }, { root: document.getElementById('photoList'), rootMargin: '1200px 0px 1200px 0px', threshold: 0.01 });
             } catch (e) {
                 thumbIO = null;
             }
@@ -2037,11 +2037,11 @@
                     // 忽略错误，稍后重试
                 } finally {
                     // 根据队列大小调整轮询频率（队列大时稍微放缓）并兼顾响应速度
-                    const delay = globalPendingThumbs.size > 2000 ? 900 : globalPendingThumbs.size > 500 ? 600 : 400;
+                    const delay = globalPendingThumbs.size > 2000 ? 600 : globalPendingThumbs.size > 500 ? 300 : 150;
                     thumbPollTimer = setTimeout(doOne, delay);
                 }
             };
-            thumbPollTimer = setTimeout(doOne, 300);
+            thumbPollTimer = setTimeout(doOne, 120);
         }
         let allAlbums = {};
         let currentView = 'list'; // 'list' or 'album'
@@ -4014,6 +4014,7 @@
             const end = Math.min(previewState.photos.length, start + previewState.batchSize);
 
             const pendingPaths = [];
+            const EAGER_LIMIT = 80; // 首屏及附近优先直接加载
             for (let i = start; i < end; i++) {
                 const p = previewState.photos[i];
                 const isImg = hasPreviewImageExt(p.path);
@@ -4058,12 +4059,16 @@
                 // 可见优先：监听进入视口时立刻加载
                 const imgNode = tile.querySelector('img.thumb-img');
                 if (imgNode) {
-                    const io = ensureThumbIO();
-                    if (io) {
-                        try { io.observe(imgNode); } catch (e) { /* ignore */ }
-                    } else {
-                        // 无 IO 支持则直接尝试一次，避免长时间骨架
+                    if ((i - start) < EAGER_LIMIT) {
+                        // 前若干个直接加载，减少等待
                         loadThumbInto(imgNode, p.path);
+                    } else {
+                        const io = ensureThumbIO();
+                        if (io) {
+                            try { io.observe(imgNode); } catch (e) { /* ignore */ }
+                        } else {
+                            loadThumbInto(imgNode, p.path);
+                        }
                     }
                 }
 

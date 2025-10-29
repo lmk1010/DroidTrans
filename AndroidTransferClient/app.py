@@ -74,6 +74,8 @@ app = Flask(__name__)
 
 # 线程锁，保护 transfer_status 的并发更新
 transfer_status_lock = threading.Lock()
+# 扫描状态锁，避免首次扫描时竞态导致前端拿到 idle
+scan_status_lock = threading.Lock()
 
 # 配置 - M4 Mac 超级并发优化
 # 智能选择输出目录：开发环境用本地，打包后用用户文档目录
@@ -164,7 +166,8 @@ scan_status = {
     'albums_preview': {},
     'albums_map': {},
     'thumbs_total': 0,
-    'thumbs_done': 0
+    'thumbs_done': 0,
+    'started_ts': 0.0,
 }
 
 # 设备连接状态
@@ -729,8 +732,10 @@ def scan_photos_thread():
     """后台扫描照片线程 - 极速优化版"""
     global scan_status
 
-    scan_status['is_running'] = True
-    scan_status['stage'] = 'finding'
+    with scan_status_lock:
+        scan_status['is_running'] = True
+        scan_status['stage'] = 'finding'
+        scan_status['started_ts'] = time.time()
     scan_status['files_found'] = 0
     scan_status['files_processed'] = 0
     scan_status['total_files'] = 0
@@ -1042,7 +1047,6 @@ def scan_photos_thread():
             print(f"   → 启动 {max_concurrent} 个线程处理 {total_batches} 个批次")
             
             # 超高并发处理
-            import time
             start = time.time()
             
             with ThreadPoolExecutor(max_workers=max_concurrent, thread_name_prefix='UltraFastScan') as executor:
@@ -1774,17 +1778,21 @@ def scan():
             'error': '扫描正在进行中'
         }), 400
 
-    # 重置状态
-    scan_status = {
-        'is_running': True,
-        'stage': 'finding',
-        'current_dir': '',
-        'files_found': 0,
-        'files_processed': 0,
-        'total_files': 0,
-        'photos': [],
-        'error': None
-    }
+    # 重置状态（加锁，保证前端第一轮轮询拿到finding）
+    with scan_status_lock:
+        scan_status['is_running'] = True
+        scan_status['stage'] = 'finding'
+        scan_status['current_dir'] = ''
+        scan_status['files_found'] = 0
+        scan_status['files_processed'] = 0
+        scan_status['total_files'] = 0
+        scan_status['photos'] = []
+        scan_status['error'] = None
+        scan_status['albums_preview'] = {}
+        scan_status['albums_map'] = {}
+        scan_status['thumbs_total'] = 0
+        scan_status['thumbs_done'] = 0
+        scan_status['started_ts'] = time.time()
 
     # 启动后台扫描线程
     thread = threading.Thread(target=scan_photos_thread)
@@ -1800,19 +1808,31 @@ def scan():
 def get_scan_status():
     """获取扫描状态"""
     try:
-        st = {
-            'is_running': scan_status['is_running'],
-            'stage': scan_status['stage'],
-            'current_dir': scan_status['current_dir'],
-            'files_found': scan_status['files_found'],
-            'files_processed': scan_status['files_processed'],
-            'total_files': scan_status['total_files'],
-            'photo_count': len(scan_status['photos']),
-            'error': scan_status['error'],
-            'albums_preview': scan_status.get('albums_preview', {}),
-            'thumbs_total': scan_status.get('thumbs_total', 0),
-            'thumbs_done': scan_status.get('thumbs_done', 0)
-        }
+        with scan_status_lock:
+            # 拷贝快照，避免遍历时被并发修改
+            st = {
+                'is_running': scan_status.get('is_running', False),
+                'stage': scan_status.get('stage', 'idle'),
+                'current_dir': scan_status.get('current_dir', ''),
+                'files_found': scan_status.get('files_found', 0),
+                'files_processed': scan_status.get('files_processed', 0),
+                'total_files': scan_status.get('total_files', 0),
+                'photo_count': len(scan_status.get('photos') or []),
+                'error': scan_status.get('error'),
+                'albums_preview': scan_status.get('albums_preview', {}),
+                'thumbs_total': scan_status.get('thumbs_total', 0),
+                'thumbs_done': scan_status.get('thumbs_done', 0),
+                'started_ts': scan_status.get('started_ts', 0.0),
+            }
+        # 若刚刚触发扫描，允许短期将 idle 纠正为 finding，避免前端误判中断
+        try:
+            if (not st['is_running']) and st.get('stage') == 'idle':
+                started = float(st.get('started_ts') or 0.0)
+                if started > 0 and (time.time() - started) <= 3.0:
+                    st['is_running'] = True
+                    st['stage'] = 'finding'
+        except Exception:
+            pass
         # 诊断日志：若出现 idle 但已有相册或预览，打印并兜底为 done
         try:
             ap_len = len(st.get('albums_preview') or {})
