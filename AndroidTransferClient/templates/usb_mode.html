@@ -3693,17 +3693,16 @@
             try {
                 const response = await fetch('/api/transfer_status');
                 const status = await response.json();
-                // 计算百分比（单调不降，避免偶发归零闪烁）
+                // 计算百分比（优先使用后端对齐字段 percent_visible）
+                const visiblePct = (status && typeof status.percent_visible === 'number') ? status.percent_visible : null;
                 const computed = (status && typeof status.total === 'number' && status.total > 0)
                     ? Math.round((status.current / status.total) * 100)
                     : null;
-                let percent = (computed !== null)
-                    ? computed
-                    : (__transferPreparing ? __lastProgressPercent : 0);
+                let percent = (visiblePct !== null)
+                    ? visiblePct
+                    : (computed !== null ? computed : (__transferPreparing ? __lastProgressPercent : 0));
                 // Clamp: 不允许在一次传输中倒退
-                if (computed !== null && __lastProgressPercent > 0) {
-                    percent = Math.max(__lastProgressPercent, percent);
-                }
+                if (__lastProgressPercent > 0) percent = Math.max(__lastProgressPercent, percent);
                 // 完成态强制100%
                 if (status && status.total > 0 && status.current >= status.total) {
                     percent = 100;
@@ -3721,19 +3720,16 @@
                     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
                 }
 
-                const bytesDone = status.bytes_done || 0;
-                const bytesTotal = status.bytes_total || 0;
+                // 大小与时间（优先使用后端“可见”字段，保证与日志一致）
+                const bytesDone = (typeof status.bytes_done_visible === 'number') ? status.bytes_done_visible : (status.bytes_done || 0);
+                const bytesTotal = (typeof status.bytes_total_visible === 'number') ? status.bytes_total_visible : (status.bytes_total || 0);
                 const doneMB = (bytesDone / 1024 / 1024).toFixed(2);
                 const totalMB = (bytesTotal / 1024 / 1024).toFixed(2);
                 const remainingMB = Math.max(0, (bytesTotal - bytesDone) / 1024 / 1024);
-                let etaText = '--:--';
-                let etaSec = 0;
-                if (status.speed_mbps && status.speed_mbps > 0) {
-                    etaSec = Math.max(0, remainingMB / status.speed_mbps);
-                    etaText = fmtTime(etaSec);
-                }
+                const etaSec = (typeof status.eta_sec_visible === 'number') ? status.eta_sec_visible : (status.speed_mbps && status.speed_mbps > 0 ? Math.max(0, remainingMB / status.speed_mbps) : 0);
+                const etaText = (typeof status.eta_sec_visible === 'number') ? fmtTime(status.eta_sec_visible) : (status.speed_mbps && status.speed_mbps > 0 ? fmtTime(etaSec) : '--:--');
                 const elapsedSec = Math.floor(status.elapsed_sec || 0);
-                const totalEstSec = Math.floor(elapsedSec + etaSec);
+                const totalEstSec = (typeof status.total_estimated_sec === 'number') ? status.total_estimated_sec : Math.floor(elapsedSec + (etaSec || 0));
                 const totalText = fmtTime(totalEstSec);
                 const pbEl = document.getElementById('progressBar');
                 const ptEl = document.getElementById('progressText');
@@ -3741,7 +3737,10 @@
                 if (status.is_running) {
                     __transferPreparing = false;
                     if (pbEl) pbEl.classList.remove('indeterminate');
-                    if (ptEl) ptEl.textContent = `正在传输: ${status.current} / ${status.total}`;
+                    // 显示“可见进度/总数（已完成x + 在途y）”
+                    const filesDone = (typeof status.completed_count === 'number') ? status.completed_count : (status.current || 0);
+                    const inflight = (typeof status.inflight === 'number') ? status.inflight : 0;
+                    if (ptEl) ptEl.textContent = `正在传输: ${filesDone + inflight} / ${status.total}（完成${filesDone} + 在途${inflight}）`;
                 } else if (__transferPreparing) {
                     if (ptEl) ptEl.textContent = '传输准备中…';
                 }
@@ -3786,8 +3785,8 @@
                     parts.push(`${s}秒`);
                     return parts.join('');
                 }
-                document.getElementById('etaInfo').textContent = `预计剩余: ${fmtTimeCN(etaSec)}`;
-                document.getElementById('totalEstInfo').textContent = `总预计: ${fmtTimeCN(totalEstSec)}`;
+                document.getElementById('etaInfo').textContent = `预计剩余: ${typeof status.eta_sec_visible === 'number' ? fmtTimeCN(status.eta_sec_visible) : (etaText === '--:--' ? '--:--' : fmtTimeCN(etaSec))}`;
+                document.getElementById('totalEstInfo').textContent = `总预计: ${typeof status.total_estimated_sec === 'number' ? fmtTimeCN(status.total_estimated_sec) : fmtTimeCN(totalEstSec)}`;
 
                 // 暂停/继续按钮联动
                 const pauseBtn = document.getElementById('pauseBtn');
@@ -4626,8 +4625,33 @@
                             }
                             if (!covered) singles.push(p);
                         });
+                        // 计算“已选总大小”（字节）：相册聚合大小 - 被排除的照片大小 + 独立选择大小
+                        let selectionSizeBytes = 0;
+                        try {
+                            const albumsMap = allAlbums || {};
+                            // 相册整体选择体积
+                            albumsArr.forEach(k => {
+                                const alb = albumsMap[k];
+                                if (alb && alb.total_size) selectionSizeBytes += Number(alb.total_size || 0);
+                                // 扣除排除项的体积
+                                const ex = excludeMap[k] || [];
+                                if (ex && ex.length) {
+                                    ex.forEach(p => {
+                                        const ph = (allPhotos || []).find(x => x.path === p);
+                                        if (ph && ph.size) selectionSizeBytes -= Number(ph.size || 0);
+                                    });
+                                }
+                            });
+                            // 未被相册覆盖的独立选择体积
+                            (singles || []).forEach(p => {
+                                const ph = (allPhotos || []).find(x => x.path === p);
+                                if (ph && ph.size) selectionSizeBytes += Number(ph.size || 0);
+                            });
+                            if (!Number.isFinite(selectionSizeBytes) || selectionSizeBytes < 0) selectionSizeBytes = 0;
+                        } catch (e) { selectionSizeBytes = 0; }
                         return {
                             selection: { albums: albumsArr, exclude: excludeMap, singles },
+                            selection_size_bytes: selectionSizeBytes,
                             output_dir: outputPath
                         };
                     })())
@@ -4896,6 +4920,16 @@
                 }).join('');
                 const rows = list.map((b, idx) => {
                     const sz = (typeof b.total_size_mb === 'number') ? (b.total_size_mb >= 1024 ? (b.total_size_mb/1024).toFixed(2) + ' GB' : b.total_size_mb.toFixed(2) + ' MB') : '';
+                    const dur = Number.isFinite(b.duration_sec) && b.duration_sec > 0 ? b.duration_sec : 0;
+                    function fmtTimeCN(sec) {
+                        const t = Math.max(0, Math.floor(sec||0));
+                        const h = Math.floor(t/3600);
+                        const m = Math.floor((t%3600)/60);
+                        const s = t % 60;
+                        if (h > 0) return `${h}小时${m}分钟${s}秒`;
+                        if (m > 0) return `${m}分钟${s}秒`;
+                        return `${s}秒`;
+                    }
                     return `
                         <tr>
                             <td class=\"history-col-idx\">${idx + 1}</td>
@@ -4905,6 +4939,8 @@
                             <td class=\"history-col-devname\">${escapeHtml(b.device_name || '')}</td>
                             <td class=\"history-col-count\">${b.photo_count ?? ''}</td>
                             <td class=\"history-col-size\">${sz}</td>
+                            <td class=\"history-col-size\">${dur ? fmtTimeCN(dur) : ''}</td>
+                            <td class=\"history-col-size\"><button class=\"btn\" data-open-folder=\"${encodeURIComponent(b.base_path || '')}\">打开</button></td>
                         </tr>`;
                 }).join('');
                 const empty = list.length === 0 ? `<div class=\"history-empty\" style=\"padding:16px 0;color:#6b7280;\">暂无历史记录</div>` : '';
@@ -4935,6 +4971,8 @@
                                     <th class=\"history-col-devname\">设备名称</th>
                                     <th class=\"history-col-count\">照片数量</th>
                                     <th class=\"history-col-size\">大小</th>
+                                    <th class=\"history-col-size\">耗时</th>
+                                    <th class=\"history-col-size\">操作</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -4984,6 +5022,20 @@
                     const segAll = document.getElementById('segAll');
                     const sel = document.getElementById('historyDeviceSelect');
                     const clear = document.getElementById('historyClearBtn');
+                    // 打开文件夹
+                    document.querySelectorAll('button[data-open-folder]').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            const p = decodeURIComponent(e.currentTarget.getAttribute('data-open-folder')||'');
+                            if (!p) return;
+                            try {
+                                const r = await fetch('/api/wifi/open_folder', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ folder_path: p }) });
+                                const d = await r.json();
+                                if (!d.success) showToast('打开失败: ' + (d.error||'未知错误'), { type: 'error' });
+                            } catch (err) {
+                                showToast('打开失败: ' + err.message, { type: 'error' });
+                            }
+                        });
+                    });
                     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { state.q = (input.value || '').trim(); reload(); } });
                     btn.addEventListener('click', () => { state.q = (input.value || '').trim(); reload(); });
                     segCur.addEventListener('click', () => { state.mode = 'current'; state.device = ''; reload(); });

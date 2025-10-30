@@ -19,6 +19,20 @@ import re
 import time
 import base64
 
+# 简易调试日志控制（默认安静）。设置环境变量启用：
+# AT_DEBUG=1 开启一般调试；AT_DEBUG_NOISY=1 允许高频调试输出
+AT_DEBUG = os.getenv('AT_DEBUG', '0') in ('1', 'true', 'on', 'yes')
+AT_DEBUG_NOISY = os.getenv('AT_DEBUG_NOISY', '0') in ('1', 'true', 'on', 'yes')
+
+def _dlog(msg: str, noisy: bool = False):
+    try:
+        if (not AT_DEBUG) or (noisy and not AT_DEBUG_NOISY):
+            return
+        print(str(msg))
+    except Exception:
+        # 保守处理：日志失败不影响主流程
+        pass
+
 def _parse_timestamp_from_name(name: str) -> int | None:
     """尽量从常见相机/截图命名中解析拍摄时间（秒）。
 
@@ -142,6 +156,7 @@ transfer_status = {
     'paused': False,
     'total': 0,
     'current': 0,
+    'inflight': 0,              # 正在传输中的文件数
     'failed': [],
     'current_file': '',
     'error': None,
@@ -149,6 +164,8 @@ transfer_status = {
     'output_dir': OUTPUT_DIR,
     'bytes_total': 0,
     'bytes_done': 0,
+    'bytes_inflight': 0,        # 在途任务的“预计字节”（根据文件大小估计）
+    'bytes_total_hint': 0,      # 选择阶段的总大小提示（用于总量未就绪时展示）
     'start_ts': 0.0,
     'speed_mbps': 0.0,
     'elapsed_sec': 0.0,
@@ -609,33 +626,34 @@ def check_adb_connection():
     connected = False
     devices = []
 
-    # 添加调试日志
-    print(f"[ADB] 设备检查 - success={success}, stdout_len={len(stdout) if stdout else 0}")
+    # 高频检查日志仅在 NOISY 模式输出
+    _dlog(f"[ADB] 设备检查 - success={success}, stdout_len={len(stdout) if stdout else 0}", noisy=True)
 
     if success and stdout:
         lines = stdout.strip().split('\n')
-        print(f"[ADB] 输出行数: {len(lines)}")
+        _dlog(f"[ADB] 输出行数: {len(lines)}", noisy=True)
         if len(lines) > 1:
-            for line in lines[1:]:
-                print(f"[ADB]   设备行: {line}")
+            if AT_DEBUG_NOISY:
+                for line in lines[1:]:
+                    _dlog(f"[ADB]   设备行: {line}", noisy=True)
             devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
             connected = len(devices) > 0
-            print(f"[ADB] 解析到 {len(devices)} 个设备: {devices}")
+            _dlog(f"[ADB] 解析到 {len(devices)} 个设备: {devices}", noisy=True)
         device_status['fail_count'] = 0
         device_status['adb_issue'] = False
         device_status['adb_error'] = ''
     else:
         # ADB失败：快速二次确认，避免长时间误判
-        print(f"[ADB] 第一次检查失败，进行重试... stderr={stderr}")
+        _dlog(f"[ADB] 第一次检查失败，进行重试...", noisy=True)
         retry_ok, retry_out, retry_err = run_adb_command("adb devices", timeout=3)
-        print(f"[ADB] 重试结果 - success={retry_ok}, stdout_len={len(retry_out) if retry_out else 0}")
+        _dlog(f"[ADB] 重试结果 - success={retry_ok}, stdout_len={len(retry_out) if retry_out else 0}", noisy=True)
 
         if retry_ok and retry_out:
             lines = retry_out.strip().split('\n')
             if len(lines) > 1:
                 devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
                 connected = len(devices) > 0
-                print(f"[ADB] 重试成功，找到 {len(devices)} 个设备")
+                _dlog(f"[ADB] 重试成功，找到 {len(devices)} 个设备", noisy=True)
             device_status['fail_count'] = 0
             device_status['adb_issue'] = False
             device_status['adb_error'] = ''
@@ -643,17 +661,18 @@ def check_adb_connection():
             device_status['fail_count'] = device_status.get('fail_count', 0) + 1
             device_status['adb_issue'] = True
             device_status['adb_error'] = (stderr.decode('utf-8', errors='ignore') if isinstance(stderr, (bytes, bytearray)) else str(stderr)) or 'ADB不可用'
-            print(f"[ADB] 检查失败 - fail_count={device_status['fail_count']}, error={device_status['adb_error']}")
+            if device_status['fail_count'] == 1:
+                print(f"[ADB] 检查失败，可能ADB不可用或未授权")
 
             if device_status['fail_count'] < 2 and was_connected:
                 # 暂时保留上次状态一小段时间，避免抖动
                 connected = was_connected
                 devices = list(prev_devices)
-                print(f"[ADB] 保留上次状态: devices={devices}")
+                _dlog(f"[ADB] 保留上次状态: devices={devices}", noisy=True)
             else:
                 connected = False
                 devices = []
-                print(f"[ADB] 设备断开或无连接")
+                # 断开事件会在状态变更分支打印
 
     # 检查设备状态变化
     was_connected_devices = set(device_status.get('devices', []))
@@ -711,7 +730,7 @@ def check_adb_connection():
         try:
             if disconnected_device_serial and disconnected_device_serial in usb_speed_tested_devices:
                 usb_speed_tested_devices.discard(disconnected_device_serial)
-                print(f"🧹 已清除设备 {disconnected_device_serial} 的测速记录")
+                _dlog(f"🧹 已清除设备 {disconnected_device_serial} 的测速记录")
         except Exception:
             pass
 
@@ -720,9 +739,9 @@ def check_adb_connection():
             if disconnected_device_label:
                 _clear_thumb_cache_dirs(device_id=disconnected_device_label)
             else:
-                print(f"⚠️ 无法获取设备标签，跳过缓存清理")
+                _dlog(f"⚠️ 无法获取设备标签，跳过缓存清理")
         except Exception as e:
-            print(f"⚠️ 清理设备缓存时出错: {e}")
+            _dlog(f"⚠️ 清理设备缓存时出错: {e}")
 
         try:
             thumb_inflight.clear()
@@ -992,9 +1011,10 @@ def scan_photos_thread(expected_scan_id=None):
                         print(f"         2. 手机是否开启USB调试")
                         print(f"         3. 是否已授权此电脑")
                         print(f"         4. ADB服务是否正常运行")
-                    scan_status['error'] = f'设备未连接: {adb_error or "请检查USB连接和调试权限"}'
-                    scan_status['stage'] = 'error'
-                    scan_status['is_running'] = False
+                    with scan_status_lock:
+                        scan_status['error'] = f'设备未连接: {adb_error or "请检查USB连接和调试权限"}'
+                        scan_status['stage'] = 'error'
+                        scan_status['is_running'] = False
                     return
 
         # 首先检测实际存在的主目录
@@ -1012,9 +1032,10 @@ def scan_photos_thread(expected_scan_id=None):
 
         if not actual_storage:
             print("   ✗ 未找到有效的存储路径")
-            scan_status['error'] = '无法访问手机存储，请检查USB调试权限'
-            scan_status['stage'] = 'error'
-            scan_status['is_running'] = False
+            with scan_status_lock:
+                scan_status['error'] = '无法访问手机存储，请检查USB调试权限'
+                scan_status['stage'] = 'error'
+                scan_status['is_running'] = False
             return
 
         # 仅扫描内部存储的 Pictures 目录（避免全盘扫描导致手机卡顿）
@@ -1025,9 +1046,10 @@ def scan_photos_thread(expected_scan_id=None):
         success, stdout, _ = run_adb_command(check_pictures_cmd, timeout=5)
         if not success or 'EXISTS' not in stdout:
             print("   ✗ 未找到 Pictures 目录，仅支持扫描内部存储的 Pictures 目录")
-            scan_status['error'] = '未找到内部存储的 Pictures 目录，请确认手机路径 /storage/emulated/0/Pictures 是否存在'
-            scan_status['stage'] = 'error'
-            scan_status['is_running'] = False
+            with scan_status_lock:
+                scan_status['error'] = '未找到内部存储的 Pictures 目录，请确认手机路径 /storage/emulated/0/Pictures 是否存在'
+                scan_status['stage'] = 'error'
+                scan_status['is_running'] = False
             return
 
         # 列出一级子目录作为相册；若没有子目录，则扫描 Pictures 根目录
@@ -1179,18 +1201,28 @@ def scan_photos_thread(expected_scan_id=None):
             if not scan_status['is_running']:
                 break
 
-            # 定期检查设备连接状态
-            connected, _ = check_adb_connection()
-            if not connected:
-                # 区分“未连接设备”与“设备断开”两种场景，避免在从未连接过时提示断开
+            # 定期检查设备连接状态（增加重试机制避免误判）
+            max_check_retries = 2  # 设备检测重试2次
+            device_connected = False
+            for check_attempt in range(max_check_retries):
+                connected, _ = check_adb_connection()
+                if connected:
+                    device_connected = True
+                    break
+                if check_attempt < max_check_retries - 1:
+                    time.sleep(0.5)  # 等待0.5秒后重试
+
+            if not device_connected:
+                # 区分"未连接设备"与"设备断开"两种场景，避免在从未连接过时提示断开
                 if device_status.get('was_connected', False):
                     msg = '设备连接已断开'
                 else:
                     msg = '未检测到设备连接'
-                print(f"\n❌ {msg}，停止扫描")
-                scan_status['error'] = msg
-                scan_status['stage'] = 'error'
-                scan_status['is_running'] = False
+                print(f"\n❌ {msg}（{max_check_retries}次检测失败），停止扫描")
+                with scan_status_lock:
+                    scan_status['error'] = msg
+                    scan_status['stage'] = 'error'
+                    scan_status['is_running'] = False
                 return
 
             normalized_dir = normalize_remote_path(dir_path)
@@ -1373,8 +1405,9 @@ def scan_photos_thread(expected_scan_id=None):
         if not scan_status['photos']:
             print("\n⚠️  未找到任何照片/视频文件")
             print("💡 提示：请确保手机中存在照片或视频文件")
-            scan_status['stage'] = 'done'
-            scan_status['is_running'] = False
+            with scan_status_lock:
+                scan_status['stage'] = 'done'
+                scan_status['is_running'] = False
             return
 
         # 按时间排序
@@ -1462,16 +1495,19 @@ def scan_photos_thread(expected_scan_id=None):
             pass
 
         print(f"{'='*60}\n")
-        scan_status['stage'] = 'done'
+        with scan_status_lock:
+            scan_status['stage'] = 'done'
 
     except Exception as e:
         import traceback
         error_msg = f"{str(e)}\n{traceback.format_exc()}"
         print(f"\n❌ 扫描出错: {error_msg}\n")
-        scan_status['error'] = str(e)
-        scan_status['stage'] = 'error'
+        with scan_status_lock:
+            scan_status['error'] = str(e)
+            scan_status['stage'] = 'error'
     finally:
-        scan_status['is_running'] = False
+        with scan_status_lock:
+            scan_status['is_running'] = False
 
 def transfer_photo(photo_path, output_dir, retries=0):
     """传输单个照片 - 极速优化版"""
@@ -1538,6 +1574,7 @@ def transfer_photos_thread(photos, output_dir, resume=False):
         completed_count = len(transfer_status.get('completed_files', set()))
         transfer_status['total'] = len(photos) + completed_count
         transfer_status['current'] = completed_count
+        transfer_status['inflight'] = 0
         transfer_status['failed'] = []
         transfer_status['error'] = None
         transfer_status['output_dir'] = output_dir
@@ -1549,7 +1586,7 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     print(f"\n{'='*60}")
     if resume:
         print(f"🔄 恢复传输任务...")
-        print(f"   已完成: {len(transfer_status['completed_files'])} 个")
+        print(f"   已完成: {completed_count} 个")
         print(f"   剩余: {len(photos)} 个")
     else:
         print(f"🚀 M4超级并发传输 {len(photos)} 个文件...")
@@ -1564,45 +1601,44 @@ def transfer_photos_thread(photos, output_dir, resume=False):
     connected, devices = check_adb_connection()
     if not connected:
         print("   ✗ 设备未连接，无法开始传输")
-        transfer_status['error'] = '设备未连接，请检查USB连接'
-        transfer_status['is_running'] = False
+        with transfer_status_lock:
+            transfer_status['error'] = '设备未连接，请检查USB连接'
+            transfer_status['is_running'] = False
         return
     print(f"   ✓ 设备已连接: {', '.join(devices)}\n")
 
     start_time = time.time()
-    # 初始化速度统计
-    try:
-        transfer_status['bytes_total'] = sum(int(p.get('size', 0)) for p in photos)
-    except Exception:
-        transfer_status['bytes_total'] = 0
-    transfer_status['bytes_done'] = 0
-    transfer_status['start_ts'] = start_time
-    transfer_status['speed_mbps'] = 0.0
-    transfer_status['elapsed_sec'] = 0.0
-    transfer_status['eta_sec'] = 0.0
-    transfer_status['bytes_total'] = sum(int(p.get('size', 0)) for p in photos)
-    transfer_status['bytes_done'] = 0
-    transfer_status['start_ts'] = start_time
-    transfer_status['speed_mbps'] = 0.0
-    transfer_status['speed_samples'] = []  # 存储速度样本，用于计算平均值
-    transfer_status['speed_estimated'] = False  # 是否已完成速度估算
-    transfer_status['last_bytes'] = 0
-    transfer_status['last_ts'] = start_time
+    # 初始化速度统计（加锁保护）
+    with transfer_status_lock:
+        try:
+            transfer_status['bytes_total'] = sum(int(p.get('size', 0)) for p in photos)
+        except Exception:
+            transfer_status['bytes_total'] = 0
+        transfer_status['bytes_done'] = 0
+        transfer_status['start_ts'] = start_time
+        transfer_status['speed_mbps'] = 0.0
+        transfer_status['elapsed_sec'] = 0.0
+        transfer_status['eta_sec'] = 0.0
+        transfer_status['speed_samples'] = []  # 存储速度样本，用于计算平均值
+        transfer_status['speed_estimated'] = False  # 是否已完成速度估算
+        transfer_status['last_bytes'] = 0
+        transfer_status['last_ts'] = start_time
+        transfer_status['bytes_inflight'] = 0
     skipped_count = 0
     last_save_count = 0
     
     # 预创建所有目录（避免并发时的目录创建冲突）
-    print("📁 预创建目录结构...")
-    unique_dirs = set()
-    for photo in photos:
-        rel_path = photo['path'].replace('/sdcard/', '').replace('/storage/emulated/0/', '').replace('/storage/self/primary/', '')
-        local_path = os.path.join(output_dir, rel_path)
-        unique_dirs.add(os.path.dirname(local_path))
-    
-    for dir_path in unique_dirs:
-        os.makedirs(dir_path, exist_ok=True)
-    
-    print(f"✅ 已创建 {len(unique_dirs)} 个目录\n")
+    # 可选：预创建目录结构（默认关闭以加快启动）。如需开启：export PRECREATE_DIRS=1
+    if os.getenv('PRECREATE_DIRS', '0').lower() in ('1','true','on','yes'):
+        print("📁 预创建目录结构...")
+        unique_dirs = set()
+        for photo in photos:
+            rel_path = photo['path'].replace('/sdcard/', '').replace('/storage/emulated/0/', '').replace('/storage/self/primary/', '')
+            local_path = os.path.join(output_dir, rel_path)
+            unique_dirs.add(os.path.dirname(local_path))
+        for dir_path in unique_dirs:
+            os.makedirs(dir_path, exist_ok=True)
+        print(f"✅ 已创建 {len(unique_dirs)} 个目录\n")
 
     # 使用线程池并限制在途任务，支持暂停
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix='TransferWorker')
@@ -1622,39 +1658,68 @@ def transfer_photos_thread(photos, output_dir, resume=False):
             next_idx += 1
             fut = executor.submit(transfer_single_photo, ph, output_dir)
             futures[fut] = ph
+            # 记录在途任务与预计字节，保证实时进度非零
+            try:
+                sz_est = int(ph.get('size', 0) or 0)
+            except Exception:
+                sz_est = 0
+            with transfer_status_lock:
+                transfer_status['inflight'] = transfer_status.get('inflight', 0) + 1
+                transfer_status['bytes_inflight'] = transfer_status.get('bytes_inflight', 0) + max(0, sz_est)
+                # current 按"已完成 + 在途"计算，前端看到不会长期停留在0
+                visible = resume_base + completed + transfer_status['inflight']
+                transfer_status['current'] = min(visible, transfer_status.get('total', visible))
             return True
 
         # 初始填满工作队列
         while len(futures) < MAX_WORKERS and next_idx < len(photos):
             submit_one()
+        # 初次填充后，对齐一次进度（避免接口短暂返回0）
+        with transfer_status_lock:
+            visible = resume_base + completed + transfer_status.get('inflight', 0)
+            transfer_status['current'] = min(visible, transfer_status.get('total', visible))
 
         while True:
             # 停止请求：取消未开始的任务并退出
-            if not transfer_status['is_running']:
+            with transfer_status_lock:
+                is_running = transfer_status['is_running']
+            if not is_running:
                 for f in list(futures.keys()):
                     f.cancel()
                 break
 
-            # 设备心跳检查
+            # 设备心跳检查（增加重试避免误判）
             current_time = time.time()
             if current_time - last_device_check > device_check_interval:
-                connected, _ = check_adb_connection()
-                if not connected:
-                    # 区分“未连接设备”与“设备断开”两种场景
+                # 重试2次检测设备
+                device_connected = False
+                for retry_check in range(2):
+                    connected, _ = check_adb_connection()
+                    if connected:
+                        device_connected = True
+                        break
+                    if retry_check < 1:
+                        time.sleep(0.5)
+
+                if not device_connected:
+                    # 区分"未连接设备"与"设备断开"两种场景
                     if device_status.get('was_connected', False):
                         msg = '设备连接已断开'
                     else:
                         msg = '未检测到设备连接'
-                    print(f"\n❌ {msg}，停止传输！")
-                    transfer_status['error'] = msg
-                    transfer_status['is_running'] = False
+                    print(f"\n❌ {msg}（2次检测失败），停止传输！")
+                    with transfer_status_lock:
+                        transfer_status['error'] = msg
+                        transfer_status['is_running'] = False
                     for f in list(futures.keys()):
                         f.cancel()
                     break
                 last_device_check = current_time
 
             # 若未暂停则补充任务
-            while (not transfer_status.get('paused', False)) and len(futures) < MAX_WORKERS and next_idx < len(photos):
+            with transfer_status_lock:
+                is_paused = transfer_status.get('paused', False)
+            while not is_paused and len(futures) < MAX_WORKERS and next_idx < len(photos):
                 submit_one()
 
             if not futures:
@@ -1680,6 +1745,10 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                     done.append((fut, e))
 
             if not done:
+                # 周期性刷新“已完成+在途”的可见进度
+                with transfer_status_lock:
+                    visible = resume_base + completed + transfer_status.get('inflight', 0)
+                    transfer_status['current'] = min(visible, transfer_status.get('total', visible))
                 time.sleep(0.05)
                 continue
 
@@ -1690,32 +1759,33 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                         raise res
                     result_photo, success, msg = res
                 except Exception as e:
+                    # 在途 -> 减1，同时扣除预计字节
+                    try:
+                        est_sz = int(photo.get('size', 0) or 0)
+                    except Exception:
+                        est_sz = 0
+                    with transfer_status_lock:
+                        transfer_status['inflight'] = max(0, transfer_status.get('inflight', 0) - 1)
+                        transfer_status['bytes_inflight'] = max(0, transfer_status.get('bytes_inflight', 0) - max(0, est_sz))
                     completed += 1
                     overall_done = completed + resume_base
-                    transfer_status['current'] = overall_done
-                    transfer_status['failed'].append({
-                        'path': photo.get('path', ''),
-                        'error': str(e)
-                    })
+                    with transfer_status_lock:
+                        # 可见进度：已完成+剩余在途
+                        visible = overall_done + transfer_status.get('inflight', 0)
+                        transfer_status['current'] = min(visible, transfer_status.get('total', visible))
+                        transfer_status['failed'].append({
+                            'path': photo.get('path', ''),
+                            'error': str(e)
+                        })
                     print(f"❌ 异常: {photo.get('name', 'Unknown')} - {str(e)}")
                     continue
 
                 completed += 1
                 overall_done = completed + resume_base
-                transfer_status['current'] = overall_done
-                transfer_status['current_file'] = result_photo['name']
 
-                if not success:
-                    transfer_status['failed'].append({
-                        'path': result_photo['path'],
-                        'error': msg
-                    })
-                    print(f"❌ 失败: {result_photo['name']} - {msg}")
-                else:
-                    # 记录已完成的文件
-                    transfer_status['completed_files'].add(result_photo['path'])
-
-                    # 计算本地文件大小（即使是已存在也计入）
+                # 计算文件大小
+                sz = 0
+                if success:
                     try:
                         sz = int(result_photo.get('size', 0))
                     except Exception:
@@ -1732,8 +1802,27 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                     if "已存在" in msg:
                         skipped_count += 1
 
-                    # 累加字节并更新时间/速度（平均）
-                    with transfer_status_lock:
+                # 完成：从在途中移除并统一在锁内更新所有状态
+                try:
+                    est_sz = int(photo.get('size', 0) or 0)
+                except Exception:
+                    est_sz = 0
+                with transfer_status_lock:
+                    transfer_status['inflight'] = max(0, transfer_status.get('inflight', 0) - 1)
+                    transfer_status['bytes_inflight'] = max(0, transfer_status.get('bytes_inflight', 0) - max(0, est_sz))
+                    transfer_status['current'] = overall_done
+                    transfer_status['current_file'] = result_photo['name']
+
+                    if not success:
+                        transfer_status['failed'].append({
+                            'path': result_photo['path'],
+                            'error': msg
+                        })
+                    else:
+                        # 记录已完成的文件
+                        transfer_status['completed_files'].add(result_photo['path'])
+
+                        # 累加字节并更新时间/速度
                         transfer_status['bytes_done'] = transfer_status.get('bytes_done', 0) + max(0, int(sz))
                         now = time.time()
                         transfer_status['elapsed_sec'] = max(0.0, now - transfer_status.get('start_ts', start_time))
@@ -1746,22 +1835,32 @@ def transfer_photos_thread(photos, output_dir, resume=False):
                         if transfer_status['speed_mbps'] > 0 and transfer_status.get('bytes_total', 0) > 0:
                             remaining_mb = max(0.0, (transfer_status.get('bytes_total', 0) - transfer_status['bytes_done']) / 1024.0 / 1024.0)
                             transfer_status['eta_sec'] = remaining_mb / transfer_status['speed_mbps']
-                
-                # 定期自动保存进度
+
+                if not success:
+                    print(f"❌ 失败: {result_photo['name']} - {msg}")
+
+                # 定期自动保存进度（在锁外读取状态快照）
                 if completed - last_save_count >= AUTO_SAVE_INTERVAL:
-                    print(f"\n💾 自动保存进度... ({overall_done}/{transfer_status['total']})")
+                    with transfer_status_lock:
+                        total_count = transfer_status['total']
+                        completed_files_copy = transfer_status['completed_files'].copy()
+                        failed_copy = list(transfer_status['failed'])
+                    print(f"\n💾 自动保存进度... ({overall_done}/{total_count})")
                     all_photos = photos  # 保存原始照片列表
-                    save_progress(all_photos, output_dir, transfer_status['completed_files'], transfer_status['failed'])
+                    save_progress(all_photos, output_dir, completed_files_copy, failed_copy)
                     last_save_count = completed
-                
+
                 # 优化进度显示：只在进度变化5%或每完成100个文件时显示
-                progress = int(overall_done / transfer_status['total'] * 100) if transfer_status['total'] else 100
-                if (progress - last_progress >= 5) or (completed % 100 == 0) or (overall_done == transfer_status['total']):
+                with transfer_status_lock:
+                    total_count = transfer_status['total']
+                    visible = min(overall_done + transfer_status.get('inflight', 0), total_count)
+                progress = int(visible / total_count * 100) if total_count else 100
+                if (progress - last_progress >= 5) or (completed % 100 == 0) or (overall_done == total_count):
                     elapsed = time.time() - start_time
                     speed = completed / elapsed if elapsed > 0 else 0
-                    eta = (transfer_status['total'] - overall_done) / speed if speed > 0 else 0
-                    
-                    print(f"⚡ 进度: {progress}% ({overall_done}/{transfer_status['total']}) | "
+                    eta = (total_count - overall_done) / speed if speed > 0 else 0
+
+                    print(f"⚡ 进度: {progress}% ({visible}/{total_count}, 完成{overall_done}) | "
                           f"速度: {speed:.1f}文件/秒 | "
                           f"预计剩余: {int(eta)}秒 | "
                           f"已跳过: {skipped_count}")
@@ -1781,34 +1880,59 @@ def transfer_photos_thread(photos, output_dir, resume=False):
             if transfer_status.get('bytes_total', 0) > 0:
                 transfer_status['bytes_done'] = max(transfer_status.get('bytes_done', 0), transfer_status['bytes_total'])
             transfer_status['eta_sec'] = 0.0
+            transfer_status['is_running'] = False
+            transfer_status['current_file'] = '完成'
+            transfer_status['inflight'] = 0
+            transfer_status['bytes_inflight'] = 0
     except Exception:
         pass
-    transfer_status['is_running'] = False
-    transfer_status['current_file'] = '完成'
-    
+
+    # 读取最终状态快照用于日志打印
+    with transfer_status_lock:
+        total_count = transfer_status['total']
+        failed_count = len(transfer_status['failed'])
+        completed_files_final = transfer_status['completed_files'].copy()
+        failed_final = list(transfer_status['failed'])
+
     elapsed_time = time.time() - start_time
-    success_count = transfer_status['total'] - len(transfer_status['failed'])
-    avg_speed = transfer_status['total'] / elapsed_time if elapsed_time > 0 else 0
-    
+    success_count = total_count - failed_count
+    avg_speed = total_count / elapsed_time if elapsed_time > 0 else 0
+
     # 最终保存进度
     print(f"\n💾 保存最终进度...")
-    save_progress(photos, output_dir, transfer_status['completed_files'], transfer_status['failed'])
-    
+    save_progress(photos, output_dir, completed_files_final, failed_final)
+
     print(f"\n{'='*60}")
     print(f"✅ 传输完成!")
-    print(f"   总文件: {transfer_status['total']} 个")
+    print(f"   总文件: {total_count} 个")
     print(f"   成功: {success_count} 个")
     print(f"   跳过: {skipped_count} 个")
-    print(f"   失败: {len(transfer_status['failed'])} 个")
+    print(f"   失败: {failed_count} 个")
     print(f"   总耗时: {int(elapsed_time)} 秒 ({elapsed_time/60:.1f} 分钟)")
+
+    # 写入历史记录与耗时（USB 批次）
+    try:
+        # 先保存批次（若已存在则更新）
+        save_usb_batch_from_folder(output_dir)
+        # 从 output_dir 解析设备与批次ID
+        _batch_id = os.path.basename(output_dir.rstrip(os.sep))
+        _device_id = os.path.basename(os.path.dirname(output_dir.rstrip(os.sep)))
+        # 更新耗时秒数
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('UPDATE batches SET duration_sec = ? WHERE device_id = ? AND batch_id = ?', (int(elapsed_time), _device_id, _batch_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ 更新USB批次耗时失败: {e}")
     print(f"   平均速度: {avg_speed:.1f} 文件/秒")
-    
+
     # 如果全部成功且没有失败，清除进度文件
-    if len(transfer_status['failed']) == 0:
+    if failed_count == 0:
         print(f"\n🎉 所有文件传输成功，清除进度文件")
         clear_progress()
     else:
-        print(f"\n💡 有 {len(transfer_status['failed'])} 个文件失败")
+        print(f"\n💡 有 {failed_count} 个文件失败")
         print(f"   可以点击「继续传输」重试失败的文件")
 
     print(f"{'='*60}\n")
@@ -2102,7 +2226,7 @@ def get_scan_status():
             # 在锁内读取 has_albums，避免并发问题
             has_albums = bool(scan_status.get('albums'))
 
-            print(f"🔍 [DEBUG] scan_status 原始状态: is_running={st['is_running']}, stage={st['stage']}, started_ts={st['started_ts']}")
+            _dlog(f"🔍 [DEBUG] scan_status snapshot: is_running={st['is_running']}, stage={st['stage']}, started_ts={st['started_ts']}", noisy=True)
 
         # 若刚刚触发扫描，允许短期将 idle 纠正为 finding，避免前端误判中断
         try:
@@ -2113,7 +2237,7 @@ def get_scan_status():
                 if started > 0 and (now - started) <= 30.0:
                     st['is_running'] = True
                     st['stage'] = 'finding'
-                    print(f"🔍 [DEBUG] 根据 started_ts 纠正状态为 finding")
+                    _dlog(f"🔍 [DEBUG] 根据 started_ts 纠正状态为 finding")
                 else:
                     # 2) 若 started_ts 为0，但刚调用过 /api/scan，也视为 finding
                     try:
@@ -2126,9 +2250,9 @@ def get_scan_status():
                         st['is_running'] = True
                         st['stage'] = 'finding'
                         st['started_ts'] = scan_kick_ts
-                        print(f"🔍 [DEBUG] 根据 scan_kick_ts 纠正状态为 finding")
+                        _dlog(f"🔍 [DEBUG] 根据 scan_kick_ts 纠正状态为 finding")
         except Exception as e:
-            print(f"⚠️ [DEBUG] 状态纠正异常: {e}")
+            _dlog(f"⚠️ [DEBUG] 状态纠正异常: {e}")
             pass
 
         # 诊断日志：若出现 idle 但已有相册或预览，打印并兜底为 done
@@ -3782,10 +3906,13 @@ def resume_transfer():
         transfer_status['error'] = None
         transfer_status['current'] = 0
         transfer_status['total'] = 0
+        transfer_status['inflight'] = 0
         transfer_status['failed'] = []
         transfer_status['current_file'] = ''
         transfer_status['bytes_done'] = 0
         transfer_status['bytes_total'] = 0
+        transfer_status['bytes_total_hint'] = 0
+        transfer_status['bytes_inflight'] = 0
         transfer_status['start_ts'] = time.time()
         transfer_status['elapsed_sec'] = 0.0
         transfer_status['eta_sec'] = 0.0
@@ -3827,6 +3954,7 @@ def resume_transfer():
         transfer_status['completed_files'] = completed_set
         transfer_status['total'] = len(pending_photos) + len(completed_set)
         transfer_status['current'] = len(completed_set)
+        transfer_status['inflight'] = 0
         transfer_status['output_dir'] = output_dir
 
     # 启动后台传输线程（resume=True）
@@ -3875,6 +4003,7 @@ def transfer():
         transfer_status['current_file'] = ''
         transfer_status['bytes_done'] = 0
         transfer_status['bytes_total'] = 0
+        transfer_status['bytes_total_hint'] = 0
         transfer_status['start_ts'] = time.time()
         transfer_status['elapsed_sec'] = 0.0
         transfer_status['eta_sec'] = 0.0
@@ -3902,6 +4031,13 @@ def transfer():
 
     # 新增：支持选择摘要，由服务端展开，避免前端分页压力
     sel = (data.get('selection') if isinstance(data, dict) else None) or None
+    selection_size_hint = 0
+    try:
+        selection_size_hint = int((data.get('selection_size_bytes') if isinstance(data, dict) else 0) or 0)
+        if selection_size_hint < 0:
+            selection_size_hint = 0
+    except Exception:
+        selection_size_hint = 0
     if sel:
         try:
             albums = sel.get('albums') or []
@@ -3937,17 +4073,53 @@ def transfer():
                     'date': ''
                 })
             print(f"DEBUG: 服务端展开 selection 完成: {len(photos)} 项")
-            # 基于相册聚合大小快速初始化总字节，避免大规模逐个stat阻塞
+            # 基于前端选择总量提示或相册聚合大小快速初始化总字节
             try:
-                approx_total = 0
+                approx_total = int(selection_size_hint or 0)
                 albums_map = scan_status.get('albums', {}) if isinstance(scan_status.get('albums', {}), dict) else {}
-                for alb in albums:
-                    info = albums_map.get(alb)
-                    if info and isinstance(info.get('total_size', 0), (int, float)):
-                        approx_total += int(info.get('total_size', 0))
+                # 若前端未提供有效提示，则使用扫描阶段统计到的相册总大小
+                if approx_total <= 0:
+                    for alb in albums:
+                        info = albums_map.get(alb)
+                        if info and isinstance(info.get('total_size', 0), (int, float)):
+                            approx_total += int(info.get('total_size', 0))
+                # 2) 如果扫描统计不可用，退化为调用 du -sk 快速估算（每个相册一次，较快）
+                if approx_total <= 0 and albums:
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    def _du_size(path: str) -> int:
+                        try:
+                            ok, out, _ = run_adb_command("adb shell 'du -sk " + path.replace("'","'\\''") + " 2>/dev/null'")
+                            if ok and out.strip():
+                                first = out.strip().split()[0]
+                                if first.isdigit():
+                                    return int(first) * 1024
+                        except Exception:
+                            return 0
+                        return 0
+                    with ThreadPoolExecutor(max_workers=min(8, len(albums))) as ex:
+                        futs = {ex.submit(_du_size, a): a for a in albums}
+                        for f in as_completed(futs):
+                            approx_total += max(0, int(f.result() or 0))
+                # 3) 若仍为0，尝试对 singles 做一次快速 stat 汇总（数量可能较少）
+                if approx_total <= 0 and singles:
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    def _stat_one(pth: str) -> int:
+                        try:
+                            ok, out, _ = run_adb_command("adb shell 'stat -c %s " + pth.replace("'","'\\''") + "'", timeout=4)
+                            if ok and out.strip().isdigit():
+                                return int(out.strip())
+                        except Exception:
+                            return 0
+                        return 0
+                    max_workers = min(16, max(4, (os.cpu_count() or 8)))
+                    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                        futs = {ex.submit(_stat_one, p): p for p in singles}
+                        for f in as_completed(futs):
+                            approx_total += max(0, int(f.result() or 0))
                 with transfer_status_lock:
                     if approx_total > 0:
-                        transfer_status['bytes_total'] = approx_total
+                        transfer_status['bytes_total'] = int(approx_total)
+                        transfer_status['bytes_total_hint'] = int(approx_total)
             except Exception:
                 pass
         except Exception as e:
@@ -3956,6 +4128,22 @@ def transfer():
             return jsonify({'success': False, 'error': f'展开选择失败: {e}'}), 400
     else:
         photos = (data.get('photos') if isinstance(data, dict) else None) or []
+        # 若直接提交 photos，尝试用其自带 size 汇总为总量提示
+        try:
+            sum_sizes = 0
+            for ph in (photos or []):
+                try:
+                    sz = int(ph.get('size', 0) or 0)
+                except Exception:
+                    sz = 0
+                if sz > 0:
+                    sum_sizes += sz
+            if sum_sizes > 0:
+                with transfer_status_lock:
+                    transfer_status['bytes_total'] = int(sum_sizes)
+                    transfer_status['bytes_total_hint'] = int(sum_sizes)
+        except Exception:
+            pass
 
     print(f"DEBUG: 照片数量: {len(photos)}")
     print(f"DEBUG: 输出目录: {output_dir}")
@@ -3971,6 +4159,16 @@ def transfer():
             'success': False,
             'error': '没有选择照片'
         }), 400
+
+    # 在启动线程前，立即设置总数，避免接口短暂返回0/无总数
+    try:
+        with transfer_status_lock:
+            transfer_status['total'] = len(photos)
+            transfer_status['current'] = 0
+            transfer_status['inflight'] = 0
+            transfer_status['bytes_inflight'] = 0
+    except Exception:
+        pass
 
     # 为了尽快返回API响应，将USB速度检测与大小预估改为异步，不阻塞启动
     def _async_prefetch():
@@ -4076,8 +4274,47 @@ def get_transfer_status():
     # 复制状态并转换set为list（加锁，避免并发读到不一致快照）
     with transfer_status_lock:
         status_copy = transfer_status.copy()
-    status_copy['completed_count'] = len(transfer_status.get('completed_files', set()))
-    status_copy.pop('completed_files', None)  # 移除set，避免JSON序列化错误
+        # 在锁内计算 completed_count，避免竞态条件
+        status_copy['completed_count'] = len(status_copy.get('completed_files', set()))
+        status_copy.pop('completed_files', None)  # 移除set，避免JSON序列化错误
+        # 提供更实时的可见进度：已完成 + 在途
+        try:
+            total = int(status_copy.get('total', 0))
+            completed = int(status_copy.get('completed_count', 0))
+            inflight = int(status_copy.get('inflight', 0))
+            # current 字段改为可见进度（向后兼容：不小于已完成）
+            visible = min(completed + inflight, total) if total > 0 else completed + inflight
+            status_copy['current'] = max(int(status_copy.get('current', 0)), visible)
+            # 附加百分比字段，避免前端与日志四舍五入差异
+            status_copy['percent_visible'] = (int(visible / total * 100) if total else 100)
+            status_copy['percent_completed'] = (int(completed / total * 100) if total else 100)
+            # 字节级实时进度（估计）：已完成字节 + 在途预计字节
+            bytes_done = int(status_copy.get('bytes_done', 0))
+            bytes_inflight = int(status_copy.get('bytes_inflight', 0))
+            bytes_total = int(status_copy.get('bytes_total', 0))
+            bytes_progress = bytes_done + max(0, bytes_inflight)
+            if bytes_total > 0:
+                bytes_progress = min(bytes_progress, bytes_total)
+            status_copy['bytes_progress'] = bytes_progress
+            # 面向展示的可见总字节与剩余字节（优先使用提示值，其次用实际总量，最后兜底为进度）
+            bytes_total_hint = int(status_copy.get('bytes_total_hint', 0))
+            bytes_total_visible = bytes_total if bytes_total > 0 else (bytes_total_hint if bytes_total_hint > 0 else max(bytes_progress, bytes_done))
+            status_copy['bytes_total_visible'] = bytes_total_visible
+            status_copy['bytes_done_visible'] = bytes_progress
+            status_copy['bytes_remaining_visible'] = max(0, bytes_total_visible - bytes_progress)
+            # 面向展示的剩余与总预计时间（依据速度或返回空）
+            speed_mbps = float(status_copy.get('speed_mbps', 0.0) or 0.0)
+            elapsed_sec = float(status_copy.get('elapsed_sec', 0.0) or 0.0)
+            if speed_mbps > 0:
+                remaining_mb = status_copy['bytes_remaining_visible'] / 1024.0 / 1024.0
+                eta_sec_visible = max(0.0, remaining_mb / speed_mbps)
+                status_copy['eta_sec_visible'] = eta_sec_visible
+                status_copy['total_estimated_sec'] = eta_sec_visible + max(0.0, elapsed_sec)
+            else:
+                status_copy['eta_sec_visible'] = None
+                status_copy['total_estimated_sec'] = None
+        except Exception:
+            pass
     return jsonify(status_copy)
 
 @app.route('/api/pause_transfer', methods=['POST'])
@@ -4103,10 +4340,17 @@ def stop_transfer():
 
 # ==================== WiFi模式相关API ====================
 
+def get_db_connection():
+    """获取数据库连接，设置30秒超时避免锁定"""
+    conn = sqlite3.connect(DB_FILE, timeout=30.0)
+    # 启用 WAL 模式，提升并发性能
+    conn.execute('PRAGMA journal_mode=WAL')
+    return conn
+
 def init_database():
     """初始化SQLite数据库"""
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # 创建设备表
@@ -4132,10 +4376,18 @@ def init_database():
                 total_size_mb REAL DEFAULT 0,
                 status TEXT DEFAULT 'completed',
                 is_legacy INTEGER DEFAULT 0,
+                duration_sec INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(device_id, batch_id)
             )
         ''')
+        # 迁移：为旧库添加 duration_sec 字段
+        try:
+            cols = [r[1] for r in cursor.execute("PRAGMA table_info(batches)").fetchall()]
+            if 'duration_sec' not in cols:
+                cursor.execute('ALTER TABLE batches ADD COLUMN duration_sec INTEGER DEFAULT 0')
+        except Exception:
+            pass
         
         # 创建照片表
         cursor.execute('''
@@ -4168,8 +4420,7 @@ def init_database():
 def upsert_device_info(device_id: str, device_name: str):
     """将设备信息写入 devices 表（若存在则更新名称与心跳）。"""
     try:
-        init_database()
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cur = conn.cursor()
         now = datetime.now().isoformat()
         # 插入或更新设备信息
@@ -4199,14 +4450,14 @@ def _get_current_device_name() -> str:
 def save_batch_to_db(device_id, batch_info):
     """保存单个批次到数据库"""
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # 插入或更新批次信息
         cursor.execute('''
             INSERT OR REPLACE INTO batches 
-            (device_id, batch_id, timestamp, photo_count, total_size, total_size_mb, status, is_legacy)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (device_id, batch_id, timestamp, photo_count, total_size, total_size_mb, status, is_legacy, duration_sec)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             device_id,
             batch_info['batch_id'],
@@ -4215,7 +4466,8 @@ def save_batch_to_db(device_id, batch_info):
             batch_info.get('total_size', 0),
             batch_info['total_size_mb'],
             batch_info.get('status', 'completed'),
-            1 if batch_info.get('is_legacy', False) else 0
+            1 if batch_info.get('is_legacy', False) else 0,
+            int(batch_info.get('duration_sec', 0) or 0)
         ))
         
         # 删除旧的照片记录
@@ -4248,7 +4500,7 @@ def load_batches_from_db():
     """从数据库加载批次信息到内存"""
     global device_upload_batches, device_photos
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -4292,6 +4544,7 @@ def load_batches_from_db():
                 'total_size_mb': batch_row['total_size_mb'],
                 'status': batch_row['status'],
                 'is_legacy': bool(batch_row['is_legacy']),
+                'duration_sec': _safe_int(batch_row['duration_sec']) if 'duration_sec' in batch_row.keys() else 0,
                 'photos': photos
             }
             
@@ -4525,7 +4778,7 @@ def api_history_clear():
         delete_files = bool(data.get('delete_files'))
 
         # 清空数据库记录
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute('DELETE FROM photos')
         cur.execute('DELETE FROM batches')
@@ -4633,11 +4886,11 @@ def api_history_batches():
             except Exception:
                 device = ''
 
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
-        sql = "SELECT device_id, batch_id, timestamp, photo_count, total_size_mb, is_legacy FROM batches"
+        sql = "SELECT device_id, batch_id, timestamp, photo_count, total_size_mb, is_legacy, duration_sec FROM batches"
         params = []
         conds = []
         if device:
@@ -4695,6 +4948,7 @@ def api_history_batches():
             ts = r['timestamp']
             photo_count = _safe_int(r['photo_count'])
             total_size_mb = float(r['total_size_mb'] or 0.0)
+            duration_sec = _safe_int(r['duration_sec']) if 'duration_sec' in r.keys() else 0
             is_legacy = bool(r['is_legacy']) if 'is_legacy' in r.keys() else False
 
             # 构造本地批次路径
@@ -4727,6 +4981,7 @@ def api_history_batches():
                 'exists_count': exists_count,
                 'missing_count': missing_count,
                 'is_legacy': is_legacy,
+                'duration_sec': duration_sec,
             })
 
         conn.close()
@@ -4743,7 +4998,7 @@ def api_history_devices():
         except Exception:
             pass
 
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 

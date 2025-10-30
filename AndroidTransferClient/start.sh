@@ -56,8 +56,8 @@ fi
 # 启动服务（Gunicorn）
 HOST="0.0.0.0"
 PORT="9500"
-WORKERS=${GUNICORN_WORKERS:-2}
-THREADS=${GUNICORN_THREADS:-10}
+WORKERS=${GUNICORN_WORKERS:-1}
+THREADS=${GUNICORN_THREADS:-16}
 
 echo "🚀 使用 Gunicorn 启动服务..."
 echo "监听地址: http://$HOST:$PORT"
@@ -68,6 +68,7 @@ echo ""
 exec gunicorn \
   --bind "$HOST:$PORT" \
   --workers "$WORKERS" \
+  --worker-class gthread \
   --threads "$THREADS" \
   --timeout 120 \
   --preload \
