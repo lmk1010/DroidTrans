@@ -1881,6 +1881,36 @@
                 }
             } catch (e) { /* ignore */ }
         }
+
+        async function batchFetchPaths(paths, per = 128) {
+            try {
+                const grid = document.getElementById('thumbGrid');
+                if (!grid || !paths || !paths.length) return;
+                for (let i = 0; i < paths.length; i += per) {
+                    const chunk = paths.slice(i, i + per);
+                    try {
+                        const resp = await fetch('/api/thumb_batch_fetch', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ paths: chunk, size: THUMB_GRID_SIZE, limit: chunk.length })
+                        });
+                        const data = await resp.json();
+                        if (data && data.success && Array.isArray(data.items)) {
+                            data.items.forEach(it => {
+                                if (!it || !it.path || !it.b64) return;
+                                const img = grid.querySelector(`img.thumb-img[data-path="${CSS.escape(it.path)}"]`);
+                                if (!img || img.getAttribute('data-loaded')==='1') return;
+                                const done = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
+                                img.onload = done;
+                                img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
+                                img.src = 'data:image/jpeg;base64,' + it.b64;
+                                img.setAttribute('data-loaded','1');
+                                if (img.complete && img.naturalWidth > 0) done();
+                            });
+                        }
+                    } catch (e) { /* ignore chunk errors */ }
+                }
+            } catch (e) { /* ignore */ }
+        }
         const thumbRetryCount = new Map();
         // 相册首屏预取（进入前提前准备照片清单与部分缩略图）
         const albumPrefetching = new Set();
@@ -2842,6 +2872,7 @@
                 const statusBadge = document.getElementById('deviceStatus');
                 const usbBadge = document.getElementById('usbSpeedBadge');
                 const burstToggle = document.getElementById('burstModeToggle');
+                const scanBtn = document.getElementById('scanBtn');
 
                 if (!usbBadge) return;
 
@@ -2849,11 +2880,38 @@
                     if (info.probing) {
                         try { console.log('[USB] probing...'); } catch (e) {}
                         usbBadge.textContent = 'USB 测速中…';
+
+                        // 测速进行中，禁用扫描按钮
+                        if (scanBtn) {
+                            scanBtn.disabled = true;
+                            scanBtn.title = 'USB速度测试进行中，请稍候...';
+                        }
+
+                        // 3秒后重新检查
+                        setTimeout(() => updateUsbSpeedInfo(), 3000);
+                    } else if (info.test_failed) {
+                        // 测速失败
+                        try { console.log('[USB] test failed'); } catch (e) {}
+                        usbBadge.textContent = 'USB 测速失败';
+                        usbBadge.style.color = '#ef4444';
+
+                        // 测速失败，启用扫描按钮，让用户点击后看到处理选项
+                        if (scanBtn) {
+                            scanBtn.disabled = false;
+                            scanBtn.title = '点击查看USB测速失败的处理选项';
+                        }
                     } else {
                         const label = info.label || 'USB 未知';
                         const mbps = typeof info.measured_mbps === 'number' && info.measured_mbps > 0 ? ` · ${info.measured_mbps.toFixed(1)} MB/s` : '';
-                        try { console.log('[USB] speed info', { label, measured_mbps: info.measured_mbps }); } catch (e) {}
+                        try { console.log('[USB] speed info', { label, measured_mbps: info.measured_mbps, speed_test_done: info.speed_test_done }); } catch (e) {}
                         usbBadge.textContent = label + mbps;
+                        usbBadge.style.color = '';
+
+                        // 测速完成，启用扫描按钮
+                        if (scanBtn && info.speed_test_done) {
+                            scanBtn.disabled = false;
+                            scanBtn.title = '';
+                        }
                     }
                     usbBadge.style.display = 'inline-flex';
                     if (burstToggle) burstToggle.style.display = 'inline-flex';
@@ -2862,6 +2920,7 @@
                     try { console.log('[USB] speed unknown'); } catch (e) {}
                     usbBadge.textContent = 'USB 未知';
                     usbBadge.style.display = 'inline-flex';
+                    usbBadge.style.color = '';
                     if (burstToggle) burstToggle.style.display = 'none';
                 }
 
@@ -2873,6 +2932,7 @@
                 if (usbBadge) {
                     usbBadge.textContent = 'USB 未知';
                     usbBadge.style.display = 'inline-flex';
+                    usbBadge.style.color = '';
                 }
                 if (burstToggle) burstToggle.style.display = 'none';
                 // 仍然尝试加载Burst模式状态
@@ -2997,6 +3057,71 @@
                 return;
             }
 
+            // 检查USB测速是否完成
+            try {
+                const speedResp = await fetch('/api/usb/speed');
+                const speedData = await speedResp.json();
+
+                // 如果正在测速，等待
+                if (speedData.probing === true) {
+                    showToast('⚡ USB速度测试进行中，请稍候...', { type: 'info' });
+                    return;
+                }
+
+                // 检查是否有有效的测速结果
+                const hasMeasuredSpeed = speedData.measured_mbps && speedData.measured_mbps > 0;
+
+                // 如果没有有效结果（测速失败或未测速），显示对话框
+                if (!hasMeasuredSpeed && !speedData.probing) {
+                    showDialog({
+                        title: '⚠️ USB速度测试失败',
+                        message: 'USB速度测试失败，可能原因：\n\n1. USB连接不稳定\n2. 手机权限限制\n3. ADB传输异常\n\n建议：\n• 重新插拔USB线\n• 切换USB端口\n• 更换USB线缆\n\n请选择如何继续：',
+                        actions: [
+                            { label: '跳过测速，直接扫描', onClick: async () => {
+                                try {
+                                    const resp = await fetch('/api/usb/skip_speed_test', { method: 'POST' });
+                                    const data = await resp.json();
+                                    if (data.success) {
+                                        showToast('已跳过USB测速', { type: 'success' });
+                                        // 立即刷新USB状态，确保前端读到跳过标记
+                                        await updateUsbSpeedInfo();
+                                        // 短暂延迟后继续扫描，确保状态已更新
+                                        setTimeout(() => scanPhotos(), 300);
+                                    } else {
+                                        showToast('操作失败: ' + (data.error || '未知错误'), { type: 'error' });
+                                    }
+                                } catch (e) {
+                                    showToast('操作失败: ' + e.message, { type: 'error' });
+                                }
+                            }},
+                            { label: '重新测速', type: 'primary', onClick: async () => {
+                                try {
+                                    const resp = await fetch('/api/usb/retry_speed_test', { method: 'POST' });
+                                    const data = await resp.json();
+                                    if (data.success) {
+                                        showToast('正在重新测速...', { type: 'info' });
+                                        // 3秒后刷新状态
+                                        setTimeout(() => updateUsbSpeedInfo(), 3000);
+                                    } else {
+                                        showToast('重新测速失败: ' + (data.error || '未知错误'), { type: 'error' });
+                                    }
+                                } catch (e) {
+                                    showToast('重新测速失败: ' + e.message, { type: 'error' });
+                                }
+                            }}
+                        ]
+                    });
+                    return;
+                }
+
+                // 有有效结果，允许扫描
+                console.log('[USB] 测速检查通过，允许扫描', { measured_mbps: speedData.measured_mbps });
+
+            } catch (e) {
+                console.warn('检查USB测速状态失败:', e);
+                // 如果检查失败，允许继续扫描（避免阻止用户操作）
+            }
+
             btn.disabled = true;
             btn.textContent = '扫描中...';
 
@@ -3018,6 +3143,7 @@
                     const sresp = await fetch('/api/scan_status');
                     const s = await sresp.json();
                     if (s && (s.is_running || s.stage === 'finding' || s.stage === 'getting_info')) {
+                        try { if (typeof s.scan_id === 'number') window.__scanId = s.scan_id; } catch (e) {}
                         startScanStatusPolling();
                         startDeviceStatusPolling();
                         btn.disabled = true;
@@ -3031,6 +3157,7 @@
                 const data = await response.json();
 
                 if (data.success) {
+                    try { if (typeof data.scan_id === 'number') window.__scanId = data.scan_id; } catch (e) {}
                     startScanStatusPolling();
                     startDeviceStatusPolling();
                     try { renderScanHero(); } catch (e) {}
@@ -3077,6 +3204,16 @@
             try {
                 const response = await fetch('/api/scan_status');
                 const status = await response.json();
+                // 基于扫描序号过滤旧结果
+                try {
+                    const sid = typeof status.scan_id === 'number' ? status.scan_id : 0;
+                    if (typeof window.__scanId === 'number' && window.__scanId && sid && sid !== window.__scanId) {
+                        return; // 忽略非当前扫描的状态包
+                    }
+                    if ((!window.__scanId || window.__scanId === 0) && sid) {
+                        window.__scanId = sid; // 首次对齐
+                    }
+                } catch (e) {}
                 // 若拿到预览/在运行，记录活动时间用于抖动防护
                 try {
                     const ap = status.albums_preview || {};
@@ -3210,9 +3347,21 @@
 
                 // 抖动防护：短时间内出现 idle 但此前有活动，忽略本轮，不清空UI
                 const nowTs = Date.now();
-                const guardMs = 3000;
+                const guardMs = 5000;  // 增加到 5 秒，避免过早停止
                 const recentActive = (typeof window.__lastScanActiveTs === 'number') && ((nowTs - window.__lastScanActiveTs) < guardMs);
+
+                // 只有在确认不是扫描刚完成的情况下才停止轮询
                 if (!status.is_running && status.stage === 'idle' && !isInitial && !recentActive) {
+                    // 额外检查：如果有相册数据，说明扫描实际已完成，尝试加载结果
+                    const apKeys = Object.keys(status.albums_preview || {});
+                    if (apKeys.length > 0) {
+                        console.log('[SCAN] 检测到idle但有相册数据，尝试加载结果', { albumCount: apKeys.length });
+                        try {
+                            await loadScanResult();
+                        } catch (e) {
+                            console.warn('[SCAN] 加载结果失败:', e);
+                        }
+                    }
                     stopScanStatusPolling();
                     const btn = document.getElementById('scanBtn');
                     btn.disabled = false;
@@ -4131,6 +4280,9 @@
             }
             previewState.loaded = end;
 
+            // 更新或添加loading指示器
+            updateLoadingIndicator();
+
             // 批量触发后台生成（每批最多100），并启动全局批处理轮询 + 批量可见直出
             if (pendingPaths.length) {
                 try {
@@ -4162,6 +4314,33 @@
                     if (!ov) tile.insertAdjacentHTML('beforeend', '<div class="thumb-overlay">✓</div>');
                 } else {
                     if (ov) ov.remove();
+                }
+            }
+        }
+
+        function updateLoadingIndicator() {
+            // 在网格底部添加或移除loading指示器
+            const photoList = document.getElementById('photoList');
+            if (!photoList) return;
+
+            let loadingEl = document.getElementById('albumLoadingIndicator');
+
+            if (previewState.loadingMore) {
+                // 显示loading
+                if (!loadingEl) {
+                    loadingEl = document.createElement('div');
+                    loadingEl.id = 'albumLoadingIndicator';
+                    loadingEl.style.cssText = 'padding: 32px; text-align: center; color: #5f6368;';
+                    loadingEl.innerHTML = `
+                        <div class="spinner" style="margin: 0 auto 16px;"></div>
+                        <div style="font-size: 14px;">正在加载更多照片...</div>
+                    `;
+                    photoList.appendChild(loadingEl);
+                }
+            } else {
+                // 隐藏loading
+                if (loadingEl) {
+                    loadingEl.remove();
                 }
             }
         }
@@ -4214,6 +4393,7 @@
                     const total = (allAlbums[album] && allAlbums[album].total_count) ? allAlbums[album].total_count : previewState.photos.length;
                     if (!previewState.loadingMore && previewState.photos.length < total) {
                         previewState.loadingMore = true;
+                        updateLoadingIndicator(); // 立即显示loading
                         const offset = previewState.photos.length;
                         const limit = 500;
                         fetch(`/api/album_photos?album=${encodeURIComponent(album)}&offset=${offset}&limit=${limit}`)
@@ -4230,11 +4410,16 @@
                                     }
                                     if (add.length) {
                                         previewState.photos = previewState.photos.concat(add);
+                                        // 新增页大批量直出，模拟首屏"快批次"体验
+                                        batchFetchPaths(add.map(p => p.path), 512);
                                     }
                                     renderAlbumPreviewGrid(false);
                                     scheduleBatchFetch();
                                 }
-                            }).catch(()=>{}).finally(()=>{ previewState.loadingMore = false; });
+                            }).catch(()=>{}).finally(()=>{
+                                previewState.loadingMore = false;
+                                updateLoadingIndicator(); // 隐藏loading
+                            });
                     }
                 }
             };

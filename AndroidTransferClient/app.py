@@ -77,6 +77,9 @@ app = Flask(__name__)
 transfer_status_lock = threading.Lock()
 # 扫描状态锁，避免首次扫描时竞态导致前端拿到 idle
 scan_status_lock = threading.Lock()
+scan_kick_ts = 0.0  # 最近一次“请求开始扫描”的时间戳（用于idle兜底）
+scan_guard_until = 0.0  # 在该时间点之前，scan_status不返回idle（除非明确error/done）
+scan_generation = 0  # 扫描序号（自增），用于彻底避免旧结果干扰
 
 # 配置 - M4 Mac 超级并发优化
 # 智能选择输出目录：开发环境用本地，打包后用用户文档目录
@@ -208,33 +211,179 @@ usb_speed_probe_running = False
 usb_speed_probe_device = None
 usb_speed_probe_lock = threading.Lock()
 usb_speed_probe_ts = 0.0
+usb_speed_tested_devices = set()  # 已测速的设备集合（生命周期内只测一次）
+
+# USB测速结果持久化文件
+USB_SPEED_CACHE_FILE = os.path.join(os.path.expanduser('~'), 'Documents', 'AndroidTransfer', 'usb_speed_cache.json')
+
+def _load_usb_speed_cache():
+    """从本地文件加载USB测速缓存"""
+    try:
+        if os.path.exists(USB_SPEED_CACHE_FILE):
+            with open(USB_SPEED_CACHE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                print(f"📂 已加载USB测速缓存: {len(data)} 个设备")
+                return data
+    except Exception as e:
+        print(f"⚠️ 加载USB测速缓存失败: {e}")
+    return {}
+
+def _save_usb_speed_cache(device_serial, speed_data):
+    """保存USB测速结果到本地文件"""
+    try:
+        # 确保目录存在
+        os.makedirs(os.path.dirname(USB_SPEED_CACHE_FILE), exist_ok=True)
+
+        # 读取现有缓存
+        cache = _load_usb_speed_cache()
+
+        # 更新缓存
+        cache[device_serial] = {
+            'speed_data': speed_data,
+            'timestamp': time.time(),
+            'date': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        # 保存到文件
+        with open(USB_SPEED_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cache, f, indent=2, ensure_ascii=False)
+
+        print(f"💾 已保存USB测速结果: {device_serial} -> {speed_data.get('measured_mbps', 0):.1f} MB/s")
+    except Exception as e:
+        print(f"⚠️ 保存USB测速缓存失败: {e}")
+
+def _get_cached_usb_speed(device_serial):
+    """获取缓存的USB测速结果"""
+    try:
+        cache = _load_usb_speed_cache()
+        if device_serial in cache:
+            cached = cache[device_serial]
+            # 检查缓存是否过期（7天）
+            if time.time() - cached.get('timestamp', 0) < 7 * 24 * 3600:
+                print(f"📂 使用缓存的USB测速结果: {device_serial}")
+                return cached.get('speed_data')
+    except Exception as e:
+        print(f"⚠️ 获取缓存的USB测速结果失败: {e}")
+    return None
 
 # 缩略图后台执行器与任务去重
 THUMB_MAX_WORKERS = int(os.getenv('THUMB_MAX_WORKERS', '32'))
 thumb_executor = ThreadPoolExecutor(max_workers=max(2, min(32, THUMB_MAX_WORKERS)))
 thumb_inflight = set()  # set of remote_path
 
+# 缓存清理防抖
+_last_cache_clear_ts = 0.0
+_cache_clear_lock = threading.Lock()
 
-def _clear_thumb_cache_dirs():
-    """删除缩略图及预览缓存目录，在设备断开时调用。"""
+def _clear_thumb_cache_dirs(device_id=None):
+    """删除缩略图及预览缓存目录，在设备断开时调用。
+
+    Args:
+        device_id: 设备ID，如果指定则只清理该设备的缓存；如果为None则清理所有缓存
+    """
+    global _last_cache_clear_ts
+
+    # 防抖：10秒内只允许清理一次
+    with _cache_clear_lock:
+        now = time.time()
+        if now - _last_cache_clear_ts < 10.0:
+            return
+        _last_cache_clear_ts = now
+
     try:
-        cleared = False
-        if os.path.isdir(PREVIEW_DIR):
-            for entry in os.listdir(PREVIEW_DIR):
-                path = os.path.join(PREVIEW_DIR, entry)
-                try:
-                    if os.path.isdir(path):
-                        shutil.rmtree(path)
-                    else:
-                        os.remove(path)
-                    cleared = True
-                except Exception as e:
-                    print(f"⚠️ 清理缓存失败: {path} -> {e}")
-        else:
-            os.makedirs(PREVIEW_DIR, exist_ok=True)
+        # 确保基础目录存在
+        os.makedirs(PREVIEW_DIR, exist_ok=True)
         os.makedirs(THUMB_DIR, exist_ok=True)
-        if cleared:
-            print("🧹 已清空缩略图缓存目录")
+
+        cleared_count = 0
+        cleared_size = 0
+
+        if device_id:
+            # 只清理指定设备的缓存
+            # device_id 可以是设备标签字符串，或者是 'current' 表示当前设备
+            if device_id == 'current':
+                device_label = _get_current_device_label()
+            else:
+                device_label = device_id
+
+            if not device_label or device_label == 'unknown_device':
+                print(f"⚠️ 无效的设备标签，跳过缓存清理")
+                return
+
+            # 清理该设备的预览缓存
+            device_preview_dir = os.path.join(PREVIEW_DIR, device_label)
+            if os.path.isdir(device_preview_dir):
+                try:
+                    # 统计大小
+                    for root, dirs, files in os.walk(device_preview_dir):
+                        for f in files:
+                            fp = os.path.join(root, f)
+                            try:
+                                cleared_size += os.path.getsize(fp)
+                                cleared_count += 1
+                            except:
+                                pass
+
+                    shutil.rmtree(device_preview_dir, ignore_errors=True)
+                    print(f"🧹 已清理设备 {device_label} 的预览缓存: {cleared_count} 个文件, {cleared_size/1024/1024:.2f} MB")
+                except Exception as e:
+                    print(f"⚠️ 清理设备预览缓存失败: {device_preview_dir} -> {e}")
+
+            # 清理该设备的缩略图缓存
+            device_thumb_dir = os.path.join(THUMB_DIR, device_label)
+            if os.path.isdir(device_thumb_dir):
+                try:
+                    # 统计大小
+                    thumb_count = 0
+                    thumb_size = 0
+                    for root, dirs, files in os.walk(device_thumb_dir):
+                        for f in files:
+                            fp = os.path.join(root, f)
+                            try:
+                                thumb_size += os.path.getsize(fp)
+                                thumb_count += 1
+                            except:
+                                pass
+
+                    shutil.rmtree(device_thumb_dir, ignore_errors=True)
+                    print(f"🧹 已清理设备 {device_label} 的缩略图缓存: {thumb_count} 个文件, {thumb_size/1024/1024:.2f} MB")
+                    cleared_count += thumb_count
+                    cleared_size += thumb_size
+                except Exception as e:
+                    print(f"⚠️ 清理设备缩略图缓存失败: {device_thumb_dir} -> {e}")
+        else:
+            # 清理所有缓存（保留用于手动清理或特殊情况）
+            if os.path.isdir(THUMB_DIR):
+                for entry in os.listdir(THUMB_DIR):
+                    path = os.path.join(THUMB_DIR, entry)
+                    try:
+                        if os.path.isdir(path):
+                            # 统计大小
+                            for root, dirs, files in os.walk(path):
+                                for f in files:
+                                    fp = os.path.join(root, f)
+                                    try:
+                                        cleared_size += os.path.getsize(fp)
+                                        cleared_count += 1
+                                    except:
+                                        pass
+                            shutil.rmtree(path, ignore_errors=True)
+                        else:
+                            try:
+                                cleared_size += os.path.getsize(path)
+                                cleared_count += 1
+                            except:
+                                pass
+                            os.remove(path)
+                    except Exception as e:
+                        print(f"⚠️ 清理缓存失败: {path} -> {e}")
+
+            if cleared_count > 0:
+                print(f"🧹 已清空所有缩略图缓存: {cleared_count} 个文件, {cleared_size/1024/1024:.2f} MB")
+
+        # 确保基础目录存在
+        os.makedirs(THUMB_DIR, exist_ok=True)
+
     except Exception as e:
         print(f"⚠️ 缩略图缓存清理异常: {e}")
 
@@ -523,6 +672,16 @@ def check_adb_connection():
     if not connected and device_status.get('was_connected', False):
         device_status['disconnect_detected'] = True
         print(f"\n⚠️  检测到设备断开！")
+
+        # 在设备标识被清空前，保存设备标签用于清理缓存
+        disconnected_device_label = None
+        disconnected_device_serial = selected_device
+        try:
+            if selected_device:
+                disconnected_device_label = _get_current_device_label()
+        except Exception:
+            pass
+
         try:
             usb_speed_cache['device'] = None
             usb_speed_cache['data'] = None
@@ -530,7 +689,24 @@ def check_adb_connection():
         except Exception:
             pass
         usb_speed_probe_running = False
-        _clear_thumb_cache_dirs()
+
+        # 清除该设备的测速记录，下次连接时重新测速
+        try:
+            if disconnected_device_serial and disconnected_device_serial in usb_speed_tested_devices:
+                usb_speed_tested_devices.discard(disconnected_device_serial)
+                print(f"🧹 已清除设备 {disconnected_device_serial} 的测速记录")
+        except Exception:
+            pass
+
+        # 只清理当前设备的缓存
+        try:
+            if disconnected_device_label:
+                _clear_thumb_cache_dirs(device_id=disconnected_device_label)
+            else:
+                print(f"⚠️ 无法获取设备标签，跳过缓存清理")
+        except Exception as e:
+            print(f"⚠️ 清理设备缓存时出错: {e}")
+
         try:
             thumb_inflight.clear()
         except Exception:
@@ -547,14 +723,11 @@ def check_adb_connection():
 
     if connected and just_connected:
         # 抑制重复触发：同一瞬间多线程或多路检查导致的抖动
-        try:
-            from time import time as _now
-            now = _now()
-            last_cts = device_status.get('last_connect_ts', 0)
-            if now - float(last_cts or 0) > 5:
-                device_status['last_connect_ts'] = now
-                trigger_usb_speed_probe()
-        except Exception:
+        from time import time as _now
+        now = _now()
+        last_cts = device_status.get('last_connect_ts', 0)
+        if now - float(last_cts or 0) > 5:
+            device_status['last_connect_ts'] = now
             trigger_usb_speed_probe()
 
     return connected, devices
@@ -729,22 +902,28 @@ def organize_photos_by_album(photos):
 
     return filtered_albums
 
-def scan_photos_thread():
+def scan_photos_thread(expected_scan_id=None):
     """后台扫描照片线程 - 极速优化版"""
     global scan_status
+
+    print(f"🔍 [DEBUG] 扫描线程开始执行: expected_scan_id={expected_scan_id}")
 
     with scan_status_lock:
         scan_status['is_running'] = True
         scan_status['stage'] = 'finding'
         scan_status['started_ts'] = time.time()
-    scan_status['files_found'] = 0
-    scan_status['files_processed'] = 0
-    scan_status['total_files'] = 0
-    scan_status['photos'] = []
-    scan_status['albums'] = {}
-    scan_status['error'] = None
-    scan_status['albums_preview'] = {}
-    scan_status['albums_map'] = {}
+        if expected_scan_id is not None:
+            scan_status['scan_id'] = expected_scan_id
+        # 移到锁内，避免竞态条件
+        scan_status['files_found'] = 0
+        scan_status['files_processed'] = 0
+        scan_status['total_files'] = 0
+        scan_status['photos'] = []
+        scan_status['albums'] = {}
+        scan_status['error'] = None
+        scan_status['albums_preview'] = {}
+        scan_status['albums_map'] = {}
+        print(f"🔍 [DEBUG] 扫描状态已更新: is_running={scan_status['is_running']}, stage={scan_status['stage']}, scan_id={scan_status.get('scan_id')}")
 
     seen_files = set()
     seen_dirs = set()
@@ -857,16 +1036,17 @@ def scan_photos_thread():
                 # 提前投递预览占位，便于前端首屏尽快展示相册卡片
                 try:
                     album_name_quick = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
-                    if 'albums_preview' not in scan_status or not isinstance(scan_status['albums_preview'], dict):
-                        scan_status['albums_preview'] = {}
-                    scan_status['albums_preview'][dir_path] = {
-                        'name': album_name_quick,
-                        'icon': '📁',
-                        'priority': 10,
-                        'total_count': 0,
-                        'total_size': 0,
-                        'cover': cover,
-                    }
+                    with scan_status_lock:
+                        if 'albums_preview' not in scan_status or not isinstance(scan_status['albums_preview'], dict):
+                            scan_status['albums_preview'] = {}
+                        scan_status['albums_preview'][dir_path] = {
+                            'name': album_name_quick,
+                            'icon': '📁',
+                            'priority': 10,
+                            'total_count': 0,
+                            'total_size': 0,
+                            'cover': cover,
+                        }
                 except Exception:
                     pass
                 # 统计文件数（快速方式，可能包含少量非媒体）
@@ -916,8 +1096,15 @@ def scan_photos_thread():
                         ap[dir_path]['total_size'] = total_size
                 except Exception:
                     pass
-            scan_status['albums'] = albums
-            scan_status['stage'] = 'done'
+            # 使用锁确保状态更新的原子性
+            with scan_status_lock:
+                print(f"🔍 [DEBUG] 设置状态前: stage={scan_status.get('stage')}, is_running={scan_status.get('is_running')}, started_ts={scan_status.get('started_ts')}")
+                scan_status['albums'] = albums
+                scan_status['stage'] = 'done'
+                scan_status['is_running'] = False  # 重要：标记扫描完成
+                # 保留 started_ts，不要重置
+                print(f"🔍 [DEBUG] 设置状态后: stage={scan_status.get('stage')}, is_running={scan_status.get('is_running')}, started_ts={scan_status.get('started_ts')}, albums_count={len(scan_status.get('albums', {}))}")
+            print(f"✅ [DEBUG] 快速扫描完成，状态更新: stage={scan_status['stage']}, is_running={scan_status['is_running']}, albums={len(albums)}")
             # 异步封面缩略图生成
             try:
                 covers = [a.get('cover') for a in albums.values() if a.get('cover')]
@@ -1112,18 +1299,19 @@ def scan_photos_thread():
                 album_name = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
                 total_size = sum(p['size'] for p in album_photos)
                 cover_path = album_photos[0]['path'] if album_photos else ''
-                if 'albums_preview' not in scan_status or not isinstance(scan_status['albums_preview'], dict):
-                    scan_status['albums_preview'] = {}
-                scan_status['albums_preview'][dir_path] = {
-                    'name': album_name,
-                    'icon': '📁',
-                    'priority': 10,
-                    'total_count': len(album_photos),
-                    'total_size': total_size,
-                    'cover': cover_path
-                }
-                # 保存该相册的完整照片列表，供最终返回
-                scan_status['albums_map'][dir_path] = album_photos
+                with scan_status_lock:
+                    if 'albums_preview' not in scan_status or not isinstance(scan_status['albums_preview'], dict):
+                        scan_status['albums_preview'] = {}
+                    scan_status['albums_preview'][dir_path] = {
+                        'name': album_name,
+                        'icon': '📁',
+                        'priority': 10,
+                        'total_count': len(album_photos),
+                        'total_size': total_size,
+                        'cover': cover_path
+                    }
+                    # 保存该相册的完整照片列表，供最终返回
+                    scan_status['albums_map'][dir_path] = album_photos
             except Exception:
                 pass
 
@@ -1773,14 +1961,28 @@ def scan():
     """开始扫描照片"""
     global scan_status
 
+    print(f"🔍 [DEBUG] 收到扫描请求, 当前状态: is_running={scan_status.get('is_running')}, stage={scan_status.get('stage')}")
+
     if scan_status['is_running']:
+        print(f"⚠️ [DEBUG] 扫描已在进行中，拒绝重复启动")
         return jsonify({
             'success': False,
             'error': '扫描正在进行中'
         }), 400
 
+    # 记录"请求开始扫描"的时刻（即使线程尚未真正启动，也避免前端误判idle）
+    global scan_kick_ts, scan_guard_until, scan_generation
+    scan_kick_ts = time.time()
+    # 在启动后的保护窗口内，/api/scan_status 不返回 idle（防抖30秒）
+    scan_guard_until = scan_kick_ts + 30.0
+
     # 重置状态（加锁，保证前端第一轮轮询拿到finding）
     with scan_status_lock:
+        # 扫描序号自增
+        try:
+            scan_generation = int(scan_generation) + 1
+        except Exception:
+            scan_generation = 1
         scan_status['is_running'] = True
         scan_status['stage'] = 'finding'
         scan_status['current_dir'] = ''
@@ -1794,23 +1996,41 @@ def scan():
         scan_status['thumbs_total'] = 0
         scan_status['thumbs_done'] = 0
         scan_status['started_ts'] = time.time()
+        scan_status['scan_id'] = scan_generation
+
+    print(f"✅ [DEBUG] 扫描状态已重置: scan_id={scan_generation}, is_running={scan_status['is_running']}, stage={scan_status['stage']}")
 
     # 启动后台扫描线程
-    thread = threading.Thread(target=scan_photos_thread)
+    thread = threading.Thread(target=scan_photos_thread, args=(scan_generation,))
     thread.daemon = True
     thread.start()
 
+    print(f"🚀 [DEBUG] 扫描线程已启动: thread={thread.name}, scan_id={scan_generation}")
+
     return jsonify({
         'success': True,
-        'message': '扫描已开始'
+        'message': '扫描已开始',
+        'scan_id': scan_generation
     })
 
 @app.route('/api/scan_status')
 def get_scan_status():
     """获取扫描状态"""
+    now = time.time()  # 提前定义 now，避免重复调用
     try:
         with scan_status_lock:
             # 拷贝快照，避免遍历时被并发修改
+            # 使用 dict() 而不是直接赋值，避免浅拷贝问题
+            albums_preview_copy = {}
+            try:
+                # 安全复制 albums_preview，避免并发修改异常
+                if scan_status.get('albums_preview'):
+                    albums_preview_copy = dict(scan_status['albums_preview'])
+            except (RuntimeError, ValueError) as e:
+                # 字典在迭代时被修改，使用空字典
+                print(f"⚠️ [DEBUG] albums_preview 复制失败: {e}")
+                albums_preview_copy = {}
+
             st = {
                 'is_running': scan_status.get('is_running', False),
                 'stage': scan_status.get('stage', 'idle'),
@@ -1820,33 +2040,87 @@ def get_scan_status():
                 'total_files': scan_status.get('total_files', 0),
                 'photo_count': len(scan_status.get('photos') or []),
                 'error': scan_status.get('error'),
-                'albums_preview': scan_status.get('albums_preview', {}),
+                'albums_preview': albums_preview_copy,
                 'thumbs_total': scan_status.get('thumbs_total', 0),
                 'thumbs_done': scan_status.get('thumbs_done', 0),
                 'started_ts': scan_status.get('started_ts', 0.0),
+                'scan_id': scan_status.get('scan_id', 0),
             }
+            # 在锁内读取 has_albums，避免并发问题
+            has_albums = bool(scan_status.get('albums'))
+
+            print(f"🔍 [DEBUG] scan_status 原始状态: is_running={st['is_running']}, stage={st['stage']}, started_ts={st['started_ts']}")
+
         # 若刚刚触发扫描，允许短期将 idle 纠正为 finding，避免前端误判中断
         try:
             if (not st['is_running']) and st.get('stage') == 'idle':
+                now = time.time()
                 started = float(st.get('started_ts') or 0.0)
-                if started > 0 and (time.time() - started) <= 3.0:
+                # 1) 若 started_ts 近，直接视为 finding
+                if started > 0 and (now - started) <= 30.0:
                     st['is_running'] = True
                     st['stage'] = 'finding'
-        except Exception:
+                    print(f"🔍 [DEBUG] 根据 started_ts 纠正状态为 finding")
+                else:
+                    # 2) 若 started_ts 为0，但刚调用过 /api/scan，也视为 finding
+                    try:
+                        global scan_kick_ts, scan_guard_until
+                    except Exception:
+                        scan_kick_ts = 0.0
+                        scan_guard_until = 0.0
+                    # 保护窗口：kick后30秒内不报告idle
+                    if (scan_kick_ts > 0 and (now - scan_kick_ts) <= 30.0) or (scan_guard_until and now <= scan_guard_until):
+                        st['is_running'] = True
+                        st['stage'] = 'finding'
+                        st['started_ts'] = scan_kick_ts
+                        print(f"🔍 [DEBUG] 根据 scan_kick_ts 纠正状态为 finding")
+        except Exception as e:
+            print(f"⚠️ [DEBUG] 状态纠正异常: {e}")
             pass
+
         # 诊断日志：若出现 idle 但已有相册或预览，打印并兜底为 done
         try:
             ap_len = len(st.get('albums_preview') or {})
         except Exception:
             ap_len = 0
-        has_albums = bool(scan_status.get('albums'))
-        if (not st['is_running']) and st.get('stage') == 'idle' and (ap_len > 0 or has_albums):
-            print(f"[SCAN_STATUS] Unexpected idle with data: albums_preview={ap_len}, has_albums={has_albums}")
-            st['stage'] = 'done'
+
+        # 更严格的检查：任何有数据的 idle 状态都应该是 done
+        if (not st['is_running']) and st.get('stage') == 'idle':
+            # 检查是否有任何扫描数据
+            if ap_len > 0 or has_albums:
+                print(f"[SCAN_STATUS] Unexpected idle with data: albums_preview={ap_len}, has_albums={has_albums}, 纠正为 done")
+                st['stage'] = 'done'
+            # 额外检查：如果 started_ts 不为 0，且在 60 秒内，说明扫描刚完成
+            elif st.get('started_ts', 0) > 0 and (now - st.get('started_ts', 0)) < 60:
+                print(f"[SCAN_STATUS] Unexpected idle with recent started_ts: {st.get('started_ts')}, 纠正为 finding")
+                st['is_running'] = True
+                st['stage'] = 'finding'
+
         return jsonify(st)
     except Exception as e:
         # 避免接口异常导致前端中断
-        return jsonify({'is_running': False, 'stage': 'idle', 'error': str(e), 'albums_preview': {}})
+        # 不要返回 idle，而是返回更保守的状态
+        print(f"❌ [ERROR] get_scan_status 异常: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # 尝试从全局变量读取最后已知状态
+        try:
+            with scan_status_lock:
+                last_stage = scan_status.get('stage', 'error')
+                last_running = scan_status.get('is_running', False)
+        except:
+            last_stage = 'error'
+            last_running = False
+
+        return jsonify({
+            'is_running': last_running,
+            'stage': last_stage if last_stage != 'idle' else 'error',  # 不返回 idle
+            'error': f'获取状态异常: {str(e)}',
+            'albums_preview': {},
+            'started_ts': 0.0,
+            'scan_id': 0
+        })
 
 @app.route('/api/scan_result')
 def get_scan_result():
@@ -2109,13 +2383,8 @@ def _ensure_thumb_from_remote(remote_path: str, thumb_path: str, size: int) -> b
                 return False
             return _ensure_thumbnail_from_bytes(data, thumb_path, max_size=size, quality=THUMB_IMG_QUALITY)
         else:
-            # 优先无缓存流式；失败则走临时拉取稳定路径；仍失败才出占位
-            ok = _ensure_video_thumb_stream(remote_path, thumb_path, max_size=size, quality=THUMB_VIDEO_QV, ss=0.5)
-            if not ok:
-                ok = _ensure_video_thumb_via_temp_pull(remote_path, thumb_path, max_size=size, quality=THUMB_VIDEO_QV, ss=0.5)
-            if not ok:
-                return _write_video_placeholder_jpeg(thumb_path, size=max(128, size))
-            return True
+            # 暂不解析视频，直接生成占位图以极致提速
+            return _write_video_placeholder_jpeg(thumb_path, size=max(128, size))
     except Exception:
         return False
 
@@ -2724,7 +2993,20 @@ def photo_thumb_batch_fetch():
     """
     try:
         data = request.get_json(silent=True) or {}
-        paths = list(dict.fromkeys((data.get('paths') or [])))  # 去重保持顺序
+        paths_raw = data.get('paths') or []
+        # 确保paths是字符串列表,处理可能传入的对象数组
+        normalized_paths = []
+        for p in paths_raw:
+            if isinstance(p, dict):
+                # 如果是字典对象,提取path字段
+                path_str = p.get('path', '')
+            else:
+                # 否则直接转为字符串
+                path_str = str(p) if p else ''
+            if path_str:
+                normalized_paths.append(path_str)
+        # 去重保持顺序
+        paths = list(dict.fromkeys(normalized_paths))
         try:
             size = int(data.get('size', THUMB_TARGET_PX))
         except Exception:
@@ -2734,7 +3016,7 @@ def photo_thumb_batch_fetch():
         except Exception:
             limit = 64
         size = max(64, min(512, size))
-        limit = max(1, min(128, limit))
+        limit = max(1, min(512, limit))
 
         items = []
         for p in paths[:limit]:
@@ -2990,38 +3272,90 @@ def adb_burst_mode():
 
 
 def trigger_usb_speed_probe(force: bool = False):
-    """后台异步触发USB测速，避免阻塞主流程。"""
-    global usb_speed_probe_running, usb_speed_probe_device, usb_speed_probe_ts
+    """后台异步触发USB测速，避免阻塞主流程。
+
+    每个设备在程序运行期间只会测速一次（除非使用 force=True）。
+    如果有持久化的测速结果，直接使用缓存。
+    """
+    global usb_speed_probe_running, usb_speed_probe_device, usb_speed_probe_ts, usb_speed_tested_devices
+
     if not selected_device:
         return
-    # 防抖 + 并发保护：同一设备15秒内只启动一次（即便force也抑制重复）
+
+    # 优先检查内存集合，避免不必要的磁盘IO
+    if not force and selected_device in usb_speed_tested_devices:
+        # 已跳过或已测速，直接返回，不打印日志（避免刷屏）
+        return
+
+    # 再检查持久化缓存
+    if not force:
+        cached_speed = _get_cached_usb_speed(selected_device)
+        if cached_speed:
+            # 有缓存，直接使用
+            usb_speed_cache.update({
+                'device': selected_device,
+                'data': cached_speed,
+                'ts': time.time()
+            })
+            usb_speed_tested_devices.add(selected_device)
+            print(f"✅ 使用缓存的USB测速结果: {selected_device} -> {cached_speed.get('measured_mbps', 0):.1f} MB/s")
+            return
+
+    # 防抖 + 并发保护：同一设备15秒内只启动一次
     with usb_speed_probe_lock:
         from time import time as _now
         now = _now()
         if (now - usb_speed_probe_ts) < 15:
+            # 防抖中，不打印日志
             return
         if usb_speed_probe_running and usb_speed_probe_device == selected_device:
+            # 测速进行中，不打印日志
             return
         usb_speed_probe_running = True
         usb_speed_probe_device = selected_device
         usb_speed_probe_ts = now
 
     def _runner():
-        global usb_speed_probe_running, usb_speed_probe_device
+        global usb_speed_probe_running, usb_speed_probe_device, usb_speed_tested_devices
+        # 保存当前设备序列号，避免测速过程中设备变化
+        current_device = selected_device
+        print(f"🔍 [DEBUG] 开始测速: current_device={current_device}")
         try:
-            get_usb_speed(force=force)
+            result = get_usb_speed(force=force)
+            print(f"🔍 [DEBUG] 测速结果: result={result}")
+            # 只有测速成功且有有效速度时才标记为已测速
+            if result and result.get('success') and not result.get('probing'):
+                measured_mbps = result.get('measured_mbps', 0)
+                print(f"🔍 [DEBUG] measured_mbps={measured_mbps}, type={type(measured_mbps)}")
+                # 如果测速失败（速度为0），不标记为已完成，允许重试
+                if measured_mbps and measured_mbps > 0:
+                    usb_speed_tested_devices.add(current_device)
+                    print(f"✅ 设备 {current_device} 测速完成并已标记 ({measured_mbps:.1f} MB/s)")
+                    # 保存到持久化文件
+                    _save_usb_speed_cache(current_device, result)
+                else:
+                    print(f"⚠️ 设备 {current_device} 测速失败 (速度: {measured_mbps} MB/s)，允许重试")
+            else:
+                print(f"🔍 [DEBUG] 测速结果不符合条件: success={result.get('success')}, probing={result.get('probing')}")
         except Exception as e:
             print(f"⚠️ USB测速任务失败: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             with usb_speed_probe_lock:
                 usb_speed_probe_running = False
                 usb_speed_probe_device = None
+            print(f"🔍 [DEBUG] 测速线程结束")
 
     try:
         t = threading.Thread(target=_runner, daemon=True)
         t.start()
+        print(f"🚀 已启动USB测速后台线程 (设备: {selected_device})")
     except Exception as e:
         print(f"⚠️ 启动USB测速线程失败: {e}")
+        with usb_speed_probe_lock:
+            usb_speed_probe_running = False
+            usb_speed_probe_device = None
 
 def get_usb_speed(force: bool = False):
     """获取USB速率信息（字典），供内部调用与API复用。"""
@@ -3050,38 +3384,18 @@ def get_usb_speed(force: bool = False):
                 'gbps': 0
             }
 
-    # 基准测试（独占ADB）：严格按照读写文件进行3轮测速，取最高值
+    # 基准测试（独占ADB）：单轮测速
+    bench = None
     try:
-        # 若未在后台测速，标记为运行中，避免重复触发
-        started_here = False
-        with usb_speed_probe_lock:
-            if not usb_speed_probe_running:
-                usb_speed_probe_running = True
-                started_here = True
-        # 若另一处已经在测速，则不重复发起，返回 probing
-        if not started_here:
-            return {
-                'success': True,
-                'probing': True,
-                'label': 'USB 测速中',
-                'measured_mbps': 0,
-                'gbps': 0
-            }
         bench = _benchmark_usb_speed()
         if bench and bench.get('measured_mbps', 0) > 0:
             bench.update({'success': True, 'source': 'bench', 'probing': False})
-            usb_speed_cache.update({'device': selected_device, 'data': bench})
+            usb_speed_cache.update({'device': selected_device, 'data': bench, 'ts': time.time()})
             return bench
-    except Exception:
-        pass
-    finally:
-        # 仅在本次调用中设置为运行时，负责清理标记
-        try:
-            if 'started_here' in locals() and started_here:
-                with usb_speed_probe_lock:
-                    usb_speed_probe_running = False
-        except Exception:
-            pass
+    except Exception as e:
+        print(f"⚠️ 基准测速异常: {e}")
+        import traceback
+        traceback.print_exc()
 
     # 回退：如基准测试失败，再尝试sysfs/dumpsys 以给出基本信息
     try:
@@ -3102,7 +3416,7 @@ def get_usb_speed(force: bool = False):
         if speed_line:
             m = _map_usb_speed(speed_line)
             m.update({'success': True, 'source': 'sysfs', 'raw': out.strip() if isinstance(out, str) else '', 'probing': False})
-            usb_speed_cache.update({'device': selected_device, 'data': m})
+            usb_speed_cache.update({'device': selected_device, 'data': m, 'ts': time.time()})
             return m
     except Exception:
         pass
@@ -3120,23 +3434,120 @@ def get_usb_speed(force: bool = False):
             if line:
                 m = _map_usb_speed(line)
                 m.update({'success': True, 'source': 'dumpsys', 'raw': line, 'probing': False})
-                usb_speed_cache.update({'device': selected_device, 'data': m})
+                usb_speed_cache.update({'device': selected_device, 'data': m, 'ts': time.time()})
                 return m
     except Exception:
         pass
 
     m = _map_usb_speed('')
     m.update({'success': True, 'source': 'none', 'raw': '', 'probing': False})
-    usb_speed_cache.update({'device': selected_device, 'data': m})
+    usb_speed_cache.update({'device': selected_device, 'data': m, 'ts': time.time()})
     return m
 
 @app.route('/api/usb/speed')
 def api_usb_speed():
-    """API封装：返回USB速率信息"""
+    """API封装：返回USB速率信息，包含测速完成状态"""
     data = get_usb_speed()
+
+    # 添加测速完成标记
+    # 如果有有效的测速结果（缓存或刚测完），标记为已完成
+    if selected_device:
+        # 检查是否在已测速集合中
+        in_tested_set = selected_device in usb_speed_tested_devices
+
+        # 或者检查是否有有效的缓存数据
+        has_valid_cache = (
+            data.get('success') and
+            not data.get('probing') and
+            data.get('measured_mbps', 0) > 0
+        )
+
+        # 如果有有效缓存但不在集合中，添加到集合
+        if has_valid_cache and not in_tested_set:
+            usb_speed_tested_devices.add(selected_device)
+            print(f"✅ 从缓存恢复设备 {selected_device} 的测速状态")
+
+        data['speed_test_done'] = in_tested_set or has_valid_cache
+    else:
+        data['speed_test_done'] = False
+
+    # 检测测速失败（速度为0或无效）
+    measured_mbps = data.get('measured_mbps', 0)
+    if data.get('success') and not data.get('probing') and (not measured_mbps or measured_mbps <= 0):
+        data['test_failed'] = True
+    else:
+        data['test_failed'] = False
+
     if not data.get('success', True) and data.get('error'):
         return jsonify(data), 400
     return jsonify(data)
+
+
+@app.route('/api/usb/retry_speed_test', methods=['POST'])
+def retry_speed_test():
+    """重新进行USB速度测试"""
+    global usb_speed_tested_devices
+    if not selected_device:
+        return jsonify({'success': False, 'error': '设备未连接'}), 400
+
+    try:
+        # 清除已测速标记和缓存
+        usb_speed_tested_devices.discard(selected_device)
+        usb_speed_cache['device'] = None
+        usb_speed_cache['data'] = None
+        usb_speed_cache['ts'] = 0
+
+        # 触发新的测速
+        trigger_usb_speed_probe(force=True)
+
+        return jsonify({
+            'success': True,
+            'message': 'USB速度测试已重新启动'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/usb/skip_speed_test', methods=['POST'])
+def skip_speed_test():
+    """跳过USB速度测试，直接标记为已完成"""
+    global usb_speed_tested_devices, usb_speed_cache
+    if not selected_device:
+        return jsonify({'success': False, 'error': '设备未连接'}), 400
+
+    try:
+        # 标记为已测速（即使没有实际测速）
+        usb_speed_tested_devices.add(selected_device)
+
+        # 创建虚拟测速结果，避免前端重复弹出对话框
+        skip_speed_data = {
+            'success': True,
+            'label': 'USB 已跳过测速',
+            'measured_mbps': 40.0,  # 给一个假定的速度，避免前端检查失败
+            'gbps': 0.32,
+            'skipped': True,
+            'source': 'skipped',
+            'probing': False
+        }
+
+        # 保存到内存缓存
+        usb_speed_cache.update({
+            'device': selected_device,
+            'data': skip_speed_data,
+            'ts': time.time()
+        })
+
+        # 保存到持久化文件
+        _save_usb_speed_cache(selected_device, skip_speed_data)
+
+        print(f"⏭️ 用户跳过设备 {selected_device} 的USB速度测试")
+
+        return jsonify({
+            'success': True,
+            'message': '已跳过USB速度测试'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 def _benchmark_usb_speed(size_mb: int = 64):
@@ -3220,14 +3631,19 @@ def _benchmark_usb_speed(size_mb: int = 64):
     # 不再清理远程文件（持久化保留，加速下次测速）
 
     if not speed_samples:
-        # 返回一个近似的保守结果，避免上层出现空值抖动
-        measured_mbps = 0
-        avg_speed = max(0, measured_mbps)
-        max_speed = max(0, measured_mbps)
-        min_speed = max(0, measured_mbps)
-        test_rounds = 0
-        size_mb = size_mb
-        # 不中断，继续按照 fallback 逻辑映射 USB 等级
+        # 测速失败，返回失败结果
+        print(f"❌ USB速度测试失败：无有效测速样本")
+        return {
+            'code': 'bench-unknown',
+            'label': 'USB 未知 (估算)',
+            'gbps': 0,
+            'measured_mbps': 0,
+            'avg_mbps': 0,
+            'max_mbps': 0,
+            'min_mbps': 0,
+            'test_rounds': test_rounds,
+            'test_size_mb': size_mb,
+        }
 
     # 计算平均速度和最大速度
     avg_speed = sum(speed_samples) / len(speed_samples)
