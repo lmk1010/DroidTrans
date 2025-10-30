@@ -267,8 +267,9 @@ def _get_cached_usb_speed(device_serial):
     return None
 
 # 缩略图后台执行器与任务去重
-THUMB_MAX_WORKERS = int(os.getenv('THUMB_MAX_WORKERS', '32'))
-thumb_executor = ThreadPoolExecutor(max_workers=max(2, min(32, THUMB_MAX_WORKERS)))
+# M系列芯片性能强劲，增加默认并发数
+THUMB_MAX_WORKERS = int(os.getenv('THUMB_MAX_WORKERS', '48'))  # 增加到48
+thumb_executor = ThreadPoolExecutor(max_workers=max(4, min(64, THUMB_MAX_WORKERS)))  # 最大64
 thumb_inflight = set()  # set of remote_path
 
 # 缓存清理防抖
@@ -2950,11 +2951,13 @@ def photo_thumb_status():
 def photo_thumb_batch_generate():
     data = request.get_json(silent=True) or {}
     paths = data.get('paths') or []
-    batch_size = int(data.get('batch_size') or 30)
+    batch_size = int(data.get('batch_size') or 50)  # 增加默认批次大小
     size = int(data.get('size') or 256)
     force = bool(data.get('force') or False)
     submitted = 0
-    for p in paths[:batch_size]:
+    # 提高批次上限，支持更大批量生成
+    max_batch = min(batch_size, 200)  # 最大200张
+    for p in paths[:max_batch]:
         try:
             p = normalize_remote_path(p)
             thumb_path = _thumb_local_path(p, size=size)
@@ -3012,11 +3015,11 @@ def photo_thumb_batch_fetch():
         except Exception:
             size = THUMB_TARGET_PX
         try:
-            limit = int(data.get('limit', 64))
+            limit = int(data.get('limit', 128))  # 增加默认值到128
         except Exception:
-            limit = 64
+            limit = 128
         size = max(64, min(512, size))
-        limit = max(1, min(512, limit))
+        limit = max(1, min(1024, limit))  # 最大支持1024张
 
         items = []
         for p in paths[:limit]:

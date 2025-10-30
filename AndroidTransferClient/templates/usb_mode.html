@@ -1827,25 +1827,25 @@
         let thumbPollTimer = null;
         let thumbPollRunning = false;
         const globalPendingThumbs = new Set(); // 待检测缩略图路径
-        const MAX_STATUS_BATCH = 600; // 每次状态轮询的最大路径数
+        const MAX_STATUS_BATCH = 1000; // 增加到1000，处理更多缩略图
         const MAX_THUMB_RETRY = 120;  // 单个缩略图最大重试次数（~60s, 500ms间隔）
-        const PROBE_FETCH_LIMIT = 96; // 每轮最多主动探测的数量（提升可见区未缓存的就绪速度）
+        const PROBE_FETCH_LIMIT = 200; // 增加到200，提升可见区加载速度
         let batchFetchTimer = null;
         function scheduleBatchFetch() {
             if (batchFetchTimer) return;
             batchFetchTimer = setTimeout(() => {
                 batchFetchTimer = null;
-                try { batchFetchVisibleThumbs(64); } catch (e) {}
+                try { batchFetchVisibleThumbs(128); } catch (e) {}  // 增加到128
             }, 60);
         }
 
-        async function batchFetchVisibleThumbs(limit = 48) {
+        async function batchFetchVisibleThumbs(limit = 128) {  // 从48增加到128
             const list = document.getElementById('photoList');
             const grid = document.getElementById('thumbGrid');
             if (!list || !grid) return;
             const imgs = grid.querySelectorAll('img.thumb-img');
-            const viewTop = list.scrollTop - 200;
-            const viewBot = list.scrollTop + list.clientHeight + 800;
+            const viewTop = list.scrollTop - 400;  // 扩大预加载范围
+            const viewBot = list.scrollTop + list.clientHeight + 1200;  // 扩大预加载范围
             const req = [];
             for (let i=0;i<imgs.length && req.length<limit;i++) {
                 const img = imgs[i];
@@ -1914,7 +1914,7 @@
         const thumbRetryCount = new Map();
         // 相册首屏预取（进入前提前准备照片清单与部分缩略图）
         const albumPrefetching = new Set();
-        async function prefetchAlbumPhotos(albumKey, limit = 500) {
+        async function prefetchAlbumPhotos(albumKey, limit = 1000) {  // 增加到1000张
             try {
                 if (!albumKey) return;
                 const a = allAlbums[albumKey];
@@ -1926,11 +1926,11 @@
                 const data = await resp.json().catch(()=>({success:false}));
                 if (data && data.success) {
                     allAlbums[albumKey].photos = data.photos || [];
-                    // 预热前60张缩略图，提升点击后首屏速度
-                    const pre = (allAlbums[albumKey].photos || []).slice(0, 60).map(p=>p.path);
+                    // 预热前120张缩略图，提升点击后首屏和前几屏速度
+                    const pre = (allAlbums[albumKey].photos || []).slice(0, 120).map(p=>p.path);
                     if (pre.length) {
                         pre.forEach(p => globalPendingThumbs.add(p));
-                        try { fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pre, batch_size: 50 }) }); } catch (e) {}
+                        try { fetch('/api/thumb_batch_generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ paths: pre, batch_size: 100 }) }); } catch (e) {}
                         thumbPollLoop();
                     }
                 }
@@ -4175,7 +4175,8 @@
                 try {
                     let photosArr = (albumData.photos || []);
                     if (!photosArr.length) {
-                        const resp = await fetch(`/api/album_photos?album=${encodeURIComponent(albumKey)}&offset=0&limit=500`);
+                        // 增加首次加载量到1000张，覆盖大部分中小相册
+                        const resp = await fetch(`/api/album_photos?album=${encodeURIComponent(albumKey)}&offset=0&limit=1000`);
                         const data = await resp.json();
                         if (data && data.success) {
                             photosArr = data.photos || [];
@@ -4378,14 +4379,41 @@
         function attachPreviewScroll() {
             if (previewState.attached) return;
             const photoList = document.getElementById('photoList');
+            let lastScrollTop = 0;
+            let scrollVelocity = 0;
+
             const onScroll = () => {
                 if (currentView !== 'preview') return;
+
+                // 计算滚动速度，用于预测滚动方向和距离
+                const currentScrollTop = photoList.scrollTop;
+                scrollVelocity = currentScrollTop - lastScrollTop;
+                lastScrollTop = currentScrollTop;
+
                 const nearBottom = photoList.scrollTop + photoList.clientHeight >= photoList.scrollHeight - 300;
                 if (nearBottom) {
                     // 如果还有未渲染的，继续渲染
                     if (previewState.loaded < previewState.photos.length) {
                         renderAlbumPreviewGrid(false);
                         scheduleBatchFetch();
+
+                        // 智能预加载：根据滚动速度预测并提前生成缩略图
+                        if (scrollVelocity > 50) {  // 快速滚动
+                            const predictiveLoadCount = 300;  // 预加载300张
+                            const start = previewState.loaded;
+                            const end = Math.min(previewState.photos.length, start + predictiveLoadCount);
+                            const predictivePaths = previewState.photos.slice(start, end).map(p => p.path);
+                            if (predictivePaths.length > 0) {
+                                try {
+                                    fetch('/api/thumb_batch_generate', {
+                                        method: 'POST',
+                                        headers: {'Content-Type': 'application/json'},
+                                        body: JSON.stringify({ paths: predictivePaths, batch_size: 200, size: THUMB_GRID_SIZE })
+                                    });
+                                    predictivePaths.forEach(p => globalPendingThumbs.add(p));
+                                } catch (e) {}
+                            }
+                        }
                         return;
                     }
                     // 若已渲染完当前页，但总数更大，则分页拉取更多
@@ -4395,7 +4423,7 @@
                         previewState.loadingMore = true;
                         updateLoadingIndicator(); // 立即显示loading
                         const offset = previewState.photos.length;
-                        const limit = 500;
+                        const limit = 1000;  // 增加到1000张，减少请求次数
                         fetch(`/api/album_photos?album=${encodeURIComponent(album)}&offset=${offset}&limit=${limit}`)
                             .then(r=>r.json()).then(d=>{
                                 if (d && d.success) {
@@ -4410,8 +4438,23 @@
                                     }
                                     if (add.length) {
                                         previewState.photos = previewState.photos.concat(add);
-                                        // 新增页大批量直出，模拟首屏"快批次"体验
-                                        batchFetchPaths(add.map(p => p.path), 512);
+                                        // 新增页大批量直出，使用更大的批次
+                                        // 同时启动后台生成任务，提前准备缩略图
+                                        const paths = add.map(p => p.path);
+                                        batchFetchPaths(paths, 512);
+
+                                        // 提前生成接下来的200张缩略图（异步，不阻塞）
+                                        const nextBatch = paths.slice(512, 712);
+                                        if (nextBatch.length > 0) {
+                                            try {
+                                                fetch('/api/thumb_batch_generate', {
+                                                    method: 'POST',
+                                                    headers: {'Content-Type': 'application/json'},
+                                                    body: JSON.stringify({ paths: nextBatch, batch_size: 200, size: THUMB_GRID_SIZE })
+                                                });
+                                                nextBatch.forEach(p => globalPendingThumbs.add(p));
+                                            } catch (e) {}
+                                        }
                                     }
                                     renderAlbumPreviewGrid(false);
                                     scheduleBatchFetch();
