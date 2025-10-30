@@ -601,6 +601,7 @@ def check_adb_connection():
     """检查ADB连接状态并更新全局设备状态"""
     global device_status, selected_device, usb_speed_probe_running
 
+    # 第一次检查
     success, stdout, stderr = run_adb_command("adb devices")
     was_connected = device_status.get('connected', False)
     prev_devices = set(device_status.get('devices', []))
@@ -608,22 +609,33 @@ def check_adb_connection():
     connected = False
     devices = []
 
+    # 添加调试日志
+    print(f"[ADB] 设备检查 - success={success}, stdout_len={len(stdout) if stdout else 0}")
+
     if success and stdout:
         lines = stdout.strip().split('\n')
+        print(f"[ADB] 输出行数: {len(lines)}")
         if len(lines) > 1:
+            for line in lines[1:]:
+                print(f"[ADB]   设备行: {line}")
             devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
             connected = len(devices) > 0
+            print(f"[ADB] 解析到 {len(devices)} 个设备: {devices}")
         device_status['fail_count'] = 0
         device_status['adb_issue'] = False
         device_status['adb_error'] = ''
     else:
         # ADB失败：快速二次确认，避免长时间误判
-        retry_ok, retry_out, _ = run_adb_command("adb devices", timeout=3)
+        print(f"[ADB] 第一次检查失败，进行重试... stderr={stderr}")
+        retry_ok, retry_out, retry_err = run_adb_command("adb devices", timeout=3)
+        print(f"[ADB] 重试结果 - success={retry_ok}, stdout_len={len(retry_out) if retry_out else 0}")
+
         if retry_ok and retry_out:
             lines = retry_out.strip().split('\n')
             if len(lines) > 1:
                 devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
                 connected = len(devices) > 0
+                print(f"[ADB] 重试成功，找到 {len(devices)} 个设备")
             device_status['fail_count'] = 0
             device_status['adb_issue'] = False
             device_status['adb_error'] = ''
@@ -631,13 +643,17 @@ def check_adb_connection():
             device_status['fail_count'] = device_status.get('fail_count', 0) + 1
             device_status['adb_issue'] = True
             device_status['adb_error'] = (stderr.decode('utf-8', errors='ignore') if isinstance(stderr, (bytes, bytearray)) else str(stderr)) or 'ADB不可用'
+            print(f"[ADB] 检查失败 - fail_count={device_status['fail_count']}, error={device_status['adb_error']}")
+
             if device_status['fail_count'] < 2 and was_connected:
                 # 暂时保留上次状态一小段时间，避免抖动
                 connected = was_connected
                 devices = list(prev_devices)
+                print(f"[ADB] 保留上次状态: devices={devices}")
             else:
                 connected = False
                 devices = []
+                print(f"[ADB] 设备断开或无连接")
 
     # 检查设备状态变化
     was_connected_devices = set(device_status.get('devices', []))
@@ -737,13 +753,20 @@ def check_adb_connection():
 def _device_monitor_loop(interval=2):
     """后台设备监控循环，周期性检查ADB设备连接状态"""
     import time
+    # 启动时延迟，避免与初始扫描冲突
+    time.sleep(3)
     while True:
         try:
-            check_adb_connection()
-        except Exception as _:
+            # 如果正在扫描，降低检查频率
+            if scan_status.get('is_running', False):
+                time.sleep(max(2, int(interval * 2)))  # 扫描时加倍间隔
+            else:
+                check_adb_connection()
+                time.sleep(max(1, int(interval)))
+        except Exception as e:
             # 避免监控线程因为异常退出
-            pass
-        time.sleep(max(1, int(interval)))
+            print(f"[监控] 设备检查异常: {e}")
+            time.sleep(max(1, int(interval)))
 
 
 def start_device_monitor():
@@ -934,16 +957,45 @@ def scan_photos_thread(expected_scan_id=None):
         print("🚀 开始极速扫描照片和视频...")
         print("=" * 60)
 
-        # 检查设备连接状态
+        # 检查设备连接状态 - 增加重试机制
         print("\n🔌 检查设备连接...")
-        connected, devices = check_adb_connection()
-        if not connected:
-            print("   ✗ 设备未连接")
-            scan_status['error'] = '设备未连接，请检查USB连接和调试权限'
-            scan_status['stage'] = 'error'
-            scan_status['is_running'] = False
-            return
-        print(f"   ✓ 设备已连接: {', '.join(devices)}")
+        max_retries = 3
+        retry_delay = 1.0
+        connected = False
+        devices = []
+
+        for attempt in range(max_retries):
+            connected, devices = check_adb_connection()
+            if connected:
+                print(f"   ✓ 设备已连接: {', '.join(devices)}")
+                break
+            else:
+                # 获取详细错误信息
+                adb_error = device_status.get('adb_error', '')
+                adb_issue = device_status.get('adb_issue', False)
+
+                if attempt < max_retries - 1:
+                    print(f"   ⚠️ 设备连接检查失败 (尝试 {attempt + 1}/{max_retries})")
+                    if adb_error:
+                        print(f"      错误: {adb_error}")
+                    if adb_issue:
+                        print(f"      提示: ADB服务可能未启动或设备未授权")
+                    print(f"      {retry_delay}秒后重试...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"   ✗ 设备未连接 ({max_retries}次尝试后失败)")
+                    if adb_error:
+                        print(f"      错误: {adb_error}")
+                    if adb_issue:
+                        print(f"      提示: 请检查:")
+                        print(f"         1. USB线缆是否连接正常")
+                        print(f"         2. 手机是否开启USB调试")
+                        print(f"         3. 是否已授权此电脑")
+                        print(f"         4. ADB服务是否正常运行")
+                    scan_status['error'] = f'设备未连接: {adb_error or "请检查USB连接和调试权限"}'
+                    scan_status['stage'] = 'error'
+                    scan_status['is_running'] = False
+                    return
 
         # 首先检测实际存在的主目录
         print("\n🔍 检测存储路径...")
