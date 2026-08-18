@@ -56,26 +56,26 @@
         <header class="page-head">
           <h1 data-i18n="homeTitle">把手机里的照片，搬到这台电脑</h1>
           <p data-i18n="homeSub">一根线，或同一局域网。安静、直接、本地完成。</p>
+          <p id="homeStatus" class="home-status">USB · LAN · go</p>
         </header>
         <div class="tiles">
           <button type="button" class="tile" data-go="usb">
-            <span class="glyph">
-              <svg viewBox="6 2 12 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4.5v12"/><path d="M9.2 7.5h5.6"/><circle cx="12" cy="4.2" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <svg class="tile-icon" viewBox="6 2 12 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4.5v12"/><path d="M9.2 7.5h5.6"/><circle cx="12" cy="4.2" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <span class="tile-copy">
+              <em>USB</em>
+              <h2 data-i18n="usbTile">有线快传</h2>
+              <p data-i18n="usbTileSub">开启 USB 调试后扫描相册，并发 pull 到本地。</p>
             </span>
-            <em>USB</em>
-            <h2 data-i18n="usbTile">有线快传</h2>
-            <p data-i18n="usbTileSub">开启 USB 调试后扫描相册，并发 pull 到本地。</p>
           </button>
           <button type="button" class="tile" data-go="wifi">
-            <span class="glyph">
-              <svg viewBox="3.5 8 17 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.4a9 9 0 0 1 14 0"/><path d="M8.2 15.5a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.6" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <svg class="tile-icon" viewBox="3.5 8 17 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.4a9 9 0 0 1 14 0"/><path d="M8.2 15.5a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.6" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <span class="tile-copy">
+              <em>Wi-Fi</em>
+              <h2 data-i18n="wifiTile">手机直传</h2>
+              <p data-i18n="wifiTileSub">App 搜到这台电脑，文件走 TCP / FTP / HTTP。</p>
             </span>
-            <em>Wi-Fi</em>
-            <h2 data-i18n="wifiTile">手机直传</h2>
-            <p data-i18n="wifiTileSub">App 搜到这台电脑，文件走 TCP / FTP / HTTP。</p>
           </button>
         </div>
-        <dl class="meta" id="homeMeta"></dl>
       </section>
 
       <section id="view-usb" class="view">

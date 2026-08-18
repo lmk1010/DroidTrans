@@ -133,10 +133,7 @@ async function refreshHome() {
   $('#adbHint').textContent = status;
   $('#adbHint').title = adb + (dev.connected ? ` · ${dev.model || dev.selected}` : '');
   const usbText = dev.connected ? (dev.model || (state.lang === 'zh' ? '已连接' : 'On')) : (state.lang === 'zh' ? '未连接' : 'Off');
-  $('#homeMeta').innerHTML = `
-    <div><dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4.5v12"/><circle cx="12" cy="4.2" r="1.2" fill="currentColor" stroke="none"/></svg>USB</dt><dd>${esc(usbText)}</dd></div>
-    <div><dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.4a9 9 0 0 1 14 0"/><path d="M8.2 15.5a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.4" r="1.1" fill="currentColor" stroke="none"/></svg>${state.lang === 'zh' ? '局域网' : 'LAN'}</dt><dd>${esc(wifi.ip || '—')}</dd></div>
-    <div><dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.6"/></svg>${state.lang === 'zh' ? '引擎' : 'Engine'}</dt><dd>${esc(health.engine || 'go')}</dd></div>`;
+  $('#homeStatus').textContent = `USB ${usbText}  ·  ${wifi.ip || '—'}  ·  ${health.engine || 'go'}`;
   if (!state.usbOut && health.root) {
     state.usbOut = health.root;
     $('#usbOut').value = health.root;
