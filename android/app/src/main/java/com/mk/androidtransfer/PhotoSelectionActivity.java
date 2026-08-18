@@ -34,6 +34,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.mk.androidtransfer.adapter.AlbumListAdapter;
+import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.adapter.PhotoGridAdapter;
 import com.mk.androidtransfer.database.UploadRecordDao;
 import com.mk.androidtransfer.model.AlbumInfo;
@@ -78,6 +79,8 @@ public class PhotoSelectionActivity extends AppCompatActivity {
     private ImageButton btnViewMode;  // 视图切换按钮
     private MaterialButton btnSelectAll;
     private MaterialButton btnDeselectAll;
+    private MaterialButton btnToday;
+    private MaterialButton btnWeek;
     private MaterialButton btnSort;
     private MaterialButton btnFilterUploaded;
     private RecyclerView recyclerViewPhotos;
@@ -147,26 +150,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
      * 设置沉浸式状态栏
      */
     private void setupImmersiveStatusBar() {
-        // 启用edge-to-edge显示
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11及以上，使用浅色图标（配合白色/浅色背景）
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.setSystemBarsAppearance(
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                );
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // Android 6.0到10，使用浅色图标
-            getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-            );
-        }
+        ThemeBars.apply(this);
     }
 
     /**
@@ -180,6 +164,8 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         btnViewMode = findViewById(R.id.btnViewMode);
         btnSelectAll = findViewById(R.id.btnSelectAll);
         btnDeselectAll = findViewById(R.id.btnDeselectAll);
+        btnToday = findViewById(R.id.btnToday);
+        btnWeek = findViewById(R.id.btnWeek);
         btnSort = findViewById(R.id.btnSort);
         btnFilterUploaded = findViewById(R.id.btnFilterUploaded);
         recyclerViewPhotos = findViewById(R.id.recyclerViewPhotos);
@@ -243,6 +229,9 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                 // updateSelectionCount 会在 photoAdapter.deselectAll() 中通过回调自动触发
             }
         });
+
+        btnToday.setOnClickListener(v -> selectRecent(1));
+        btnWeek.setOnClickListener(v -> selectRecent(7));
 
         // 排序
         btnSort.setOnClickListener(v -> {
@@ -567,6 +556,30 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         sortPhotoList(next);
         photoList = next;
         photoAdapter.updateData(photoList);
+    }
+
+    private void selectRecent(int days) {
+        if (allPhotoList == null || allPhotoList.isEmpty()) {
+            Toast.makeText(this, R.string.no_photos, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        currentAlbum = null;
+        if (isAlbumView) {
+            switchToPhotoView();
+        }
+        applyPhotoList(allPhotoList);
+        long cutoff = System.currentTimeMillis() / 1000L - (long) days * 86400L;
+        int n = 0;
+        for (PhotoInfo p : photoList) {
+            boolean on = p.getMtime() >= cutoff;
+            p.setSelected(on);
+            if (on) n++;
+        }
+        photoAdapter.notifyDataSetChanged();
+        updateSelectionCount(n);
+        if (n == 0) {
+            Toast.makeText(this, days <= 1 ? R.string.no_photos_today : R.string.no_photos_week, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void sortPhotoList(List<PhotoInfo> photos) {

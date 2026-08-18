@@ -21,7 +21,6 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 
-import com.google.android.material.chip.Chip;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputEditText;
 import android.provider.Settings;
@@ -31,6 +30,7 @@ import com.mk.androidtransfer.model.ServerInfo;
 import com.mk.androidtransfer.network.ApiService;
 import com.mk.androidtransfer.network.RetrofitClient;
 import com.mk.androidtransfer.util.DeviceNameGenerator;
+import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.widget.RadarScanView;
 
 import java.net.InetAddress;
@@ -58,6 +58,9 @@ public class MainActivity extends AppCompatActivity {
     private static final int DEFAULT_PORT = 9500;
     private static final String PREFS_NAME = "ServerCache";
     private static final String KEY_CACHED_SERVERS = "cached_servers";
+    private static final String KEY_LAST_IP = "last_ip";
+    private static final String KEY_LAST_PORT = "last_port";
+    private static final String KEY_LAST_NAME = "last_name";
     private static final long CACHE_VALIDITY_MS = 5 * 60 * 1000; // 5分钟缓存有效期
     
     // 常用的IP地址范围（优先扫描）
@@ -67,7 +70,7 @@ public class MainActivity extends AppCompatActivity {
 
     // UI组件
     private RadarScanView radarScanView;
-    private Chip chipDeviceName;
+    private TextView chipDeviceName;
     private TextView tvScanStatus;
     private com.google.android.material.button.MaterialButton btnRefresh;
     private com.google.android.material.button.MaterialButton btnManualInput;
@@ -78,7 +81,24 @@ public class MainActivity extends AppCompatActivity {
     private Handler mainHandler;
     private boolean isScanning = false;
     private boolean hasCachedServers = false;
+    private boolean didAutoJoin = false;
     private long lastScanTime = 0;
+    private static final long MAINTAIN_MS = 10 * 60 * 1000L;
+    private ServerInfo heartbeatServer;
+    private final Runnable heartbeatTask = new Runnable() {
+        @Override
+        public void run() {
+            if (heartbeatServer != null) {
+                sendHeartbeat(heartbeatServer);
+            }
+            if (!isScanning) {
+                startNetworkScan();
+            }
+            if (mainHandler != null) {
+                mainHandler.postDelayed(this, MAINTAIN_MS);
+            }
+        }
+    };
 
     private static final OkHttpClient SCAN_CLIENT = new OkHttpClient.Builder()
             .connectTimeout(180, TimeUnit.MILLISECONDS)
@@ -107,32 +127,14 @@ public class MainActivity extends AppCompatActivity {
         
         // 尝试加载缓存的服务器列表
         loadCachedServers();
+        mainHandler.postDelayed(heartbeatTask, MAINTAIN_MS);
     }
     
     /**
      * 设置沉浸式状态栏
      */
     private void setupImmersiveStatusBar() {
-        // 启用edge-to-edge显示
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11及以上
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                // Dashboard 使用浅色背景，需要深色状态栏图标
-                controller.setSystemBarsAppearance(
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                );
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // Android 6.0到10
-            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            getWindow().getDecorView().setSystemUiVisibility(flags);
-        }
+        ThemeBars.apply(this);
     }
 
     /**
@@ -150,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
         btnBack.setOnClickListener(v -> finish());
         
         // 设置历史记录按钮
-        com.google.android.material.button.MaterialButton btnHistory = findViewById(R.id.btnHistory);
+        android.widget.ImageButton btnHistory = findViewById(R.id.btnHistory);
         btnHistory.setOnClickListener(v -> openUploadHistory());
         
         // 设置雷达点击监听
@@ -180,7 +182,7 @@ public class MainActivity extends AppCompatActivity {
         // 刷新按钮
         if (btnRefresh != null) {
             btnRefresh.setOnClickListener(v -> {
-                // 清除缓存并重新扫描
+                didAutoJoin = false;
                 clearServerCache();
                 hasCachedServers = false;
                 startNetworkScan();
@@ -264,9 +266,10 @@ public class MainActivity extends AppCompatActivity {
                         // 保存到缓存
                         saveServerCache();
                         hasCachedServers = true;
-                        
-                        // 显示Snackbar通知并提供连接按钮
-                        showServerFoundSnackbar(server);
+                        if (discoveredServers.size() > 1) {
+                            showServerFoundSnackbar(server);
+                        }
+                        scheduleAutoJoin();
                     });
                 } else {
                     mainHandler.post(() ->
@@ -366,9 +369,9 @@ public class MainActivity extends AppCompatActivity {
             isScanning = false;
             if (discoveredServers.size() > 0) {
                 tvScanStatus.setText(R.string.scan_complete);
-                // 保存扫描结果到缓存
                 saveServerCache();
                 hasCachedServers = true;
+                scheduleAutoJoin();
             } else {
                 tvScanStatus.setText(R.string.no_servers_found);
             }
@@ -395,7 +398,10 @@ public class MainActivity extends AppCompatActivity {
             saveServerCache();
             hasCachedServers = true;
             updateScanStatus();
-            showServerFoundSnackbar(server);
+            if (discoveredServers.size() > 1) {
+                showServerFoundSnackbar(server);
+            }
+            scheduleAutoJoin();
         });
         Log.d(TAG, "发现服务器: " + ip);
     }
@@ -424,11 +430,8 @@ public class MainActivity extends AppCompatActivity {
 
                 while (addresses.hasMoreElements()) {
                     InetAddress address = addresses.nextElement();
-                    if (!address.isLoopbackAddress() && address instanceof java.net.Inet4Address) {
-                        String ip = address.getHostAddress();
-                        if (ip != null && ip.startsWith("192.168.")) {
-                            return ip;
-                        }
+                    if (!address.isLoopbackAddress() && address instanceof java.net.Inet4Address && address.isSiteLocalAddress()) {
+                        return address.getHostAddress();
                     }
                 }
             }
@@ -479,13 +482,10 @@ public class MainActivity extends AppCompatActivity {
             if (isFinishing() || isDestroyed()) {
                 return;
             }
-            long currentTime = System.currentTimeMillis();
-            if (hasCachedServers && (currentTime - lastScanTime) < CACHE_VALIDITY_MS) {
-                tvScanStatus.setText(R.string.verifying_servers);
-                validateCachedServers();
-            } else {
-                startNetworkScan();
+            if (didAutoJoin) {
+                return;
             }
+            beginDiscovery();
         });
     }
 
@@ -499,6 +499,10 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (mainHandler != null) {
+            mainHandler.removeCallbacks(heartbeatTask);
+            mainHandler.removeCallbacks(autoJoinTask);
+        }
         if (executorService != null) {
             executorService.shutdown();
         }
@@ -582,7 +586,10 @@ public class MainActivity extends AppCompatActivity {
      */
     private void clearServerCache() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        prefs.edit().clear().apply();
+        prefs.edit()
+                .remove(KEY_CACHED_SERVERS)
+                .remove("last_scan_time")
+                .apply();
         lastScanTime = 0;
         Log.d(TAG, "服务器缓存已清除");
     }
@@ -624,8 +631,8 @@ public class MainActivity extends AppCompatActivity {
                 
                 if (finalOnlineCount > 0) {
                     tvScanStatus.setText(R.string.verification_complete);
-                    // 更新缓存
                     saveServerCache();
+                    scheduleAutoJoin();
                 } else {
                     tvScanStatus.setText(R.string.servers_offline);
                     // 清除缓存并重新扫描
@@ -637,6 +644,101 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
     
+    private void beginDiscovery() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String lastIp = prefs.getString(KEY_LAST_IP, "");
+        int lastPort = prefs.getInt(KEY_LAST_PORT, DEFAULT_PORT);
+        if (lastIp != null && !lastIp.isEmpty() && executorService != null) {
+            tvScanStatus.setText(R.string.verifying_servers);
+            executorService.execute(() -> {
+                boolean ok = probeServer(lastIp, lastPort);
+                mainHandler.post(() -> {
+                    if (isFinishing() || isDestroyed() || didAutoJoin) {
+                        return;
+                    }
+                    if (ok) {
+                        String name = prefs.getString(KEY_LAST_NAME, lastIp);
+                        ServerInfo server = new ServerInfo(name, lastIp, lastPort);
+                        radarScanView.addServerDot(server);
+                        if (!discoveredServers.contains(server)) {
+                            discoveredServers.add(server);
+                        }
+                        didAutoJoin = true;
+                        tvScanStatus.setText(R.string.auto_connecting);
+                        registerDeviceConnection(server);
+                    } else {
+                        startCachedOrScan();
+                    }
+                });
+            });
+            return;
+        }
+        startCachedOrScan();
+    }
+
+    private void startCachedOrScan() {
+        long currentTime = System.currentTimeMillis();
+        if (hasCachedServers && (currentTime - lastScanTime) < CACHE_VALIDITY_MS) {
+            tvScanStatus.setText(R.string.verifying_servers);
+            validateCachedServers();
+        } else {
+            startNetworkScan();
+        }
+    }
+
+    private final Runnable autoJoinTask = this::maybeAutoJoin;
+
+    private void scheduleAutoJoin() {
+        if (didAutoJoin || mainHandler == null) {
+            return;
+        }
+        mainHandler.removeCallbacks(autoJoinTask);
+        mainHandler.postDelayed(autoJoinTask, 1600);
+    }
+
+    private void maybeAutoJoin() {
+        if (didAutoJoin || isFinishing() || isDestroyed()) {
+            return;
+        }
+        ServerInfo pick = pickServerToJoin();
+        if (pick == null) {
+            return;
+        }
+        didAutoJoin = true;
+        tvScanStatus.setText(R.string.auto_connecting);
+        registerDeviceConnection(pick);
+    }
+
+    private ServerInfo pickServerToJoin() {
+        if (discoveredServers.isEmpty()) {
+            return null;
+        }
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String lastIp = prefs.getString(KEY_LAST_IP, "");
+        if (discoveredServers.size() == 1) {
+            return discoveredServers.get(0);
+        }
+        if (lastIp != null && !lastIp.isEmpty()) {
+            for (ServerInfo server : discoveredServers) {
+                if (lastIp.equals(server.getIp())) {
+                    return server;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void rememberServer(ServerInfo server) {
+        if (server == null) {
+            return;
+        }
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_LAST_IP, server.getIp())
+                .putInt(KEY_LAST_PORT, server.getPort())
+                .putString(KEY_LAST_NAME, server.getName())
+                .apply();
+    }
+
     /**
      * 注册设备连接
      */
@@ -664,6 +766,9 @@ public class MainActivity extends AppCompatActivity {
                     Boolean success = (Boolean) result.get("success");
                     if (success != null && success) {
                         Log.d(TAG, "设备连接成功");
+                        heartbeatServer = server;
+                        mainHandler.removeCallbacks(heartbeatTask);
+                        mainHandler.postDelayed(heartbeatTask, MAINTAIN_MS);
                         Toast.makeText(MainActivity.this, R.string.connected_to_server, Toast.LENGTH_SHORT).show();
                     }
                 } else {
@@ -682,11 +787,36 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
+
+    private void sendHeartbeat(ServerInfo server) {
+        try {
+            String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+            String deviceName = DeviceNameGenerator.getOrGenerateDeviceName(this);
+            Map<String, String> request = new HashMap<>();
+            request.put("device_id", deviceId);
+            request.put("device_name", deviceName);
+            RetrofitClient.getInstance(server.getServerUrl()).getApiService()
+                    .heartbeat(request)
+                    .enqueue(new Callback<Map<String, Object>>() {
+                        @Override
+                        public void onResponse(Call<Map<String, Object>> call, Response<Map<String, Object>> response) {
+                            Log.d(TAG, "heartbeat " + response.code());
+                        }
+                        @Override
+                        public void onFailure(Call<Map<String, Object>> call, Throwable t) {
+                            Log.w(TAG, "heartbeat failed", t);
+                        }
+                    });
+        } catch (Exception e) {
+            Log.w(TAG, "heartbeat", e);
+        }
+    }
     
     /**
      * 跳转到照片选择页面
      */
     private void navigateToPhotoSelection(ServerInfo server) {
+        rememberServer(server);
         Intent intent = new Intent(MainActivity.this, PhotoSelectionActivity.class);
         intent.putExtra("server_url", server.getServerUrl());
         intent.putExtra("server_name", server.getName());

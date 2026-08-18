@@ -9,7 +9,7 @@
     <!-- 左侧手机 -->
     <path
         android:strokeWidth="1.5"
-        android:strokeColor="#4C6FFF"
+        android:strokeColor="#4C8DFF"
         android:fillColor="@android:color/transparent"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
@@ -37,7 +37,7 @@
     <!-- 传输箭头 - 向右 -->
     <path
         android:strokeWidth="1.8"
-        android:strokeColor="#4C6FFF"
+        android:strokeColor="#4C8DFF"
         android:fillColor="@android:color/transparent"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"

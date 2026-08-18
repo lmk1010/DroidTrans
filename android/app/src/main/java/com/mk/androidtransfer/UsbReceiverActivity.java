@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
 import com.mk.androidtransfer.usb.UsbConnectionManager;
+import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.usb.UsbTransferProtocol;
 
 import java.io.File;
@@ -101,22 +102,7 @@ public class UsbReceiverActivity extends AppCompatActivity {
      * 设置沉浸式状态栏
      */
     private void setupImmersiveStatusBar() {
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.setSystemBarsAppearance(
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                );
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            getWindow().getDecorView().setSystemUiVisibility(flags);
-        }
+        ThemeBars.apply(this);
     }
     
     /**

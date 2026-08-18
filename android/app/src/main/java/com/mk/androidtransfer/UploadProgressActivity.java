@@ -24,9 +24,9 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mk.androidtransfer.adapter.UploadFileAdapter;
+import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.database.UploadRecordDao;
 import com.mk.androidtransfer.model.PhotoInfo;
 import com.mk.androidtransfer.model.UploadFileItem;
@@ -159,25 +159,7 @@ public class UploadProgressActivity extends AppCompatActivity {
     }
 
     private void setupImmersiveStatusBar() {
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.setSystemBarsAppearance(
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                );
-            }
-        } else {
-            getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-            );
-        }
-        
-        getWindow().setStatusBarColor(ContextCompat.getColor(this, android.R.color.transparent));
+        ThemeBars.apply(this);
     }
 
     private void initViews() {

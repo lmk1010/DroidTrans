@@ -6,7 +6,6 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.graphics.Color;
 import android.hardware.usb.UsbManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -24,9 +23,8 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 
-import com.google.android.material.button.MaterialButton;
-import com.google.android.material.card.MaterialCardView;
 import com.mk.androidtransfer.view.UsbDebugAnimationView;
+import com.mk.androidtransfer.util.ThemeBars;
 
 /**
  * USB直连引导页面
@@ -37,10 +35,10 @@ public class UsbGuideActivity extends AppCompatActivity {
     private UsbDebugAnimationView animationView;
     private TextView tvDeviceModel;
     private TextView tvDeviceBrand;
-    private MaterialButton tvDebugStatus;
-    private MaterialButton btnRefreshStatus;
-    private MaterialCardView cardGenericSteps;
-    private MaterialCardView cardBrandSpecific;
+    private TextView tvDebugStatus;
+    private View btnRefreshStatus;
+    private View cardGenericSteps;
+    private View cardBrandSpecific;
     
     private String deviceBrand;
     private String deviceModel;
@@ -68,22 +66,7 @@ public class UsbGuideActivity extends AppCompatActivity {
     }
 
     private void setupImmersiveStatusBar() {
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.setSystemBarsAppearance(
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                );
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            getWindow().getDecorView().setSystemUiVisibility(flags);
-        }
+        ThemeBars.apply(this);
     }
 
     private void initViews() {
@@ -205,25 +188,17 @@ public class UsbGuideActivity extends AppCompatActivity {
         }
         
         if (isUsbDebuggingEnabled && isUsbConnected) {
-            // USB调试已开启且USB线已连接 - 显示已连接
             tvDebugStatus.setText(R.string.usb_status_enabled);
-            tvDebugStatus.setTextColor(Color.parseColor("#10B981"));
-            tvDebugStatus.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#ECFDF5")));
+            tvDebugStatus.setTextColor(getColor(R.color.success));
         } else if (isUsbDebuggingEnabled && !isUsbConnected) {
-            // USB调试已开启但USB线未连接 - 显示等待连接
             tvDebugStatus.setText("等待连接");
-            tvDebugStatus.setTextColor(Color.parseColor("#3B82F6"));
-            tvDebugStatus.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#DBEAFE")));
+            tvDebugStatus.setTextColor(getColor(R.color.primary));
         } else if (isDeveloperModeEnabled) {
-            // 仅开启开发者模式
             tvDebugStatus.setText(R.string.usb_status_developer_only);
-            tvDebugStatus.setTextColor(Color.parseColor("#F59E0B"));
-            tvDebugStatus.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#FEF3C7")));
+            tvDebugStatus.setTextColor(getColor(R.color.warning));
         } else {
-            // 完全未开启
             tvDebugStatus.setText(R.string.usb_status_disabled);
-            tvDebugStatus.setTextColor(Color.parseColor("#EF4444"));
-            tvDebugStatus.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#FEF2F2")));
+            tvDebugStatus.setTextColor(getColor(R.color.error));
         }
     }
 

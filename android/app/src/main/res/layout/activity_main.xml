@@ -4,7 +4,6 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
     android:orientation="vertical"
     android:background="@color/background"
     tools:context=".MainActivity">
@@ -15,9 +14,9 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="8dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="8dp"
+        android:paddingStart="@dimen/page_gutter"
+        android:paddingEnd="@dimen/page_gutter"
+        android:paddingTop="@dimen/page_gutter_top"
         android:paddingBottom="4dp">
 
         <ImageButton
@@ -28,13 +27,6 @@
             android:src="@drawable/ic_arrow_back"
             android:tint="@color/text_high_emphasis"
             android:contentDescription="@string/back" />
-
-        <ImageView
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginStart="4dp"
-            android:src="@drawable/ic_app_logo"
-            android:contentDescription="@string/app_name" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -47,9 +39,10 @@
                 android:id="@+id/tvWifiTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:letterSpacing="-0.02"
                 android:text="@string/wifi_title"
                 android:textColor="@color/text_high_emphasis"
-                android:textSize="18sp"
+                android:textSize="30sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -78,36 +71,24 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginStart="24dp"
-        android:layout_marginEnd="24dp">
+        android:layout_marginStart="@dimen/page_gutter"
+        android:layout_marginEnd="@dimen/page_gutter">
 
         <com.mk.androidtransfer.widget.RadarScanView
             android:id="@+id/radarScanView"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
-
-        <ImageView
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_smartphone"
-            android:tint="@color/radar_blue_primary"
-            android:contentDescription="@string/this_device" />
     </FrameLayout>
 
-    <com.google.android.material.chip.Chip
+    <TextView
         android:id="@+id/chipDeviceName"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="8dp"
-        android:textSize="13sp"
         android:textColor="@color/text_high_emphasis"
-        app:chipBackgroundColor="@color/radar_chip_bg"
-        app:chipMinHeight="32dp"
-        app:chipStrokeWidth="0dp"
-        app:chipIcon="@drawable/ic_smartphone"
-        app:chipIconTint="@color/radar_blue_primary"
+        android:textSize="15sp"
+        android:textStyle="bold"
         tools:text="优雅的天鹅-AB12" />
 
     <TextView

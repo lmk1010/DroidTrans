@@ -1,16 +1,17 @@
 package com.mk.androidtransfer;
 
 import android.content.Intent;
-import android.os.Build;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.View;
-import android.view.WindowInsetsController;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.view.WindowCompat;
 
+import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.view.DataTransferAnimationView;
 
 /**
@@ -22,6 +23,8 @@ public class DashboardActivity extends AppCompatActivity {
     private View cardWifi;
     private View cardPhoneToPhone;
     private DataTransferAnimationView dataTransferAnimation;
+    private TextView tvUsbStatus;
+    private TextView tvWifiStatus;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -34,23 +37,7 @@ public class DashboardActivity extends AppCompatActivity {
     }
 
     private void setupImmersiveStatusBar() {
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                // Dashboard 使用浅色背景，需要深色状态栏图标
-                controller.setSystemBarsAppearance(
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                );
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            getWindow().getDecorView().setSystemUiVisibility(flags);
-        }
+        ThemeBars.apply(this);
     }
 
     private void initViews() {
@@ -58,6 +45,8 @@ public class DashboardActivity extends AppCompatActivity {
         cardWifi = findViewById(R.id.cardWifi);
         cardPhoneToPhone = findViewById(R.id.cardPhoneToPhone);
         dataTransferAnimation = findViewById(R.id.dataTransferAnimation);
+        tvUsbStatus = findViewById(R.id.tvUsbStatus);
+        tvWifiStatus = findViewById(R.id.tvWifiStatus);
     }
 
     private void setupClickListeners() {
@@ -101,6 +90,7 @@ public class DashboardActivity extends AppCompatActivity {
         if (cardUsb != null) cardUsb.setEnabled(true);
         if (cardWifi != null) cardWifi.setEnabled(true);
         if (cardPhoneToPhone != null) cardPhoneToPhone.setEnabled(true);
+        refreshEntryStatus();
         
         // 延迟启动动画，避免与Activity转场冲突
         if (dataTransferAnimation != null) {
@@ -109,6 +99,25 @@ public class DashboardActivity extends AppCompatActivity {
                     dataTransferAnimation.startAnimation();
                 }
             }, 200);
+        }
+    }
+
+    private void refreshEntryStatus() {
+        if (tvUsbStatus != null) {
+            boolean adbOn = Settings.Global.getInt(getContentResolver(), Settings.Global.ADB_ENABLED, 0) == 1;
+            tvUsbStatus.setText(adbOn ? R.string.usb_debug_on : R.string.usb_debug_off);
+        }
+        if (tvWifiStatus != null) {
+            SharedPreferences prefs = getSharedPreferences("ServerCache", MODE_PRIVATE);
+            String last = prefs.getString("last_name", "");
+            if (last == null || last.isEmpty()) {
+                last = prefs.getString("last_ip", "");
+            }
+            if (last != null && !last.isEmpty()) {
+                tvWifiStatus.setText(getString(R.string.wifi_last, last));
+            } else {
+                tvWifiStatus.setText(R.string.wifi_will_search);
+            }
         }
     }
 

@@ -41,6 +41,7 @@ import androidx.core.view.WindowCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.mk.androidtransfer.usb.UsbCapabilityDetector;
+import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.usb.UsbRndisManager;
 import com.mk.androidtransfer.usb.UsbRndisNetworkManager;
 import com.mk.androidtransfer.usb.UsbRndisTransferManager;
@@ -516,22 +517,7 @@ public class UsbP2PActivity extends AppCompatActivity {
      * 设置沉浸式状态栏
      */
     private void setupImmersiveStatusBar() {
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.setSystemBarsAppearance(
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                );
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            getWindow().getDecorView().setSystemUiVisibility(flags);
-        }
+        ThemeBars.apply(this);
     }
 
     /**

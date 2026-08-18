@@ -8,6 +8,7 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.SweepGradient;
+import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -29,7 +30,8 @@ public class RadarScanView extends View {
     private Paint radarPaint;
     private Paint circlePaint;
     private Paint gridLinePaint;
-    private Paint serverDotPaint;
+    private Paint computerPaint;
+    private Paint computerFillPaint;
     private Paint serverPulsePaint;
     private Paint serverLabelPaint;
     private Paint serverLabelBgPaint;
@@ -122,23 +124,44 @@ public class RadarScanView extends View {
         gridLinePaint.setColor(COLOR_CIRCLE);
         gridLinePaint.setAlpha(100);
 
-        serverDotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        serverDotPaint.setStyle(Paint.Style.FILL);
-        serverDotPaint.setColor(COLOR_SERVER_DOT);
-
         serverPulsePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        serverPulsePaint.setStyle(Paint.Style.FILL);
+        serverPulsePaint.setStyle(Paint.Style.STROKE);
+        serverPulsePaint.setStrokeWidth(2.4f);
         serverPulsePaint.setColor(COLOR_SERVER_PULSE);
+
+        computerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        computerPaint.setStyle(Paint.Style.STROKE);
+        computerPaint.setStrokeWidth(2.6f);
+        computerPaint.setStrokeJoin(Paint.Join.ROUND);
+        computerPaint.setStrokeCap(Paint.Cap.ROUND);
+        computerPaint.setColor(COLOR_SERVER_DOT);
+
+        computerFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        computerFillPaint.setStyle(Paint.Style.FILL);
+        computerFillPaint.setColor(COLOR_SERVER_DOT);
 
         serverLabelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         serverLabelPaint.setTextSize(40f);
-        serverLabelPaint.setColor(Color.WHITE);
+        serverLabelPaint.setColor(context.getColor(R.color.text_high_emphasis));
         serverLabelPaint.setTextAlign(Paint.Align.CENTER);
         serverLabelPaint.setFakeBoldText(true);
+        serverLabelPaint.setShadowLayer(8f, 0, 2f, Color.argb(160, 0, 0, 0));
 
         serverLabelBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         serverLabelBgPaint.setStyle(Paint.Style.FILL);
-        serverLabelBgPaint.setColor(COLOR_SERVER_DOT);
+        serverLabelBgPaint.setColor(Color.TRANSPARENT);
+    }
+
+    private void drawComputer(Canvas canvas, float x, float y) {
+        float w = 22f;
+        float h = 14f;
+        labelRect.set(x - w / 2f, y - h / 2f - 3f, x + w / 2f, y + h / 2f - 3f);
+        computerFillPaint.setAlpha(36);
+        canvas.drawRoundRect(labelRect, 3f, 3f, computerFillPaint);
+        computerPaint.setAlpha(230);
+        canvas.drawRoundRect(labelRect, 3f, 3f, computerPaint);
+        canvas.drawLine(x, y + h / 2f - 1f, x, y + h / 2f + 6f, computerPaint);
+        canvas.drawLine(x - 11f, y + h / 2f + 6f, x + 11f, y + h / 2f + 6f, computerPaint);
     }
 
     @Override
@@ -185,6 +208,8 @@ public class RadarScanView extends View {
         radarPaint.setAlpha((int) (90 + glowAlpha * 80));
         canvas.drawCircle(centerX, centerY, radius, radarPaint);
         canvas.restore();
+
+        drawComputer(canvas, centerX, centerY);
     }
 
     private void drawServerDots(Canvas canvas) {
@@ -202,22 +227,17 @@ public class RadarScanView extends View {
                 dot.labelScale = Math.min(1.0f, dot.labelScale + 0.08f);
             }
 
-            float pulseAlpha = 1.0f - (pulseRadius / 30f);
-            if (pulseAlpha > 0) {
-                serverPulsePaint.setColor(Color.argb(
-                        (int) (pulseAlpha * 70),
-                        Color.red(COLOR_SERVER_DOT),
-                        Color.green(COLOR_SERVER_DOT),
-                        Color.blue(COLOR_SERVER_DOT)
-                ));
-                canvas.drawCircle(x, y, (10 + pulseRadius) * dot.scale, serverPulsePaint);
-            }
+            float pulse = (float) ((Math.sin(SystemClock.elapsedRealtime() / 420.0 + dot.angle) + 1) * 0.5);
+            float ring = 18 + pulse * 16;
+            serverPulsePaint.setAlpha((int) ((1f - pulse) * 90 + 30));
+            canvas.drawCircle(x, y, ring * dot.scale, serverPulsePaint);
+            serverPulsePaint.setAlpha((int) ((1f - pulse) * 50));
+            canvas.drawCircle(x, y, (ring + 10) * dot.scale, serverPulsePaint);
 
-            serverDotPaint.setColor(COLOR_SERVER_DOT);
-            canvas.drawCircle(x, y, 10 * dot.scale, serverDotPaint);
-            serverDotPaint.setColor(Color.WHITE);
-            canvas.drawCircle(x, y, 5 * dot.scale, serverDotPaint);
-            serverDotPaint.setColor(COLOR_SERVER_DOT);
+            canvas.save();
+            canvas.scale(dot.scale, dot.scale, x, y);
+            drawComputer(canvas, x, y);
+            canvas.restore();
 
             if (dot.scale >= 0.8f && dot.labelScale > 0f) {
                 drawServerLabel(canvas, dot, x, y);
@@ -257,17 +277,10 @@ public class RadarScanView extends View {
         );
 
         int alphaValue = (int) (dot.labelScale * 255);
-        serverLabelBgPaint.setAlpha(alphaValue);
         serverLabelPaint.setAlpha(alphaValue);
-        canvas.drawRoundRect(labelRect, 32f, 32f, serverLabelBgPaint);
-
-        if (easedScale > 0.5f) {
-            Paint.FontMetrics fm = serverLabelPaint.getFontMetrics();
-            float textY = labelY - (fm.ascent + fm.descent) / 2;
-            canvas.drawText(displayName, labelX, textY, serverLabelPaint);
-        }
-
-        serverLabelBgPaint.setAlpha(255);
+        Paint.FontMetrics fm = serverLabelPaint.getFontMetrics();
+        float textY = labelY - (fm.ascent + fm.descent) / 2;
+        canvas.drawText(displayName, labelX, textY, serverLabelPaint);
         serverLabelPaint.setAlpha(255);
     }
 
@@ -289,7 +302,7 @@ public class RadarScanView extends View {
                 float distance = (float) Math.sqrt(
                         Math.pow(touchX - dot.x, 2) + Math.pow(touchY - dot.y, 2)
                 );
-                if (distance <= 20 * dot.scale) {
+                if (distance <= 96 * Math.max(dot.scale, 0.6f)) {
                     if (onServerDotClickListener != null) {
                         onServerDotClickListener.onServerDotClick(dot);
                     }

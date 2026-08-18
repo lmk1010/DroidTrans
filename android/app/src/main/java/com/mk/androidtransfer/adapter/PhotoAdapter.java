@@ -12,7 +12,6 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
-import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.checkbox.MaterialCheckBox;
 import com.mk.androidtransfer.R;
 import com.mk.androidtransfer.model.PhotoInfo;
@@ -130,7 +129,7 @@ public class PhotoAdapter extends RecyclerView.Adapter<PhotoAdapter.PhotoViewHol
     }
 
     static class PhotoViewHolder extends RecyclerView.ViewHolder {
-        MaterialCardView cardPhoto;
+        View cardPhoto;
         ImageView ivThumbnail;
         TextView tvPhotoName;
         TextView tvPhotoSize;

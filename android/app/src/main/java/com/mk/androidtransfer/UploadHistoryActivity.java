@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.mk.androidtransfer.adapter.UploadRecordAdapter;
+import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.database.UploadRecordDao;
 import com.mk.androidtransfer.model.UploadRecord;
 
@@ -57,20 +58,7 @@ public class UploadHistoryActivity extends AppCompatActivity {
     }
     
     private void setupImmersiveStatusBar() {
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.setSystemBarsAppearance(0, 
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            );
-        }
+        ThemeBars.apply(this);
     }
     
     private void initViews() {

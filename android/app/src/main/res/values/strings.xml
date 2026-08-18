@@ -39,8 +39,8 @@
     <string name="manual_input">手动输入</string>
     <string name="radar_center">雷达中心</string>
     <string name="searching">搜索中</string>
-    <string name="wifi_title">Wi-Fi 传输</string>
-    <string name="wifi_subtitle">扫描并连接同一网络下的服务器</string>
+    <string name="wifi_title">Wi-Fi 接收</string>
+    <string name="wifi_subtitle">同一局域网里搜这台电脑，或手动填地址</string>
     <string name="scanning_servers_ellipsis">正在扫描服务器...</string>
     <string name="refresh_scan">刷新扫描</string>
     <string name="scan_complete">扫描完成</string>
@@ -73,6 +73,10 @@
     <string name="selected_count">已选 %d</string>
     <string name="select_all">全选</string>
     <string name="deselect_all">取消全选</string>
+    <string name="select_today">今天</string>
+    <string name="select_week">近7天</string>
+    <string name="no_photos_today">今天没有新照片</string>
+    <string name="no_photos_week">近 7 天没有照片</string>
     <string name="sort">排序</string>
     <string name="upload_photos">上传照片</string>
     <string name="photo_preview">照片预览</string>
@@ -145,21 +149,27 @@
     <string name="wifi_disconnected">WiFi未连接</string>
 
     <!-- Dashboard -->
+    <string name="home_title">把手机里的照片，搬到这台电脑</string>
     <string name="dashboard_title">选择连接方式</string>
-    <string name="dashboard_subtitle">支持多种安全、稳定的传输通道</string>
+    <string name="dashboard_subtitle">USB 或同一 Wi-Fi</string>
     <string name="card_action_enter">进入</string>
-    <string name="card_usb_title">USB 直连</string>
-    <string name="card_usb_subtitle">通过数据线连接电脑，速率更稳定</string>
+    <string name="card_usb_title">有线快传</string>
+    <string name="card_usb_subtitle">打开 USB 调试后，插上就能扫相册</string>
     <string name="card_usb_coming_soon">USB 直连功能即将上线</string>
-    <string name="card_wifi_title">Wi‑Fi 传输</string>
-    <string name="card_wifi_subtitle">在同一 Wi‑Fi 网络下无线传输照片</string>
+    <string name="card_wifi_title">手机直传</string>
+    <string name="card_wifi_subtitle">打开后会自己搜电脑</string>
+    <string name="usb_debug_on">USB 调试已开，插上电脑就能传</string>
+    <string name="usb_debug_off">先打开 USB 调试</string>
+    <string name="wifi_last">上次：%s</string>
+    <string name="wifi_will_search">打开后会自动搜电脑</string>
+    <string name="auto_connecting">正在连上电脑…</string>
     <string name="card_phone_title">手机互传</string>
-    <string name="card_phone_subtitle">手机与手机之间快速互传照片</string>
+    <string name="card_phone_subtitle">两台手机互相传</string>
     <string name="card_phone_coming_soon">手机互传功能正在开发中</string>
     <string name="cannot_open_page">无法打开页面: %s</string>
 
     <!-- USB Guide -->
-    <string name="usb_guide_title">USB 直连设置</string>
+    <string name="usb_guide_title">USB</string>
     <string name="usb_guide_subtitle">开启开发者模式和 USB 调试</string>
     <string name="usb_back">返回</string>
     <string name="usb_device_info">当前设备信息</string>

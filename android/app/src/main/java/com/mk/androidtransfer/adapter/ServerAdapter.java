@@ -9,7 +9,6 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.chip.Chip;
 import com.mk.androidtransfer.R;
 import com.mk.androidtransfer.model.ServerInfo;
@@ -82,7 +81,7 @@ public class ServerAdapter extends RecyclerView.Adapter<ServerAdapter.ServerView
     }
 
     class ServerViewHolder extends RecyclerView.ViewHolder {
-        private MaterialCardView cardView;
+        private View cardView;
         private ImageView ivServerIcon;
         private TextView tvServerName;
         private TextView tvServerIp;
@@ -91,7 +90,7 @@ public class ServerAdapter extends RecyclerView.Adapter<ServerAdapter.ServerView
 
         public ServerViewHolder(@NonNull View itemView) {
             super(itemView);
-            cardView = (MaterialCardView) itemView;
+            cardView = itemView;
             ivServerIcon = itemView.findViewById(R.id.ivServerIcon);
             tvServerName = itemView.findViewById(R.id.tvServerName);
             tvServerIp = itemView.findViewById(R.id.tvServerIp);

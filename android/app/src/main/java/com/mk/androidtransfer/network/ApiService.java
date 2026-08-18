@@ -27,6 +27,9 @@ public interface ApiService {
     @POST("/api/wifi/connect")
     Call<Map<String, Object>> connectDevice(@Body Map<String, String> request);
 
+    @POST("/api/wifi/heartbeat")
+    Call<Map<String, Object>> heartbeat(@Body Map<String, String> request);
+
     /**
      * 获取WiFi服务器信息
      */

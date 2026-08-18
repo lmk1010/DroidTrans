@@ -88,6 +88,8 @@ type App struct {
 	xferTotalB  int64
 	xferStart   time.Time
 	xferOut     string
+	xferDevice  string
+	xferBatch   string
 }
 
 type inboxFile struct {
@@ -469,6 +471,7 @@ func (a *App) wifiSetOut(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Lock()
 	a.wifiOut = dir
+	a.OutputDir = dir
 	a.mu.Unlock()
 	a.Fast.SetOutputDir(dir)
 	writeJSON(w, 200, map[string]any{"success": true, "output_dir": dir})
@@ -1083,7 +1086,19 @@ func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 		}
 		name := names[b.DeviceID]
 		if name == "" {
-			name = "设备 " + shortID(b.DeviceID)
+			name = b.DeviceID
+		}
+		if len(files) > 0 {
+			if p, _ := files[0]["path"].(string); p != "" {
+				dir := filepath.Dir(p)
+				for dir != "." && dir != string(filepath.Separator) {
+					if filepath.Base(dir) == b.BatchID {
+						folder = dir
+						break
+					}
+					dir = filepath.Dir(dir)
+				}
+			}
 		}
 		count := b.PhotoCount
 		if len(files) > count {
@@ -1109,6 +1124,18 @@ func (a *App) galleryBatch(w http.ResponseWriter, r *http.Request) {
 	folder := filepath.Join(a.wifiOut, id, batch)
 	a.mu.Unlock()
 	files := a.batchFiles(id, batch, folder)
+	if len(files) > 0 {
+		if p, _ := files[0]["path"].(string); p != "" {
+			dir := filepath.Dir(p)
+			for dir != "." && dir != string(filepath.Separator) {
+				if filepath.Base(dir) == batch {
+					folder = dir
+					break
+				}
+				dir = filepath.Dir(dir)
+			}
+		}
+	}
 	writeJSON(w, 200, map[string]any{
 		"success": true, "device_id": id, "batch_id": batch, "folder": folder, "photos": files,
 	})

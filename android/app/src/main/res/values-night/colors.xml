@@ -1,55 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Material Design 主题色 - 青绿色系 (暗色模式) -->
-    <color name="primary">#1DE9B6</color>
-    <color name="primary_dark">#00BFA5</color>
-    <color name="primary_light">#64FFDA</color>
-    <color name="accent">#1DE9B6</color>
-    <color name="error">#CF6679</color>
+    <color name="primary">#4C8DFF</color>
+    <color name="primary_dark">#3A72D9</color>
+    <color name="primary_light">#7AADFF</color>
+    <color name="accent">#4C8DFF</color>
+    <color name="error">#FF7A7A</color>
 
-    <!-- 背景和表面色 (暗色模式) -->
-    <color name="background">#121212</color>
-    <color name="surface">#1E1E1E</color>
+    <color name="background">#121317</color>
+    <color name="surface">#121317</color>
 
-    <!-- 文本色 (暗色模式) -->
-    <color name="text_high_emphasis">#DEFFFFFF</color>
-    <color name="text_medium_emphasis">#99FFFFFF</color>
+    <color name="text_high_emphasis">#F4F5F7</color>
+    <color name="text_medium_emphasis">#94FFFFFF</color>
     <color name="text_disabled">#61FFFFFF</color>
 
-    <!-- 基础颜色 -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="divider">#14FFFFFF</color>
 
-    <!-- 分割线 (暗色模式) -->
-    <color name="divider">#1FFFFFFF</color>
+    <color name="radar_background">#1A4C8DFF</color>
+    <color name="radar_border">#4D4C8DFF</color>
+    <color name="radar_sweep_start">#804C8DFF</color>
+    <color name="radar_sweep_end">#004C8DFF</color>
+    <color name="radar_circle">#334C8DFF</color>
 
-    <!-- 雷达相关颜色 - 青绿色系 (暗色模式) -->
-    <color name="radar_background">#1A1DE9B6</color>
-    <color name="radar_border">#4D1DE9B6</color>
-    <color name="radar_sweep_start">#801DE9B6</color>
-    <color name="radar_sweep_end">#001DE9B6</color>
-    <color name="radar_circle">#331DE9B6</color>
+    <color name="photo_stroke">#4C8DFF</color>
+    <color name="selection_overlay">#664C8DFF</color>
 
-    <!-- 照片选择相关颜色 - 青绿色系 (暗色模式) -->
-    <color name="photo_stroke">#1DE9B6</color>
-    <color name="selection_overlay">#661DE9B6</color>
+    <color name="primary_variant">#3A72D9</color>
+    <color name="success">#8EF0C0</color>
+    <color name="warning">#E6A23C</color>
+    <color name="status_bar">#121317</color>
 
-    <!-- 扩展主题色 - 青绿色系 (暗色模式) -->
-    <color name="primary_variant">#00BFA5</color>
-    <color name="success">#81C784</color>
-    
-    <!-- 状态栏颜色 (暗色模式) -->
-    <color name="status_bar">#00BFA5</color>
+    <color name="on_surface">#F4F5F7</color>
+    <color name="on_background">#F4F5F7</color>
+    <color name="surface_variant">#1C1D22</color>
+    <color name="on_surface_variant">#94FFFFFF</color>
+    <color name="outline">#00000000</color>
 
-    <!-- Material Design 3 - 表面相关 (暗色模式) -->
-    <color name="on_surface">#E6E1E5</color>
-    <color name="on_background">#E6E1E5</color>
-    <color name="surface_variant">#49454F</color>
-    <color name="on_surface_variant">#CAC4D0</color>
-    <color name="outline">#938F99</color>
+    <color name="primary_container">#1A2A4A</color>
+    <color name="on_primary_container">#DCE8FF</color>
 
-    <!-- Material Design 3 - 主色容器 (暗色模式) -->
-    <color name="primary_container">#00534A</color>
-    <color name="on_primary_container">#B2F1E8</color>
+    <color name="dashboard_accent">#4C8DFF</color>
+    <color name="dashboard_accent_soft">#1A2A4A</color>
+    <color name="dashboard_card_bg">#00000000</color>
+    <color name="dashboard_card_border">#00000000</color>
+    <color name="dashboard_animation_bg_start">#1B2340</color>
+    <color name="dashboard_animation_bg_end">#050814</color>
+
+    <color name="radar_blue_primary">#4C8DFF</color>
+    <color name="radar_blue_light">#7AADFF</color>
+    <color name="radar_blue_dark">#3A72D9</color>
+    <color name="radar_blue_background">#1A4C8DFF</color>
+    <color name="radar_blue_border">#4D4C8DFF</color>
+    <color name="radar_blue_sweep_start">#994C8DFF</color>
+    <color name="radar_blue_sweep_end">#004C8DFF</color>
+    <color name="radar_blue_circle">#334C8DFF</color>
+    <color name="radar_blue_server_dot">#4C8DFF</color>
+    <color name="radar_blue_server_pulse">#4D4C8DFF</color>
+
+    <color name="radar_glow_outer">#1A4C8DFF</color>
+    <color name="radar_glow_inner">#334C8DFF</color>
+    <color name="radar_center_glow">#804C8DFF</color>
+    <color name="radar_chip_bg">#00000000</color>
+    <color name="radar_gradient_start">#1A4C8DFF</color>
+    <color name="radar_gradient_center">#0F4C8DFF</color>
+    <color name="radar_gradient_end">#054C8DFF</color>
+    <color name="radar_stroke_outer">#404C8DFF</color>
+    <color name="radar_stroke_inner">#664C8DFF</color>
+
+    <color name="radar_button_bg">#00000000</color>
+    <color name="radar_icon_bg">#00000000</color>
+    <color name="card_border">#00000000</color>
+    <color name="progress_bg">#1A4C8DFF</color>
 </resources>
-

@@ -4,7 +4,6 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
     android:background="@color/background"
     tools:context=".PhotoSelectionActivity">
 
@@ -13,9 +12,9 @@
         android:id="@+id/titleContainer"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
-        android:layout_marginEnd="24dp"
-        android:layout_marginTop="48dp"
+        android:layout_marginStart="@dimen/page_gutter"
+        android:layout_marginEnd="@dimen/page_gutter"
+        android:layout_marginTop="@dimen/page_gutter_top"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         app:layout_constraintTop_toTopOf="parent"
@@ -43,11 +42,11 @@
                 android:id="@+id/tvPhotoTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/photo_albums"
-                android:textSize="28sp"
+                android:letterSpacing="-0.02"
+                android:textSize="22sp"
                 android:textStyle="bold"
-                android:letterSpacing="0.01"
-                android:textColor="@color/text_high_emphasis" />
+                android:textColor="@color/text_high_emphasis"
+                android:maxLines="2" />
 
             <TextView
                 android:id="@+id/tvPhotoSubtitle"
@@ -90,9 +89,10 @@
         android:id="@+id/actionButtonsScroll"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:layout_marginStart="24dp"
-        android:layout_marginEnd="24dp"
+        android:layout_marginTop="8dp"
+        android:paddingStart="@dimen/page_gutter"
+        android:paddingEnd="@dimen/page_gutter"
+        android:clipToPadding="false"
         android:scrollbars="none"
         app:layout_constraintTop_toBottomOf="@id/titleContainer"
         app:layout_constraintStart_toStartOf="parent"
@@ -104,68 +104,69 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <!-- 全选按钮 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnToday"
+                style="@style/Widget.AndroidTransfer.TextAction"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="@string/select_today"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                app:iconTint="@color/primary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWeek"
+                style="@style/Widget.AndroidTransfer.TextAction"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="@string/select_week"
+                android:textSize="13sp"
+                android:textColor="@color/primary"
+                app:iconTint="@color/primary" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSelectAll"
-                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                style="@style/Widget.AndroidTransfer.TextAction"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
                 android:text="@string/select_all"
                 android:textSize="13sp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                app:strokeColor="@color/radar_blue_primary"
-                app:iconTint="@color/radar_blue_primary"
-                app:icon="@drawable/ic_check_all"
-                app:cornerRadius="20dp" />
+                android:textColor="@color/primary"
+                app:iconTint="@color/primary"
+                app:icon="@drawable/ic_check_all" />
 
-            <!-- 取消全选按钮 -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDeselectAll"
-                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                style="@style/Widget.AndroidTransfer.TextAction"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:layout_marginStart="8dp"
                 android:text="@string/deselect_all"
                 android:textSize="13sp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                app:strokeColor="@color/radar_blue_primary"
-                app:iconTint="@color/radar_blue_primary"
-                app:icon="@drawable/ic_check_none"
-                app:cornerRadius="20dp" />
+                android:textColor="@color/primary"
+                app:iconTint="@color/primary"
+                app:icon="@drawable/ic_check_none" />
 
-            <!-- 排序按钮 -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSort"
-                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                style="@style/Widget.AndroidTransfer.TextAction"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:layout_marginStart="8dp"
                 android:text="@string/sort"
                 android:textSize="13sp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                app:strokeColor="@color/radar_blue_primary"
-                app:iconTint="@color/radar_blue_primary"
-                app:icon="@drawable/ic_sort"
-                app:cornerRadius="20dp" />
+                android:textColor="@color/primary"
+                app:iconTint="@color/primary"
+                app:icon="@drawable/ic_sort" />
 
-            <!-- 排除已上传按钮 -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnFilterUploaded"
-                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                style="@style/Widget.AndroidTransfer.TextAction"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:layout_marginStart="8dp"
                 android:text="@string/exclude_uploaded"
                 android:textSize="13sp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                app:strokeColor="@color/radar_blue_primary"
-                app:iconTint="@color/radar_blue_primary"
-                app:icon="@drawable/ic_filter"
-                app:cornerRadius="20dp" />
+                android:textColor="@color/primary"
+                app:iconTint="@color/primary"
+                app:icon="@drawable/ic_filter" />
 
         </LinearLayout>
 
@@ -178,8 +179,8 @@
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
         android:clipToPadding="false"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
+        android:paddingStart="@dimen/page_gutter"
+        android:paddingEnd="@dimen/page_gutter"
         android:paddingTop="8dp"
         android:paddingBottom="8dp"
         android:visibility="visible"
@@ -298,9 +299,9 @@
         android:textSize="15sp"
         app:icon="@drawable/ic_upload"
         app:iconTint="@color/white"
-        app:backgroundTint="@color/radar_blue_primary"
+        app:backgroundTint="@color/primary"
         app:cornerRadius="28dp"
-        app:elevation="8dp"
+        app:elevation="0dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

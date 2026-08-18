@@ -1,7 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.AndroidTransfer" parent="Theme.Material3.Light.NoActionBar">
-        <!-- Material Design 主题色 -->
+    <style name="Base.Theme.AndroidTransfer" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryVariant">@color/primary_dark</item>
         <item name="colorOnPrimary">@color/white</item>
@@ -13,38 +12,33 @@
         <item name="colorOnSurface">@color/text_high_emphasis</item>
         <item name="android:colorBackground">@color/background</item>
         <item name="colorOnBackground">@color/text_high_emphasis</item>
-        
-        <!-- 状态栏和导航栏 - 透明以实现沉浸式 -->
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:navigationBarColor">@color/surface</item>
-        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
-        
-        <!-- 完全禁用窗口动画，避免转场冲突 -->
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowAnimationStyle">@null</item>
-        <item name="android:windowIsTranslucent">false</item>
-        <item name="android:windowDisablePreview">false</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+        <item name="materialCardViewStyle">@style/Widget.AndroidTransfer.FlatCard</item>
     </style>
 
     <style name="Theme.AndroidTransfer" parent="Base.Theme.AndroidTransfer" />
-    
-    <!-- 窗口动画样式 - 简单淡入淡出 -->
-    <style name="WindowAnimationTransition">
-        <item name="android:activityOpenEnterAnimation">@android:anim/fade_in</item>
-        <item name="android:activityOpenExitAnimation">@android:anim/fade_out</item>
-        <item name="android:activityCloseEnterAnimation">@android:anim/fade_in</item>
-        <item name="android:activityCloseExitAnimation">@android:anim/fade_out</item>
+
+    <style name="Widget.AndroidTransfer.FlatCard" parent="Widget.Material3.CardView.Filled">
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="cardBackgroundColor">@android:color/transparent</item>
+        <item name="cardCornerRadius">0dp</item>
     </style>
 
-    <!-- 仪表盘功能卡片样式：简约科技风，无边框 -->
-    <style name="Widget.AndroidTransfer.FeatureCard" parent="Widget.MaterialComponents.CardView">
-        <item name="cardUseCompatPadding">true</item>
-        <item name="cardCornerRadius">18dp</item>
-        <item name="cardElevation">2dp</item>
-        <item name="strokeWidth">0dp</item>
-        <item name="cardBackgroundColor">@color/white</item>
-        <item name="android:foreground">?attr/selectableItemBackgroundBorderless</item>
-        <item name="android:clickable">true</item>
-        <item name="android:focusable">true</item>
+    <style name="Widget.AndroidTransfer.TextAction" parent="Widget.Material3.Button.TextButton.Icon">
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:paddingStart">0dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="iconPadding">6dp</item>
+        <item name="iconSize">18dp</item>
     </style>
 </resources>

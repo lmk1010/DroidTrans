@@ -436,10 +436,6 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	a.xferMu.Lock()
-	a.xferTotal = len(photos)
-	a.xferOut = output
-	a.xferMu.Unlock()
 	if len(photos) == 0 {
 		a.xferMu.Lock()
 		a.xferRunning = false
@@ -447,35 +443,54 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"success": false, "error": "没有要传输的文件"})
 		return
 	}
-	go a.runTransfer(photos, output)
-	writeJSON(w, 200, map[string]any{"success": true, "total": len(photos)})
+	deviceID := a.ADB.Serial()
+	if deviceID == "" {
+		deviceID = "usb"
+	}
+	deviceName := strings.TrimSpace(a.model)
+	if deviceName == "" {
+		deviceName = strings.TrimSpace(a.ADB.Prop("ro.product.model"))
+	}
+	if deviceName == "" {
+		deviceName = deviceID
+	}
+	batchID := time.Now().Format("20060102_150405")
+	dest := filepath.Join(output, deviceID, batchID)
+	_ = os.MkdirAll(dest, 0o755)
+	a.mu.Lock()
+	a.wifiOut = output
+	a.OutputDir = output
+	a.mu.Unlock()
+	a.Fast.SetOutputDir(output)
+	a.Store.UpsertDevice(deviceID, deviceName)
+	a.xferMu.Lock()
+	a.xferTotal = len(photos)
+	a.xferOut = dest
+	a.xferDevice = deviceID
+	a.xferBatch = batchID
+	a.xferMu.Unlock()
+	_ = a.Store.SaveBatch(store.Batch{
+		DeviceID: deviceID, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+		PhotoCount: len(photos), Status: "uploading",
+	})
+	go a.runTransfer(photos, dest, deviceID, batchID)
+	writeJSON(w, 200, map[string]any{"success": true, "total": len(photos), "device_id": deviceID, "batch_id": batchID})
 }
 
-func (a *App) runTransfer(photos []string, output string) {
+func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 	defer func() {
 		a.xferMu.Lock()
 		a.xferRunning = false
 		a.xferFile = "完成"
 		elapsed := int(time.Since(a.xferStart).Seconds())
-		out := a.xferOut
 		done := a.xferDone
-		fail := len(a.xferFailed)
+		bytes := a.xferBytes
 		a.xferMu.Unlock()
-		batchID := time.Now().Format("20060102_150405")
-		device := a.ADB.Serial()
-		if device == "" {
-			device = "usb"
-		}
-		label := strings.TrimSpace(a.ADB.Prop("ro.product.model"))
-		if label == "" {
-			label = device
-		}
 		_ = a.Store.SaveBatch(store.Batch{
-			DeviceID: label, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
-			PhotoCount: done, Status: "completed", DurationSec: elapsed,
+			DeviceID: deviceID, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+			PhotoCount: done, TotalSize: bytes, TotalSizeMB: float64(bytes) / 1024 / 1024,
+			Status: "completed", DurationSec: elapsed,
 		})
-		_ = out
-		_ = fail
 	}()
 	workers := 8
 	jobs := make(chan string)
@@ -499,11 +514,13 @@ func (a *App) runTransfer(photos []string, output string) {
 					break
 				}
 				local := remoteToLocal(remote, output)
+				_ = os.MkdirAll(filepath.Dir(local), 0o755)
 				if st, err := os.Stat(local); err == nil && st.Size() > 0 {
 					a.xferMu.Lock()
 					a.xferDone++
 					a.xferFile = path.Base(remote)
 					a.xferBytes += st.Size()
+					a.Store.AddPhoto(deviceID, batchID, path.Base(local), local, st.Size())
 					a.xferMu.Unlock()
 					continue
 				}
@@ -515,6 +532,7 @@ func (a *App) runTransfer(photos []string, output string) {
 					a.xferFailed = append(a.xferFailed, map[string]any{"path": remote, "error": err.Error()})
 				} else if st, e := os.Stat(local); e == nil {
 					a.xferBytes += st.Size()
+					a.Store.AddPhoto(deviceID, batchID, path.Base(local), local, st.Size())
 				}
 				a.xferMu.Unlock()
 			}
@@ -555,6 +573,7 @@ func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
 		"completed_count": done, "failed": a.xferFailed, "current_file": a.xferFile,
 		"bytes_done": a.xferBytes, "bytes_total": a.xferTotalB, "speed_mbps": speed,
 		"elapsed_sec": elapsed, "percent_completed": pct, "output_dir": a.xferOut,
+		"device_id": a.xferDevice, "batch_id": a.xferBatch,
 	})
 }
 

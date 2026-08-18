@@ -69,6 +69,10 @@
     <string name="selected_count">%d selected</string>
     <string name="select_all">Select all</string>
     <string name="deselect_all">Deselect all</string>
+    <string name="select_today">Today</string>
+    <string name="select_week">Last 7 days</string>
+    <string name="no_photos_today">No new photos today</string>
+    <string name="no_photos_week">No photos in the last 7 days</string>
     <string name="sort">Sort</string>
     <string name="upload_photos">Upload photos</string>
     <string name="photo_preview">Photo preview</string>
@@ -138,20 +142,26 @@
     <string name="wifi_connected">Wi-Fi connected</string>
     <string name="wifi_disconnected">Wi-Fi disconnected</string>
 
+    <string name="home_title">Move photos from your phone to this computer</string>
     <string name="dashboard_title">Choose a connection</string>
-    <string name="dashboard_subtitle">Multiple secure, stable transfer channels</string>
+    <string name="dashboard_subtitle">USB or the same Wi-Fi</string>
     <string name="card_action_enter">Open</string>
     <string name="card_usb_title">USB Direct</string>
-    <string name="card_usb_subtitle">Connect with a cable for a more stable speed</string>
+    <string name="card_usb_subtitle">Turn on USB debugging, then plug in</string>
     <string name="card_usb_coming_soon">USB Direct is coming soon</string>
     <string name="card_wifi_title">Wi‑Fi Transfer</string>
-    <string name="card_wifi_subtitle">Transfer photos over the same Wi‑Fi network</string>
+    <string name="card_wifi_subtitle">The phone finds this computer on its own</string>
+    <string name="usb_debug_on">USB debugging is on. Plug in to transfer.</string>
+    <string name="usb_debug_off">Turn on USB debugging first</string>
+    <string name="wifi_last">Last: %s</string>
+    <string name="wifi_will_search">Opens and finds the computer</string>
+    <string name="auto_connecting">Connecting to the computer…</string>
     <string name="card_phone_title">Phone to Phone</string>
     <string name="card_phone_subtitle">Transfer photos between phones quickly</string>
     <string name="card_phone_coming_soon">Phone to phone is in development</string>
     <string name="cannot_open_page">Cannot open page: %s</string>
 
-    <string name="usb_guide_title">USB Direct setup</string>
+    <string name="usb_guide_title">USB</string>
     <string name="usb_guide_subtitle">Enable Developer options and USB debugging</string>
     <string name="usb_back">Back</string>
     <string name="usb_device_info">This device</string>

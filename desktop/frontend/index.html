@@ -47,7 +47,7 @@
       </nav>
       <div class="rail-foot">
         <button type="button" id="langBtn" class="lang-btn">EN</button>
-        <p id="adbHint" class="hint" title="">ADB</p>
+        <p id="adbHint" class="hint" title=""></p>
       </div>
     </aside>
 
@@ -55,8 +55,7 @@
       <section id="view-home" class="view active">
         <header class="page-head">
           <h1 data-i18n="homeTitle">把手机里的照片，搬到这台电脑</h1>
-          <p data-i18n="homeSub">一根线，或同一局域网。安静、直接、本地完成。</p>
-          <p id="homeStatus" class="home-status">USB · LAN · go</p>
+          <p id="homeNext"></p>
         </header>
         <div class="tiles">
           <button type="button" class="tile" data-go="usb">
@@ -64,7 +63,7 @@
             <span class="tile-copy">
               <em>USB</em>
               <h2 data-i18n="usbTile">有线快传</h2>
-              <p data-i18n="usbTileSub">开启 USB 调试后扫描相册，并发 pull 到本地。</p>
+              <p id="homeUsb">未连接</p>
             </span>
           </button>
           <button type="button" class="tile" data-go="wifi">
@@ -72,7 +71,7 @@
             <span class="tile-copy">
               <em>Wi-Fi</em>
               <h2 data-i18n="wifiTile">手机直传</h2>
-              <p data-i18n="wifiTileSub">App 搜到这台电脑，文件走 TCP / FTP / HTTP。</p>
+              <p id="homeWifi">—</p>
             </span>
           </button>
         </div>
@@ -85,18 +84,23 @@
             <p id="usbDevice" data-i18n="waiting">等待设备</p>
           </div>
           <div class="actions">
-            <button type="button" id="scanBtn" class="primary" data-i18n="scan">扫描相册</button>
+            <button type="button" id="scanBtn" class="primary" disabled data-i18n="scan">扫描相册</button>
+            <button type="button" id="selAll" class="ghost hidden" data-i18n="selAll">全选</button>
             <button type="button" id="xferBtn" class="primary" disabled data-i18n="xfer">开始传输</button>
           </div>
         </header>
         <div class="path-row glass">
           <label data-i18n="save">保存到</label>
           <input id="usbOut" type="text" spellcheck="false" />
+          <button type="button" id="openUsbOut" class="ghost" data-i18n="open">打开文件夹</button>
         </div>
+        <div id="usbEmpty" class="empty"></div>
         <div id="albumGrid" class="albums"></div>
+        <p id="photoBack" class="jump hidden" data-i18n="backAlbums">← 返回相册</p>
         <div id="photoGrid" class="photos hidden"></div>
         <footer class="xfer-bar hidden" id="xferBar">
           <span id="xferText">准备传输</span>
+          <button type="button" id="xferSee" class="ghost hidden" data-i18n="seeGallery">查看</button>
           <div class="bar"><i id="xferFill"></i></div>
         </footer>
       </section>
@@ -104,15 +108,14 @@
       <section id="view-wifi" class="view">
         <header class="page-head">
           <h1 data-i18n="wifiTitle">Wi-Fi 接收</h1>
-          <p data-i18n="wifiSub">手机 App 填这个地址，或在同一局域网里搜索。</p>
+          <p data-i18n="wifiSub">手机打开卓传，同一 Wi-Fi 会自己连上。也可以扫码。</p>
         </header>
         <div class="listen">
-          <span class="glyph">
-            <svg viewBox="3.5 8 17 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.4a9 9 0 0 1 14 0"/><path d="M8.2 15.5a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.6" r="1.5" fill="currentColor" stroke="none"/></svg>
-          </span>
+          <div id="wifiQR" class="qr" aria-hidden="true"></div>
           <div class="listen-copy">
             <span class="kicker" data-i18n="localAddr">本机地址</span>
             <strong id="wifiURL" title="">—</strong>
+            <em id="wifiHint" data-i18n="wifiHint">手机打开卓传，会自己搜到。也可以扫左边的码。</em>
           </div>
           <button type="button" id="copyUrl" class="icon-btn" data-i18n-title="copy" title="复制" aria-label="复制">
             <svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
@@ -126,8 +129,7 @@
         </div>
         <h3 class="sub" data-i18n="online">在线设备</h3>
         <div id="onlineList" class="list"></div>
-        <h3 class="sub" data-i18n="batches">最近图库</h3>
-        <div id="batchList" class="gallery"></div>
+        <p id="wifiRecent" class="jump hidden"></p>
       </section>
 
       <section id="view-history" class="view">
@@ -142,13 +144,13 @@
 
   <aside id="inbox" class="inbox hidden" aria-live="polite">
     <span class="inbox-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v10"/><path d="M8 9l4 4 4-4"/><path d="M5 18h14"/></svg>
+      <svg viewBox="5 2 14 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8.5 10.5 12 14l3.5-3.5"/><path d="M6 19h12"/></svg>
     </span>
     <div class="inbox-copy">
       <strong id="inboxTitle">正在接收</strong>
       <span id="inboxText"></span>
     </div>
-    <button type="button" id="inboxOpen" class="ghost" data-i18n="open">打开</button>
+    <button type="button" id="inboxOpen" class="ghost" data-i18n="seeGallery">查看</button>
     <button type="button" id="inboxDismiss" class="icon-btn" title="关闭" aria-label="关闭">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>
     </button>
@@ -162,10 +164,13 @@
       <button type="button" id="viewerOpen" class="ghost" data-i18n="open">打开文件夹</button>
     </div>
     <div id="viewerGrid" class="viewer-grid"></div>
-    <div id="lightbox" class="lightbox hidden">
-      <img id="lightboxImg" alt="" />
-    </div>
   </div>
+  <div id="lightbox" class="lightbox hidden">
+    <button type="button" id="lbPrev" class="lightbox-nav prev" aria-label="上一张">‹</button>
+    <img id="lightboxImg" alt="" />
+    <button type="button" id="lbNext" class="lightbox-nav next" aria-label="下一张">›</button>
+  </div>
+  <script src="/qrcode.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@
     <!-- 最外层波纹 - 加粗加亮 -->
     <path
         android:strokeWidth="2.5"
-        android:strokeColor="#4C6FFF"
+        android:strokeColor="#4C8DFF"
         android:strokeLineCap="round"
         android:fillColor="@android:color/transparent"
         android:pathData="M1,8.5l2.5,2.5c4.7,-4.7 12.3,-4.7 17,0l2.5,-2.5C16.3,2,7.7,2,1,8.5z" />
@@ -59,13 +59,13 @@
     <!-- 中心点外圈 -->
     <path
         android:strokeWidth="2"
-        android:strokeColor="#4C6FFF"
+        android:strokeColor="#4C8DFF"
         android:fillColor="@android:color/transparent"
         android:pathData="M12,20m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
     
     <!-- 中心点内核 -->
     <path
-        android:fillColor="#4C6FFF"
+        android:fillColor="#4C8DFF"
         android:pathData="M12,20m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0" />
 </vector>
 

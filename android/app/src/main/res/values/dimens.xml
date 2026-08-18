@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="page_gutter">32dp</dimen>
+    <dimen name="page_gutter_top">12dp</dimen>
+    <dimen name="page_header_icon">48dp</dimen>
+</resources>
