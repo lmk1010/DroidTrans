@@ -1,13 +1,13 @@
-# desktop — DroidTrans 桌面端（Tauri）
+# desktop — DroidTrans（Go）
 
-比 Electron 小一个数量级：用系统 WebView，安装包大约几 MB 到十几 MB。
-
-打开后会拉起 `web/` 的 Flask（`http://127.0.0.1:9500`）。
+一个二进制：HTTP `9500` + TCP `9501` + FTP `9502`，内嵌界面。不再使用 Flask / Python / Tauri。
 
 ```bash
-cd desktop/src-tauri
-cargo tauri icon ../../web/icon.png
-cargo tauri build --bundles app,dmg
+cd desktop
+chmod +x build.sh
+./build.sh
+./../dist/droidtrans          # 打开界面
+./../dist/droidtrans -headless # 只听端口
 ```
 
-产物在 `desktop/src-tauri/target/release/bundle/`。
+macOS 会生成 `dist/DroidTrans.app`。未签名，若 Gatekeeper 拦截：先拖进应用程序，再 `xattr -cr /Applications/DroidTrans.app`。

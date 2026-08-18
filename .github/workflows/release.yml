@@ -3,173 +3,73 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'  # 当推送 v* 标签时触发，例如 v1.0.0
-  workflow_dispatch:  # 允许手动触发
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
-  # 构建 Android APK
   build-android:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-          cache: 'gradle'
-
-      - name: Grant execute permission for gradlew
-        working-directory: ./android
-        run: chmod +x gradlew
-
-      - name: Create release keystore
-        working-directory: ./android
-        run: |
-          # 生成临时签名密钥用于 CI 构建
-          keytool -genkey -v -keystore release.keystore \
-            -alias androidreleasekey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android123 -keypass android123 \
-            -dname "CN=Android Transfer, OU=Development, O=MK, L=City, S=State, C=CN"
-
-      - name: Build APK
-        working-directory: ./android
-        env:
-          RELEASE_KEYSTORE_FILE: release.keystore
-          RELEASE_KEYSTORE_PASSWORD: android123
-          RELEASE_KEY_ALIAS: androidreleasekey
-          RELEASE_KEY_PASSWORD: android123
-        run: ./gradlew assembleRelease
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+          cache: gradle
+      - working-directory: ./android
+        run: chmod +x gradlew && ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: android/app/build/outputs/apk/release/*.apk
 
-  # macOS 版本由本地构建并手动上传到 Release
-  # 本地构建命令: cd desktop && npm start  ；后端在 web/
-  # macOS 需要开发者证书签名，GitHub Actions 无法访问
-
-  # 构建 Windows 版本
-  build-windows:
-    runs-on: windows-latest
+  build-desktop:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: droidtrans-darwin-arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: droidtrans-linux-amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: droidtrans-windows-amd64.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          python-version: '3.13'
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Python dependencies
-        working-directory: ./web
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Create required directories
-        working-directory: ./web
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path photos_output -Force
-          New-Item -ItemType File -Path photos_output/.gitkeep -Force
-
-      - name: Build Python backend
-        working-directory: ./web
-        shell: pwsh
-        run: |
-          pip install pyinstaller
-          pyinstaller app.spec --clean
-          Move-Item -Path dist/app -Destination dist_app
-
-      - name: Install Node dependencies
-        working-directory: ./desktop
-        run: npm install
-
-      - name: Build Electron app for Windows
-        working-directory: ./desktop
+          go-version: '1.22'
+      - run: go build -trimpath -ldflags="-s -w" -o ${{ matrix.artifact }} .
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EP_DRAFT: false
-          EP_PRE_RELEASE: false
-        run: npm run dist:win -- --publish never
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+      - uses: actions/upload-artifact@v4
         with:
-          name: windows-builds
-          path: |
-            desktop/dist/*.exe
-            desktop/dist/*.exe.blockmap
+          name: ${{ matrix.artifact }}
+          path: desktop/${{ matrix.artifact }}
 
-  # 创建 Release 并上传构建产物（Android + Windows）
-  # macOS 版本需要手动上传到 Release
   create-release:
-    needs: [build-android, build-windows]
+    needs: [build-android, build-desktop]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Delete existing release (if exists)
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete ${{ github.ref_name }} --yes || true
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: Display structure of downloaded files
-        run: ls -R artifacts
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v1
         with:
-          draft: false
-          prerelease: false
           generate_release_notes: true
-          body: |
-            ## 📦 下载说明
-
-            ### Android APK
-            - 下载 APK 文件并安装到 Android 设备
-
-            ### Windows 安装包
-            - 下载 `.exe` 文件并运行安装向导
-
-            ### macOS 版本
-            **macOS 版本请在 Assets 中查找（由开发者本地构建并手动上传）**
-
-            - **M1/M2/M3/M4 Mac**: 下载 `Android-Transfer-*-arm64.dmg`
-            - **Intel Mac**: 下载 `Android-Transfer-*-x64.dmg`
-
-            ⚠️ **macOS 安装重要提示**：
-
-            安装后需执行以下命令移除隔离属性：
-            ```bash
-            sudo xattr -rd com.apple.quarantine /Applications/Android\ Transfer.app
-            ```
-
-            详见 [macOS 安装说明](https://github.com/MK-CO/AndroidTransfer/blob/main/INSTALL_MACOS.md)
-          files: |
-            artifacts/android-apk/*.apk
-            artifacts/windows-builds/*.exe
+          files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

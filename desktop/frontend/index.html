@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DroidTrans</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 1024 1024" aria-hidden="true">
+          <path d="M0 0m512 0l0 0q512 0 512 512l0 0q0 512-512 512l0 0q-512 0-512-512l0 0q0-512 512-512Z" fill="#4C8DFF"/>
+          <path d="M260.7 620.9a37.2 37.2 0 1 1-74.5-1.3l3.2-175.5A186.2 186.2 0 0 1 375.5 261.3H679a37.2 37.2 0 1 1 0 74.5H375.5a111.7 111.7 0 0 0-111.7 109.7l-3.1 175.4z" fill="#fff"/>
+          <path d="M800.6 403.1a37.2 37.2 0 1 1 74.5 1.3l-3.2 175.5A186.2 186.2 0 0 1 685.8 762.7H382.2a37.2 37.2 0 1 1 0-74.5h303.5a111.7 111.7 0 0 0 111.7-109.7l3.2-175.4z" fill="#fff"/>
+        </svg>
+        <div>
+          <strong>DroidTrans</strong>
+          <span>卓传</span>
+        </div>
+      </div>
+      <nav>
+        <button data-view="home" class="active">总览</button>
+        <button data-view="usb">USB</button>
+        <button data-view="wifi">Wi-Fi</button>
+        <button data-view="history">记录</button>
+      </nav>
+      <div class="rail-foot">
+        <button id="langBtn" class="ghost">EN</button>
+        <p id="adbHint" class="hint">ADB …</p>
+      </div>
+    </aside>
+
+    <main>
+      <section id="view-home" class="view active">
+        <header class="page-head">
+          <h1>把手机里的照片，搬到这台电脑</h1>
+          <p>一根线，或同一局域网。后台是 Go，不再起 Python。</p>
+        </header>
+        <div class="tiles">
+          <button class="tile" data-go="usb">
+            <em>USB</em>
+            <h2>有线快传</h2>
+            <p>开启 USB 调试后扫描相册，并发 pull 到本地。</p>
+          </button>
+          <button class="tile" data-go="wifi">
+            <em>Wi-Fi</em>
+            <h2>手机直传</h2>
+            <p>App 搜到这台电脑，文件走 TCP / FTP / HTTP。</p>
+          </button>
+        </div>
+        <dl class="meta" id="homeMeta"></dl>
+      </section>
+
+      <section id="view-usb" class="view">
+        <header class="page-head row">
+          <div>
+            <h1>USB</h1>
+            <p id="usbDevice">等待设备</p>
+          </div>
+          <div class="actions">
+            <button id="scanBtn" class="primary">扫描相册</button>
+            <button id="xferBtn" class="primary" disabled>开始传输</button>
+          </div>
+        </header>
+        <div class="path-row">
+          <label>保存到</label>
+          <input id="usbOut" type="text" />
+        </div>
+        <div id="albumGrid" class="albums"></div>
+        <div id="photoGrid" class="photos hidden"></div>
+        <footer class="xfer-bar hidden" id="xferBar">
+          <span id="xferText">准备传输</span>
+          <div class="bar"><i id="xferFill"></i></div>
+        </footer>
+      </section>
+
+      <section id="view-wifi" class="view">
+        <header class="page-head">
+          <h1>Wi-Fi 接收</h1>
+          <p>手机 App 填这个地址，或扫局域网搜索。</p>
+        </header>
+        <div class="listen">
+          <div>
+            <span class="kicker">本机地址</span>
+            <strong id="wifiURL">—</strong>
+          </div>
+          <button id="copyUrl" class="ghost">复制</button>
+        </div>
+        <div class="path-row">
+          <label>保存到</label>
+          <input id="wifiOut" type="text" />
+          <button id="openOut" class="ghost">打开文件夹</button>
+        </div>
+        <h3 class="sub">在线设备</h3>
+        <ul id="onlineList" class="list"></ul>
+        <h3 class="sub">最近批次</h3>
+        <ul id="batchList" class="list"></ul>
+      </section>
+
+      <section id="view-history" class="view">
+        <header class="page-head row">
+          <h1>传输记录</h1>
+          <button id="clearHist" class="ghost danger">清空</button>
+        </header>
+        <ul id="histList" class="list"></ul>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
