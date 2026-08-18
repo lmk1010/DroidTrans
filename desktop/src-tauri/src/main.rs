@@ -1,3 +1,4 @@
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -8,6 +9,8 @@ use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent};
 
 struct Backend(Mutex<Option<Child>>);
+
+const WEB_HOST: &str = "127.0.0.1:9500";
 
 fn looks_like_web(dir: &Path) -> bool {
     dir.join("app.py").is_file()
@@ -54,15 +57,50 @@ fn adb_path_env() -> String {
     format!("{sdk}:/opt/homebrew/bin:/usr/local/bin:{old}")
 }
 
+fn kill_listeners_on_9500() {
+    #[cfg(unix)]
+    {
+        if let Ok(out) = Command::new("lsof").args(["-ti", "tcp:9500"]).output() {
+            for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+                if pid.parse::<i32>().ok().is_some_and(|n| n > 1) {
+                    let _ = Command::new("kill").arg(pid).status();
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(300));
+    }
+}
+
 fn spawn_web(web: &Path) -> Option<Child> {
+    kill_listeners_on_9500();
     let python = python_bin(web);
+    let log_path = std::env::temp_dir().join("droidtrans-web.log");
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_path)
+        .ok();
+    let err_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok();
     let mut cmd = Command::new(&python);
     cmd.arg("app.py")
         .current_dir(web)
         .env("PATH", adb_path_env())
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdin(Stdio::null());
+    match (log_file, err_file) {
+        (Some(out), Some(err)) => {
+            cmd.stdout(Stdio::from(out));
+            cmd.stderr(Stdio::from(err));
+        }
+        _ => {
+            cmd.stdout(Stdio::null());
+            cmd.stderr(Stdio::null());
+        }
+    }
     match cmd.spawn() {
         Ok(child) => Some(child),
         Err(err) => {
@@ -72,15 +110,31 @@ fn spawn_web(web: &Path) -> Option<Child> {
     }
 }
 
-fn wait_for_port(timeout: Duration) -> bool {
+fn health_ok() -> bool {
+    let mut stream = match TcpStream::connect_timeout(
+        &WEB_HOST.parse().unwrap(),
+        Duration::from_millis(400),
+    ) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(400)));
+    if stream
+        .write_all(b"GET /api/health HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut buf = String::new();
+    let _ = stream.read_to_string(&mut buf);
+    buf.contains("droidtrans") && (buf.contains("\"ok\": true") || buf.contains("\"ok\":true"))
+}
+
+fn wait_for_health(timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if TcpStream::connect_timeout(
-            &"127.0.0.1:9500".parse().unwrap(),
-            Duration::from_millis(400),
-        )
-        .is_ok()
-        {
+        if health_ok() {
             return true;
         }
         thread::sleep(Duration::from_millis(250));
@@ -99,7 +153,7 @@ fn main() {
             }
             let handle = app.handle().clone();
             thread::spawn(move || {
-                if wait_for_port(Duration::from_secs(25)) {
+                if wait_for_health(Duration::from_secs(25)) {
                     if let Some(window) = handle.get_webview_window("main") {
                         let _ = window.eval("window.location.replace('http://127.0.0.1:9500')");
                     }

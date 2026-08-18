@@ -9,7 +9,7 @@
   "app": {
     "windows": [
       {
-        "title": "DroidTrans / 卓传",
+        "title": "DroidTrans",
         "width": 1280,
         "height": 840,
         "resizable": true

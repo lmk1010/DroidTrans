@@ -86,7 +86,12 @@ def _parse_timestamp_from_name(name: str) -> int | None:
 ADB_BURST_MODE_ENABLED = os.getenv('ADB_BURST_MODE', '1')  # 默认启用Burst模式
 FAST_ALBUM_SCAN = os.getenv('FAST_ALBUM_SCAN', '1') in ('1','true','on','yes')  # 仅相册封面快速扫描
 
-app = Flask(__name__)
+BASE_DIR = Path(__file__).resolve().parent
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / 'templates'),
+    static_folder=str(BASE_DIR / 'static'),
+)
 
 # 线程锁，保护 transfer_status 的并发更新
 transfer_status_lock = threading.Lock()
@@ -2132,6 +2137,17 @@ def transfer_photos_thread(photos, output_dir, resume=False):
         save_usb_batch_from_folder(output_dir)
     except Exception as e:
         print(f"⚠️ 保存USB批次到数据库失败: {e}")
+
+@app.route('/api/health')
+def health():
+    """桌面端用来确认连到的是当前这份 web，而不是占着 9500 的旧进程。"""
+    usb_template = (BASE_DIR / 'templates' / 'usb_mode.html').is_file()
+    return jsonify({
+        'ok': True,
+        'app': 'droidtrans',
+        'usb_template': usb_template,
+        'root': str(BASE_DIR),
+    })
 
 @app.route('/')
 def index():
