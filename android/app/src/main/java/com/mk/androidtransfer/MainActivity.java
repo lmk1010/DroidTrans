@@ -28,6 +28,7 @@ import android.provider.Settings;
 import com.mk.androidtransfer.model.ApiResponse;
 import com.mk.androidtransfer.model.ServerInfo;
 import com.mk.androidtransfer.network.ApiService;
+import com.mk.androidtransfer.network.BonjourBrowser;
 import com.mk.androidtransfer.network.RetrofitClient;
 import com.mk.androidtransfer.util.DeviceNameGenerator;
 import com.mk.androidtransfer.util.ThemeBars;
@@ -85,6 +86,7 @@ public class MainActivity extends AppCompatActivity {
     private long lastScanTime = 0;
     private static final long MAINTAIN_MS = 10 * 60 * 1000L;
     private ServerInfo heartbeatServer;
+    private BonjourBrowser bonjour;
     private final Runnable heartbeatTask = new Runnable() {
         @Override
         public void run() {
@@ -124,6 +126,7 @@ public class MainActivity extends AppCompatActivity {
 
         executorService = Executors.newFixedThreadPool(12);
         mainHandler = new Handler(Looper.getMainLooper());
+        bonjour = new BonjourBrowser(this);
         
         // 尝试加载缓存的服务器列表
         loadCachedServers();
@@ -185,6 +188,10 @@ public class MainActivity extends AppCompatActivity {
                 didAutoJoin = false;
                 clearServerCache();
                 hasCachedServers = false;
+                if (bonjour != null) {
+                    bonjour.stop();
+                }
+                startBonjour();
                 startNetworkScan();
             });
         }
@@ -387,23 +394,45 @@ public class MainActivity extends AppCompatActivity {
         }
         String serverName = getString(R.string.transfer_server_name, ip.substring(ip.lastIndexOf('.') + 1));
         ServerInfo server = new ServerInfo(serverName, ip, port);
-        mainHandler.post(() -> {
-            if (isFinishing() || isDestroyed()) {
+        mainHandler.post(() -> addDiscovered(server));
+        Log.d(TAG, "发现服务器: " + ip);
+    }
+
+    private void addDiscovered(ServerInfo server) {
+        if (isFinishing() || isDestroyed() || server == null) {
+            return;
+        }
+        radarScanView.addServerDot(server);
+        if (!discoveredServers.contains(server)) {
+            discoveredServers.add(server);
+        }
+        saveServerCache();
+        hasCachedServers = true;
+        updateScanStatus();
+        if (discoveredServers.size() > 1) {
+            showServerFoundSnackbar(server);
+        }
+        scheduleAutoJoin();
+    }
+
+    private void startBonjour() {
+        if (bonjour == null) {
+            bonjour = new BonjourBrowser(this);
+        }
+        bonjour.start((name, host, port) -> {
+            int p = port > 0 ? port : DEFAULT_PORT;
+            if (executorService == null) {
                 return;
             }
-            radarScanView.addServerDot(server);
-            if (!discoveredServers.contains(server)) {
-                discoveredServers.add(server);
-            }
-            saveServerCache();
-            hasCachedServers = true;
-            updateScanStatus();
-            if (discoveredServers.size() > 1) {
-                showServerFoundSnackbar(server);
-            }
-            scheduleAutoJoin();
+            executorService.execute(() -> {
+                if (!probeServer(host, p)) {
+                    return;
+                }
+                String label = (name != null && !name.isEmpty()) ? name : host;
+                ServerInfo server = new ServerInfo(label, host, p);
+                mainHandler.post(() -> addDiscovered(server));
+            });
         });
-        Log.d(TAG, "发现服务器: " + ip);
     }
 
     private boolean probeServer(String ip, int port) {
@@ -424,17 +453,34 @@ public class MainActivity extends AppCompatActivity {
     private String getLocalIpAddress() {
         try {
             java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            String fallback = null;
             while (interfaces.hasMoreElements()) {
                 java.net.NetworkInterface networkInterface = interfaces.nextElement();
+                if (!networkInterface.isUp() || networkInterface.isLoopback()) {
+                    continue;
+                }
+                String ifName = networkInterface.getName() == null ? "" : networkInterface.getName().toLowerCase();
+                if (ifName.startsWith("rmnet") || ifName.startsWith("ccmni") || ifName.startsWith("tun")
+                        || ifName.startsWith("ppp") || ifName.startsWith("dummy")) {
+                    continue;
+                }
                 java.util.Enumeration<java.net.InetAddress> addresses = networkInterface.getInetAddresses();
-
                 while (addresses.hasMoreElements()) {
                     InetAddress address = addresses.nextElement();
-                    if (!address.isLoopbackAddress() && address instanceof java.net.Inet4Address && address.isSiteLocalAddress()) {
-                        return address.getHostAddress();
+                    if (address.isLoopbackAddress() || !(address instanceof java.net.Inet4Address)
+                            || !address.isSiteLocalAddress()) {
+                        continue;
+                    }
+                    String ip = address.getHostAddress();
+                    if (ifName.startsWith("wlan") || ifName.startsWith("ap") || ifName.contains("wlan")) {
+                        return ip;
+                    }
+                    if (fallback == null) {
+                        fallback = ip;
                     }
                 }
             }
+            return fallback;
         } catch (Exception e) {
             Log.e(TAG, "获取IP失败", e);
         }
@@ -478,6 +524,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         radarScanView.startScanning();
+        startBonjour();
         radarScanView.post(() -> {
             if (isFinishing() || isDestroyed()) {
                 return;
@@ -492,13 +539,18 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        // 停止雷达扫描动画
         radarScanView.stopScanning();
+        if (bonjour != null) {
+            bonjour.stop();
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (bonjour != null) {
+            bonjour.stop();
+        }
         if (mainHandler != null) {
             mainHandler.removeCallbacks(heartbeatTask);
             mainHandler.removeCallbacks(autoJoinTask);

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS photos (
 );
 CREATE INDEX IF NOT EXISTS idx_batches_device ON batches(device_id);
 CREATE INDEX IF NOT EXISTS idx_photos_batch ON photos(device_id, batch_id);
+CREATE INDEX IF NOT EXISTS idx_photos_name_size ON photos(name, size);
 `)
 	return err
 }
@@ -108,6 +109,22 @@ ON CONFLICT(device_id, batch_id) DO UPDATE SET
   duration_sec=excluded.duration_sec
 `, b.DeviceID, b.BatchID, b.Timestamp, b.PhotoCount, b.TotalSize, b.TotalSizeMB, b.Status, b.DurationSec)
 	return err
+}
+
+func (s *Store) ExistingPath(name string, size int64) string {
+	if name == "" || size <= 0 {
+		return ""
+	}
+	row := s.db.QueryRow(`SELECT path FROM photos WHERE name=? AND size=? ORDER BY id DESC LIMIT 1`, name, size)
+	var p string
+	if err := row.Scan(&p); err != nil {
+		return ""
+	}
+	st, err := os.Stat(p)
+	if err != nil || st.Size() != size {
+		return ""
+	}
+	return p
 }
 
 func (s *Store) AddPhoto(deviceID, batchID, name, path string, size int64) {

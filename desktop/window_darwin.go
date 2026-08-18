@@ -9,10 +9,11 @@ import (
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework Cocoa -framework WebKit
+#cgo LDFLAGS: -framework Cocoa -framework WebKit -framework UserNotifications
 #include <stdlib.h>
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import <UserNotifications/UserNotifications.h>
 #import <dispatch/dispatch.h>
 
 static NSString *gURL;
@@ -28,7 +29,7 @@ static NSString *gURL;
 - (BOOL)isOpaque { return NO; }
 @end
 
-@interface DTApp : NSObject <NSApplicationDelegate>
+@interface DTApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate>
 @property(strong) NSWindow *window;
 @end
 
@@ -58,6 +59,9 @@ static NSString *gURL;
   fx.state = NSVisualEffectStateActive;
   self.window.contentView = fx;
 
+  [self.window makeKeyAndOrderFront:nil];
+  [NSApp activateIgnoringOtherApps:YES];
+
   WKWebViewConfiguration *cfg = [WKWebViewConfiguration new];
   WKWebView *web = [[WKWebView alloc] initWithFrame:fx.bounds configuration:cfg];
   web.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -75,11 +79,27 @@ static NSString *gURL;
   drag.layer.backgroundColor = [[NSColor clearColor] CGColor];
   [fx addSubview:drag positioned:NSWindowAbove relativeTo:web];
 
-  [self.window makeKeyAndOrderFront:nil];
-  [NSApp activateIgnoringOtherApps:YES];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    center.delegate = self;
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                          completionHandler:^(BOOL granted, NSError *error) {}];
+  });
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app {
   return YES;
+}
+- (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
+  if (self.window) {
+    [self.window makeKeyAndOrderFront:nil];
+  }
+  [NSApp activateIgnoringOtherApps:YES];
+  return YES;
+}
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+       willPresentNotification:(UNNotification *)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions options))completionHandler {
+  completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionSound);
 }
 @end
 
@@ -88,6 +108,7 @@ void DTRunWindow(const char *url) {
     gURL = [NSString stringWithUTF8String:url];
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+    [NSApp activateIgnoringOtherApps:YES];
     DTApp *del = [DTApp new];
     NSApp.delegate = del;
     [NSApp run];
@@ -97,6 +118,21 @@ void DTRunWindow(const char *url) {
 void DTRequestAttention(void) {
   dispatch_async(dispatch_get_main_queue(), ^{
     [NSApp requestUserAttention:NSInformationalRequest];
+  });
+}
+
+void DTNotify(const char *title, const char *body) {
+  NSString *t = [NSString stringWithUTF8String:title ? title : ""];
+  NSString *b = [NSString stringWithUTF8String:body ? body : ""];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+    content.title = t;
+    content.body = b;
+    content.sound = [UNNotificationSound defaultSound];
+    NSString *ident = [[NSUUID UUID] UUIDString];
+    UNNotificationRequest *req = [UNNotificationRequest requestWithIdentifier:ident content:content trigger:nil];
+    [center addNotificationRequest:req withCompletionHandler:nil];
   });
 }
 */
@@ -111,4 +147,12 @@ func runNativeWindow(url string) {
 
 func requestAttention() {
 	C.DTRequestAttention()
+}
+
+func notifyUser(title, body string) {
+	ct := C.CString(title)
+	cb := C.CString(body)
+	defer C.free(unsafe.Pointer(ct))
+	defer C.free(unsafe.Pointer(cb))
+	C.DTNotify(ct, cb)
 }

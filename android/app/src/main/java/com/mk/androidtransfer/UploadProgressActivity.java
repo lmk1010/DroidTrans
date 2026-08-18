@@ -1,6 +1,11 @@
 package com.mk.androidtransfer;
 
+import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -17,6 +22,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -26,7 +33,6 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.mk.androidtransfer.adapter.UploadFileAdapter;
-import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.database.UploadRecordDao;
 import com.mk.androidtransfer.model.PhotoInfo;
 import com.mk.androidtransfer.model.UploadFileItem;
@@ -36,6 +42,8 @@ import com.mk.androidtransfer.network.FastTransferClient;
 import com.mk.androidtransfer.network.ProtocolSelector;
 import com.mk.androidtransfer.network.RetrofitClient;
 import com.mk.androidtransfer.network.TransferProtocol;
+import com.mk.androidtransfer.util.ThemeBars;
+import com.mk.androidtransfer.util.TransferFormat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -47,9 +55,11 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -74,6 +84,8 @@ import retrofit2.Response;
 public class UploadProgressActivity extends AppCompatActivity {
 
     private static final String TAG = "UploadProgressActivity";
+    private static final String NOTIFY_CHANNEL = "transfer";
+    private static final int NOTIFY_ID = 1001;
 
     // UI组件
     private com.mk.androidtransfer.view.DataTransferAnimationView dataTransferAnimation;
@@ -83,6 +95,7 @@ public class UploadProgressActivity extends AppCompatActivity {
     private LinearProgressIndicator progressBar;
     private TextView tvProgressText;
     private TextView tvProgressPercent;
+    private TextView tvSpeedEta;
     private RecyclerView recyclerViewFiles;
     private LinearLayout emptyState;
     private MaterialButton btnCancel;
@@ -111,6 +124,10 @@ public class UploadProgressActivity extends AppCompatActivity {
     private ExecutorService executorService;
     private ConcurrentHashMap<Integer, Boolean> uploadingFiles = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, Call<?>> activeCalls = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicLong uploadedBytes = new java.util.concurrent.atomic.AtomicLong(0);
+    private final ConcurrentHashMap<Integer, Long> inflightBytes = new ConcurrentHashMap<>();
+    private long startedAt;
+    private long totalBytes;
 
     // Handler
     private Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -150,9 +167,8 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         // 初始化文件列表
         initFileList(selectedPhotos);
-
-        // 初始化上传会话
-        initUploadSession();
+        createNotifyChannel();
+        requestNotifyPermission();
 
         // 开始上传
         startUpload();
@@ -171,6 +187,7 @@ public class UploadProgressActivity extends AppCompatActivity {
         progressBar = findViewById(R.id.progressBar);
         tvProgressText = findViewById(R.id.tvProgressText);
         tvProgressPercent = findViewById(R.id.tvProgressPercent);
+        tvSpeedEta = findViewById(R.id.tvSpeedEta);
         recyclerViewFiles = findViewById(R.id.recyclerViewFiles);
         emptyState = findViewById(R.id.emptyState);
         btnCancel = findViewById(R.id.btnCancel);
@@ -207,41 +224,89 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         adapter.setFileList(fileList);
         tvTotalFiles.setText(String.valueOf(fileList.size()));
+        totalBytes = 0;
+        for (UploadFileItem item : fileList) {
+            totalBytes += Math.max(0, item.getSize());
+        }
         updateEmptyState();
     }
 
-    private void initUploadSession() {
-        // 构建文件列表
+    private String fileKey(UploadFileItem item) {
+        String rel = item.getRelativePath();
+        if (TextUtils.isEmpty(rel)) {
+            rel = item.getName();
+        }
+        return rel + "|" + item.getSize();
+    }
+
+    private List<Map<String, Object>> buildFilePayload() {
         List<Map<String, Object>> files = new ArrayList<>();
         for (UploadFileItem item : fileList) {
             Map<String, Object> file = new HashMap<>();
             file.put("name", item.getName());
             file.put("size", item.getSize());
             file.put("path", item.getPath());
+            String rel = item.getRelativePath();
+            file.put("relative_path", TextUtils.isEmpty(rel) ? item.getName() : rel);
             files.add(file);
         }
+        return files;
+    }
 
-        // 构建请求
+    private boolean initUploadSessionSync() {
         Map<String, Object> request = new HashMap<>();
         request.put("device_id", deviceId);
-        request.put("files", files);
+        request.put("files", buildFilePayload());
+        try {
+            Response<Map<String, Object>> response = apiService.initUpload(request).execute();
+            return response.isSuccessful();
+        } catch (Exception e) {
+            Log.e(TAG, "上传会话初始化失败", e);
+            return false;
+        }
+    }
 
-        // 发送初始化请求
-        apiService.initUpload(request).enqueue(new Callback<Map<String, Object>>() {
-            @Override
-            public void onResponse(Call<Map<String, Object>> call, Response<Map<String, Object>> response) {
-                if (response.isSuccessful()) {
-                    Log.d(TAG, "上传会话初始化成功");
-                } else {
-                    Log.e(TAG, "上传会话初始化失败: " + response.code());
+    private Set<String> fetchMissingKeys() {
+        Map<String, Object> request = new HashMap<>();
+        request.put("device_id", deviceId);
+        request.put("files", buildFilePayload());
+        try {
+            Response<Map<String, Object>> response = apiService.checkFiles(request).execute();
+            if (!response.isSuccessful() || response.body() == null) {
+                return null;
+            }
+            Object raw = response.body().get("missing");
+            Set<String> missing = new HashSet<>();
+            if (raw instanceof List) {
+                for (Object item : (List<?>) raw) {
+                    if (!(item instanceof Map)) {
+                        continue;
+                    }
+                    Map<?, ?> m = (Map<?, ?>) item;
+                    Object rel = m.get("relative_path");
+                    if (rel == null) {
+                        rel = m.get("name");
+                    }
+                    Object size = m.get("size");
+                    missing.add(String.valueOf(rel) + "|" + toLong(size));
                 }
             }
+            return missing;
+        } catch (Exception e) {
+            Log.e(TAG, "检查已传文件失败", e);
+            return null;
+        }
+    }
 
-            @Override
-            public void onFailure(Call<Map<String, Object>> call, Throwable t) {
-                Log.e(TAG, "上传会话初始化失败", t);
-            }
-        });
+    private long toLong(Object v) {
+        if (v instanceof Number) {
+            return ((Number) v).longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(v));
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private void startUpload() {
@@ -250,6 +315,9 @@ public class UploadProgressActivity extends AppCompatActivity {
         }
 
         isUploading = true;
+        startedAt = System.currentTimeMillis();
+        uploadedBytes.set(0);
+        inflightBytes.clear();
 
         if (dataTransferAnimation != null) {
             dataTransferAnimation.startAnimation();
@@ -258,12 +326,22 @@ public class UploadProgressActivity extends AppCompatActivity {
         tvProgressText.setText(R.string.selecting_channel);
 
         new Thread(() -> {
+            Set<String> missing = null;
+            if (initUploadSessionSync()) {
+                missing = fetchMissingKeys();
+            }
             protocolChoice = ProtocolSelector.select(serverUrl);
             mainHandler.post(() -> tvProgressText.setText(getString(R.string.channel_label, protocolChoice.protocol.getLabel(UploadProgressActivity.this))));
 
             executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
             for (int i = 0; i < fileList.size(); i++) {
                 final int index = i;
+                UploadFileItem item = fileList.get(i);
+                if (missing != null && !missing.contains(fileKey(item))) {
+                    uploadedBytes.addAndGet(Math.max(0, item.getSize()));
+                    onFileUploadSuccess(index);
+                    continue;
+                }
                 executorService.submit(() -> uploadFile(fileList.get(index), index));
             }
             executorService.shutdown();
@@ -298,6 +376,8 @@ public class UploadProgressActivity extends AppCompatActivity {
             if (protocolChoice != null && protocolChoice.protocol != TransferProtocol.HTTP_MULTIPART) {
                 FastTransferClient.send(this, protocolChoice, item, deviceId, okHttpClient,
                         new FastTransferClient.ProgressListener() {
+                            long lastUiAt = 0;
+
                             @Override
                             public boolean isCancelled() {
                                 return UploadProgressActivity.this.isCancelled;
@@ -305,15 +385,33 @@ public class UploadProgressActivity extends AppCompatActivity {
 
                             @Override
                             public void onBytes(long sent, long total) {
+                                long prev = inflightBytes.getOrDefault(index, 0L);
+                                if (sent > prev) {
+                                    uploadedBytes.addAndGet(sent - prev);
+                                    inflightBytes.put(index, sent);
+                                }
+                                long now = System.currentTimeMillis();
+                                if (now - lastUiAt < 200 && sent < total) {
+                                    return;
+                                }
+                                lastUiAt = now;
                                 int percent = total > 0 ? (int) Math.min(99, sent * 100 / total) : 0;
                                 mainHandler.post(() -> {
                                     if (item.getStatus() == UploadFileItem.Status.UPLOADING) {
                                         item.setProgress(percent);
                                         adapter.updateItem(index);
                                     }
+                                    updateProgress();
                                 });
                             }
                         });
+                Long reported = inflightBytes.remove(index);
+                if (reported == null) {
+                    reported = 0L;
+                }
+                if (item.getSize() > reported) {
+                    uploadedBytes.addAndGet(item.getSize() - reported);
+                }
                 uploadingFiles.remove(index);
                 uploadingCount.decrementAndGet();
                 if (isCancelled) {
@@ -412,6 +510,7 @@ public class UploadProgressActivity extends AppCompatActivity {
                         }
                         super.write(source, byteCount);
                         written += byteCount;
+                        uploadedBytes.addAndGet(byteCount);
                         long now = System.currentTimeMillis();
                         if (now - lastUiAt < 200 && written < total) {
                             return;
@@ -426,6 +525,7 @@ public class UploadProgressActivity extends AppCompatActivity {
                                 item.setSpeed(speed);
                                 adapter.updateItem(index);
                             }
+                            updateProgress();
                         });
                     }
                 };
@@ -560,11 +660,48 @@ public class UploadProgressActivity extends AppCompatActivity {
         int total = fileList.size();
         int completed = completedCount.get() + failedCount.get();
         int uploading = uploadingCount.get();
-        int percent = total > 0 ? (completed * 100 / total) : 0;
+        long bytes = uploadedBytes.get();
+        int percent = totalBytes > 0
+                ? (int) Math.min(100, bytes * 100 / totalBytes)
+                : (total > 0 ? completed * 100 / total : 0);
 
         progressBar.setProgressCompat(percent, true);
         tvProgressPercent.setText(percent + "%");
         tvProgressText.setText(getString(R.string.uploading_progress, uploading, completed, total));
+
+        if (tvSpeedEta != null) {
+            long elapsedMs = Math.max(1, System.currentTimeMillis() - startedAt);
+            long speed = bytes * 1000 / elapsedMs;
+            long remain = Math.max(0, totalBytes - bytes);
+            long etaSec = 0;
+            if (speed > 200 && remain > 0) {
+                etaSec = remain / speed;
+            } else if (completedCount.get() > 0 && total > completed) {
+                etaSec = (elapsedMs / 1000) * (total - completed) / completedCount.get();
+            }
+            String speedText = TransferFormat.speed(speed);
+            String etaText = TransferFormat.eta(this, etaSec);
+            String sizeText = "";
+            String doneSize = TransferFormat.bytes(bytes);
+            String allSize = TransferFormat.bytes(totalBytes);
+            if (!doneSize.isEmpty() && !allSize.isEmpty()) {
+                sizeText = doneSize + " / " + allSize;
+            }
+            StringBuilder line = new StringBuilder();
+            if (!speedText.isEmpty()) line.append(speedText);
+            if (!etaText.isEmpty()) {
+                if (line.length() > 0) line.append("  ·  ");
+                line.append(etaText);
+            }
+            if (!sizeText.isEmpty()) {
+                if (line.length() > 0) line.append("  ·  ");
+                line.append(sizeText);
+            }
+            if (line.length() > 0 && isUploading) {
+                tvSpeedEta.setVisibility(View.VISIBLE);
+                tvSpeedEta.setText(line.toString());
+            }
+        }
     }
 
     private void onUploadComplete() {
@@ -591,6 +728,30 @@ public class UploadProgressActivity extends AppCompatActivity {
         } else {
             tvProgressText.setText(getString(R.string.partial_upload, completed, failed));
             Toast.makeText(this, getString(R.string.upload_done_with_failures, failed), Toast.LENGTH_LONG).show();
+        }
+        if (tvSpeedEta != null) {
+            long elapsedSec = Math.max(1, (System.currentTimeMillis() - startedAt) / 1000);
+            long bps = uploadedBytes.get() / elapsedSec;
+            String avg = TransferFormat.speed(bps);
+            String dur = TransferFormat.duration(this, elapsedSec);
+            String size = TransferFormat.bytes(uploadedBytes.get());
+            StringBuilder line = new StringBuilder();
+            if (!avg.isEmpty()) line.append(avg);
+            if (!dur.isEmpty()) {
+                if (line.length() > 0) line.append("  ·  ");
+                line.append(dur);
+            }
+            if (!size.isEmpty()) {
+                if (line.length() > 0) line.append("  ·  ");
+                line.append(size);
+            }
+            if (line.length() > 0) {
+                tvSpeedEta.setVisibility(View.VISIBLE);
+                tvSpeedEta.setText(line.toString());
+            }
+        }
+        if (!isCancelled) {
+            notifyTransferDone(completed, failed, uploadedBytes.get());
         }
     }
     
@@ -619,7 +780,9 @@ public class UploadProgressActivity extends AppCompatActivity {
                     success,
                     failed,
                     System.currentTimeMillis(),
-                    fileArray.toString()
+                    fileArray.toString(),
+                    Math.max(1, (System.currentTimeMillis() - startedAt) / 1000),
+                    uploadedBytes.get() > 0 ? uploadedBytes.get() : totalBytes
                 );
                 
                 // 保存到数据库
@@ -703,6 +866,53 @@ public class UploadProgressActivity extends AppCompatActivity {
         } else {
             emptyState.setVisibility(View.GONE);
             recyclerViewFiles.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void requestNotifyPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 71);
+            }
+        }
+    }
+
+    private void createNotifyChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel channel = new NotificationChannel(
+                    NOTIFY_CHANNEL,
+                    getString(R.string.notify_channel),
+                    NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription(getString(R.string.notify_channel_desc));
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.createNotificationChannel(channel);
+            }
+        }
+    }
+
+    private void notifyTransferDone(int completed, int failed, long bytes) {
+        try {
+            String title = failed == 0
+                    ? getString(R.string.notify_transfer_done)
+                    : getString(R.string.notify_transfer_partial, completed, failed);
+            String size = TransferFormat.bytes(bytes);
+            String body = size.isEmpty()
+                    ? getString(R.string.notify_transfer_body, completed)
+                    : getString(R.string.notify_transfer_body_size, completed, size);
+            Intent intent = new Intent(this, UploadHistoryActivity.class);
+            PendingIntent pi = PendingIntent.getActivity(
+                    this, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIFY_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_transfer)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setAutoCancel(true)
+                    .setContentIntent(pi);
+            NotificationManagerCompat.from(this).notify(NOTIFY_ID, builder.build());
+        } catch (Exception e) {
+            Log.w(TAG, "系统通知失败", e);
         }
     }
 

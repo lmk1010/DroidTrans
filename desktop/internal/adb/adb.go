@@ -28,20 +28,38 @@ type Client struct {
 	burst  bool
 }
 
-func ResolveBin() string {
+func candidateBins() []string {
 	home, _ := os.UserHomeDir()
-	candidates := []string{
+	list := []string{
 		filepath.Join(home, "Library/Android/sdk/platform-tools/adb"),
 		filepath.Join(home, "Android/Sdk/platform-tools/adb"),
 		"/opt/homebrew/bin/adb",
 		"/usr/local/bin/adb",
 	}
 	if p, err := exec.LookPath("adb"); err == nil {
-		candidates = append(candidates, p)
+		list = append(list, p)
 	}
+	return list
+}
+
+func firstBin() string {
+	seen := map[string]bool{}
+	for _, p := range candidateBins() {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	return "adb"
+}
+
+func ResolveBin() string {
 	best, bestVer := "", [3]int{}
 	seen := map[string]bool{}
-	for _, p := range candidates {
+	for _, p := range candidateBins() {
 		if p == "" || seen[p] {
 			continue
 		}
@@ -88,10 +106,24 @@ func verGte(a, b [3]int) bool {
 }
 
 func New() *Client {
-	return &Client{bin: ResolveBin(), burst: true}
+	c := &Client{bin: firstBin(), burst: true}
+	go func() {
+		best := ResolveBin()
+		c.mu.Lock()
+		c.bin = best
+		c.mu.Unlock()
+	}()
+	return c
 }
 
-func (c *Client) Bin() string { return c.bin }
+func (c *Client) Bin() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.bin == "" {
+		return "adb"
+	}
+	return c.bin
+}
 
 func (c *Client) SetSerial(s string) {
 	c.mu.Lock()
@@ -142,7 +174,7 @@ func (c *Client) run(timeout time.Duration, args ...string) (string, string, err
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	all := append(c.prefix(), args...)
-	cmd := exec.CommandContext(ctx, c.bin, all...)
+	cmd := exec.CommandContext(ctx, c.Bin(), all...)
 	cmd.Env = c.env()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -154,7 +186,7 @@ func (c *Client) run(timeout time.Duration, args ...string) (string, string, err
 func (c *Client) RunRaw(timeout time.Duration, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.bin, args...)
+	cmd := exec.CommandContext(ctx, c.Bin(), args...)
 	cmd.Env = c.env()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -205,22 +237,75 @@ func (c *Client) DirExists(path string) bool {
 	return err == nil && strings.Contains(out, "EXISTS")
 }
 
+func (c *Client) FileSize(remote string) int64 {
+	out, err := c.Shell(8*time.Second, "stat -c %s "+shellQuote(remote)+" 2>/dev/null || stat -f %z "+shellQuote(remote))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+func PullTimeout(size int64) time.Duration {
+	sec := size/1024/1024 + 45
+	if sec < 120 {
+		sec = 120
+	}
+	if sec > 30*60 {
+		sec = 30 * 60
+	}
+	return time.Duration(sec) * time.Second
+}
+
 func (c *Client) Pull(remote, local string, timeout time.Duration) error {
+	return c.PullProgress(remote, local, timeout, nil)
+}
+
+func (c *Client) PullProgress(remote, local string, timeout time.Duration, report func(int64)) error {
 	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
 		return err
 	}
-	_, stderr, err := c.run(timeout, "pull", remote, local)
-	if err != nil {
-		return fmt.Errorf("%v: %s", err, stderr)
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
 	}
-	return nil
+	done := make(chan error, 1)
+	go func() {
+		_, stderr, err := c.run(timeout, "pull", remote, local)
+		if err != nil {
+			done <- fmt.Errorf("%v: %s", err, stderr)
+			return
+		}
+		done <- nil
+	}()
+	tick := time.NewTicker(250 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-done:
+			if report != nil {
+				if st, e := os.Stat(local); e == nil {
+					report(st.Size())
+				}
+			}
+			return err
+		case <-tick.C:
+			if report != nil {
+				if st, e := os.Stat(local); e == nil {
+					report(st.Size())
+				}
+			}
+		}
+	}
 }
 
 func (c *Client) ExecOut(timeout time.Duration, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	all := append(append(c.prefix(), "exec-out"), args...)
-	cmd := exec.CommandContext(ctx, c.bin, all...)
+	cmd := exec.CommandContext(ctx, c.Bin(), all...)
 	cmd.Env = c.env()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

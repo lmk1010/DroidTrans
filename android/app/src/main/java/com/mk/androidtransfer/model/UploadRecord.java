@@ -17,11 +17,17 @@ public class UploadRecord {
     private long uploadTime;          // 上传时间戳
     private String uploadTimeStr;     // 格式化的时间字符串
     private String fileList;          // 文件列表（JSON格式）
+    private long durationSec;
+    private long totalBytes;
     
     public UploadRecord() {
     }
     
     public UploadRecord(String serverUrl, String serverName, int totalCount, int successCount, int failedCount, long uploadTime, String fileList) {
+        this(serverUrl, serverName, totalCount, successCount, failedCount, uploadTime, fileList, 0, 0);
+    }
+
+    public UploadRecord(String serverUrl, String serverName, int totalCount, int successCount, int failedCount, long uploadTime, String fileList, long durationSec, long totalBytes) {
         this.serverUrl = serverUrl;
         this.serverName = serverName;
         this.totalCount = totalCount;
@@ -29,6 +35,8 @@ public class UploadRecord {
         this.failedCount = failedCount;
         this.uploadTime = uploadTime;
         this.fileList = fileList;
+        this.durationSec = durationSec;
+        this.totalBytes = totalBytes;
         this.uploadTimeStr = formatTime(uploadTime);
     }
     
@@ -109,6 +117,22 @@ public class UploadRecord {
     
     public void setFileList(String fileList) {
         this.fileList = fileList;
+    }
+
+    public long getDurationSec() {
+        return durationSec;
+    }
+
+    public void setDurationSec(long durationSec) {
+        this.durationSec = durationSec;
+    }
+
+    public long getTotalBytes() {
+        return totalBytes;
+    }
+
+    public void setTotalBytes(long totalBytes) {
+        this.totalBytes = totalBytes;
     }
 }
 

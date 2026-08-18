@@ -11,17 +11,22 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"droidtrans/internal/adb"
+	"droidtrans/internal/bonjour"
 	"droidtrans/internal/fast"
 	"droidtrans/internal/store"
 )
 
-const HTTPPort = 9500
+const (
+	HTTPPort      = 9500
+	APKDownloadURL = "https://dl.neox-dev.com/droidtrans/latest.apk"
+)
 
 type deviceInfo struct {
 	Name          string `json:"name"`
@@ -62,12 +67,15 @@ type App struct {
 	wifiOut     string
 	inbox       inboxState
 	OnAttention func()
+	OnNotify    func(title, body string)
+	mdnsStop    func()
 
 	devMu     sync.Mutex
 	connected bool
 	serials   []string
 	unauth    []string
 	model     string
+	devAt     time.Time
 
 	scanMu    sync.Mutex
 	scanning  bool
@@ -87,15 +95,170 @@ type App struct {
 	xferBytes   int64
 	xferTotalB  int64
 	xferStart   time.Time
+	xferWin     rateWin
 	xferOut     string
 	xferDevice  string
 	xferBatch   string
+	xferLive    map[string]int64
 }
 
 type inboxFile struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
 	At   string `json:"at"`
+}
+
+type rateWin struct {
+	t    time.Time
+	n    int64
+	mbps float64
+}
+
+func (w *rateWin) sample(bytes int64) float64 {
+	now := time.Now()
+	if w.t.IsZero() {
+		w.t, w.n = now, bytes
+		return w.mbps
+	}
+	dt := now.Sub(w.t).Seconds()
+	if dt < 0.7 {
+		return w.mbps
+	}
+	db := bytes - w.n
+	if db < 0 {
+		db = 0
+	}
+	w.mbps = float64(db) / 1024 / 1024 / dt
+	w.t, w.n = now, bytes
+	return w.mbps
+}
+
+func transferPace(bytes, totalBytes int64, filesDone, filesTotal int, started time.Time, inst float64) (speed float64, eta int, elapsed float64) {
+	if started.IsZero() {
+		return 0, 0, 0
+	}
+	elapsed = time.Since(started).Seconds()
+	avg := 0.0
+	if elapsed > 0.2 {
+		avg = float64(bytes) / 1024 / 1024 / elapsed
+	}
+	speed = inst
+	if speed < 0.04 {
+		speed = avg
+	}
+	switch {
+	case totalBytes > bytes && speed > 0.02:
+		eta = int(float64(totalBytes-bytes)/1024/1024/speed + 0.5)
+	case filesDone > 0 && filesTotal > filesDone && elapsed > 0.8:
+		eta = int((elapsed/float64(filesDone))*float64(filesTotal-filesDone) + 0.5)
+	}
+	if eta > 24*3600 {
+		eta = 0
+	}
+	return
+}
+
+func liveSum(m map[string]int64) int64 {
+	var n int64
+	for _, v := range m {
+		n += v
+	}
+	return n
+}
+
+func humanBytes(n int64) string {
+	switch {
+	case n < 1024:
+		return fmt.Sprintf("%d B", n)
+	case n < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	case n < 1024*1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(n)/1024/1024)
+	default:
+		return fmt.Sprintf("%.2f GB", float64(n)/1024/1024/1024)
+	}
+}
+
+func linkOrCopy(src, dest string) error {
+	if src == "" || dest == "" || src == dest {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	_ = os.Remove(dest)
+	if err := os.Link(src, dest); err == nil {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	cerr := out.Close()
+	if err != nil {
+		return err
+	}
+	return cerr
+}
+
+type progressWriter struct {
+	w      io.Writer
+	app    *App
+	name   string
+	total  int64
+	n      int64
+	last   time.Time
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
+	p.n += int64(n)
+	now := time.Now()
+	if p.last.IsZero() || now.Sub(p.last) >= 200*time.Millisecond || err != nil {
+		p.last = now
+		p.app.noteLive(p.name, p.n)
+	}
+	return n, err
+}
+
+func (a *App) noteLive(name string, written int64) {
+	if name == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.inbox.Live == nil {
+		a.inbox.Live = map[string]int64{}
+	}
+	a.inbox.Live[name] = written
+	a.inbox.LastFile = name
+	a.inbox.LastAt = time.Now()
+}
+
+func (a *App) tryReuse(dest string, expected int64) (int64, bool) {
+	if expected <= 0 {
+		return 0, false
+	}
+	if st, err := os.Stat(dest); err == nil {
+		if st.Size() == expected {
+			return st.Size(), true
+		}
+		_ = os.Remove(dest)
+	}
+	src := a.Store.ExistingPath(filepath.Base(dest), expected)
+	if src == "" || src == dest {
+		return 0, false
+	}
+	if err := linkOrCopy(src, dest); err != nil {
+		return 0, false
+	}
+	return expected, true
 }
 
 type inboxState struct {
@@ -105,6 +268,12 @@ type inboxState struct {
 	BatchID    string
 	Completed  int
 	Total      int
+	Bytes      int64
+	TotalBytes int64
+	Started    time.Time
+	Win        rateWin
+	Live       map[string]int64
+	Notified   int
 	LastFile   string
 	LastAt     time.Time
 	Seq        int
@@ -122,7 +291,7 @@ func New() (*App, error) {
 	}
 	a := &App{
 		ADB:       adb.New(),
-		Fast:      fast.New(out, LanIP()),
+		Fast:      fast.New(out, ""),
 		Store:     st,
 		OutputDir: out,
 		ThumbDir:  thumbs,
@@ -145,13 +314,8 @@ func defaultOutputDir() string {
 }
 
 func LanIP() string {
-	if runtime.GOOS == "darwin" {
-		out, err := exec.Command("ipconfig", "getifaddr", "en0").Output()
-		if err == nil {
-			if ip := strings.TrimSpace(string(out)); ip != "" {
-				return ip
-			}
-		}
+	if ips := LanIPs(); len(ips) > 0 {
+		return ips[0]
 	}
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
@@ -161,18 +325,120 @@ func LanIP() string {
 	return conn.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
+func ifaceRank(name string) int {
+	n := strings.ToLower(name)
+	switch {
+	case n == "en0":
+		return 0
+	case strings.HasPrefix(n, "en"):
+		return 1
+	case strings.HasPrefix(n, "eth"), strings.HasPrefix(n, "wlan"):
+		return 2
+	case strings.HasPrefix(n, "bridge"):
+		return 3
+	default:
+		return 5
+	}
+}
+
+func skipIface(name string) bool {
+	n := strings.ToLower(name)
+	for _, p := range []string{"lo", "awdl", "llw", "utun", "ipsec", "ppp", "appletalk", "dummy", "vmnet", "vnic"} {
+		if n == p || strings.HasPrefix(n, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func LanIPs() []string {
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	type item struct {
+		rank int
+		ip   string
+	}
+	var items []item
+	for _, iface := range ifs {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if skipIface(iface.Name) {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipn, ok := addr.(*net.IPNet)
+			if !ok || ipn.IP == nil {
+				continue
+			}
+			ip4 := ipn.IP.To4()
+			if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() {
+				continue
+			}
+			items = append(items, item{rank: ifaceRank(iface.Name), ip: ip4.String()})
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].rank < items[j].rank })
+	seen := map[string]bool{}
+	var out []string
+	for _, it := range items {
+		if seen[it.ip] {
+			continue
+		}
+		seen[it.ip] = true
+		out = append(out, it.ip)
+	}
+	return out
+}
+
 func (a *App) StartBackground() {
 	a.Fast.SetLANIP(LanIP())
 	a.Fast.SetOutputDir(a.OutputDir)
 	a.Fast.SetOnReceived(func(name string, size int64, dest string) {
 		a.recordFile("", "", name, size, dest)
 	})
+	a.Fast.SetOnProgress(func(name string, written, total int64) {
+		a.noteLive(name, written)
+	})
 	a.Fast.Start()
 	go a.monitorADB()
 	go a.maintainLoop()
+	go a.advertiseBonjour()
+}
+
+func computerName() string {
+	if runtime.GOOS == "darwin" {
+		out, err := exec.Command("scutil", "--get", "ComputerName").Output()
+		if err == nil {
+			n := strings.TrimSpace(string(out))
+			if n != "" {
+				return n
+			}
+		}
+	}
+	h, _ := os.Hostname()
+	return strings.TrimSuffix(h, ".local")
+}
+
+func (a *App) advertiseBonjour() {
+	stop, err := bonjour.Advertise(computerName(), HTTPPort)
+	if err != nil {
+		fmt.Println("bonjour:", err)
+		return
+	}
+	a.mu.Lock()
+	a.mdnsStop = stop
+	a.mu.Unlock()
 }
 
 func (a *App) maintainLoop() {
+	time.Sleep(8 * time.Second)
 	a.maintain()
 	tick := time.NewTicker(10 * time.Minute)
 	defer tick.Stop()
@@ -231,7 +497,6 @@ func (a *App) pruneOldThumbs(maxAge time.Duration) {
 }
 
 func (a *App) monitorADB() {
-	time.Sleep(2 * time.Second)
 	for {
 		a.refreshDevices()
 		time.Sleep(2 * time.Second)
@@ -239,35 +504,49 @@ func (a *App) monitorADB() {
 }
 
 func (a *App) refreshDevices() {
-	ready, unauth, _ := a.ADB.Devices()
 	a.devMu.Lock()
-	defer a.devMu.Unlock()
-	a.serials = nil
+	if !a.devAt.IsZero() && time.Since(a.devAt) < 800*time.Millisecond {
+		a.devMu.Unlock()
+		return
+	}
+	a.devAt = time.Now()
+	a.devMu.Unlock()
+
+	ready, unauth, _ := a.ADB.Devices()
+	serials := make([]string, 0, len(ready))
 	for _, d := range ready {
-		a.serials = append(a.serials, d.Serial)
+		serials = append(serials, d.Serial)
 	}
-	a.unauth = nil
+	un := make([]string, 0, len(unauth))
 	for _, d := range unauth {
-		a.unauth = append(a.unauth, d.Serial)
+		un = append(un, d.Serial)
 	}
-	a.connected = len(a.serials) > 0
-	if a.connected {
+
+	model := ""
+	if len(serials) > 0 {
 		cur := a.ADB.Serial()
 		ok := false
-		for _, s := range a.serials {
+		for _, s := range serials {
 			if s == cur {
 				ok = true
 				break
 			}
 		}
 		if !ok {
-			a.ADB.SetSerial(a.serials[0])
+			a.ADB.SetSerial(serials[0])
 		}
-		a.model = strings.TrimSpace(a.ADB.Prop("ro.product.brand") + " " + a.ADB.Prop("ro.product.model"))
+		model = strings.TrimSpace(a.ADB.Prop("ro.product.brand") + " " + a.ADB.Prop("ro.product.model"))
 	} else {
 		a.ADB.SetSerial("")
-		a.model = ""
 	}
+
+	a.devMu.Lock()
+	a.serials = serials
+	a.unauth = un
+	a.connected = len(serials) > 0
+	a.model = model
+	a.devAt = time.Now()
+	a.devMu.Unlock()
 }
 
 func (a *App) Handler() http.Handler {
@@ -308,6 +587,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/scan_status", a.scanStatus)
 	mux.HandleFunc("GET /api/scan_result", a.scanResult)
 	mux.HandleFunc("GET /api/album_photos", a.albumPhotos)
+	mux.HandleFunc("GET /api/recent_media", a.recentMedia)
 	mux.HandleFunc("GET /api/thumb", a.thumb)
 	mux.HandleFunc("POST /api/transfer", a.startTransfer)
 	mux.HandleFunc("GET /api/transfer_status", a.transferStatus)
@@ -388,10 +668,20 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 		list = append(list, map[string]any{"id": id, "name": d.Name})
 	}
 	a.mu.Unlock()
+	ips := LanIPs()
+	if len(ips) == 0 && ip != "" {
+		ips = []string{ip}
+	}
+	urls := make([]string, 0, len(ips))
+	for _, x := range ips {
+		urls = append(urls, fmt.Sprintf("http://%s:%d", x, HTTPPort))
+	}
 	writeJSON(w, 200, map[string]any{
-		"success": true, "ip": ip, "port": HTTPPort,
+		"success": true, "ip": ip, "ips": ips, "port": HTTPPort,
 		"url":      fmt.Sprintf("http://%s:%d", ip, HTTPPort),
+		"urls":     urls,
 		"tcp_port": fast.TCPPort, "ftp_port": fast.FTPPort,
+		"apk_url":           APKDownloadURL,
 		"protocols":         []string{"tcp", "ftp", "http_put", "http_multipart"},
 		"connected_devices": list, "device_count": len(list),
 	})
@@ -638,21 +928,20 @@ func (a *App) wifiUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	expected, _ := strconv.ParseInt(r.FormValue("file_size"), 10, 64)
-	if st, err := os.Stat(dest); err == nil {
-		if expected > 0 && st.Size() == expected || expected == 0 && st.Size() > 0 {
-			a.recordFile(deviceID, batchID, filepath.Base(dest), st.Size(), dest)
-			writeJSON(w, 200, map[string]any{"success": true, "skipped": true, "path": dest})
-			return
-		}
-		_ = os.Remove(dest)
+	if sz, ok := a.tryReuse(dest, expected); ok {
+		a.recordFile(deviceID, batchID, filepath.Base(dest), sz, dest)
+		writeJSON(w, 200, map[string]any{"success": true, "skipped": true, "path": dest})
+		return
 	}
 	out, err := os.Create(dest)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	_, copyErr := io.Copy(out, file)
+	pw := &progressWriter{w: out, app: a, name: filepath.Base(dest), total: expected}
+	_, copyErr := io.Copy(pw, file)
 	_ = out.Close()
+	a.noteLive(filepath.Base(dest), pw.n)
 	if copyErr != nil {
 		writeJSON(w, 500, map[string]any{"success": false, "error": copyErr.Error()})
 		return
@@ -706,10 +995,21 @@ func (a *App) wifiCheckFiles(w http.ResponseWriter, r *http.Request) {
 		if rel == "" {
 			rel = name
 		}
-		p := filepath.Join(root, filepath.FromSlash(rel))
-		if _, err := os.Stat(p); err != nil {
+		expected := asInt64(m["size"])
+		dest, err := fast.SafeJoin(root, rel)
+		if err != nil {
 			missing = append(missing, f)
+			continue
 		}
+		if expected > 0 {
+			if sz, ok := a.tryReuse(dest, expected); ok {
+				a.recordFile(deviceID, batchID, filepath.Base(dest), sz, dest)
+				continue
+			}
+		} else if st, err := os.Stat(dest); err == nil && st.Size() > 0 {
+			continue
+		}
+		missing = append(missing, f)
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "missing": missing})
 }
@@ -747,13 +1047,28 @@ func (a *App) fastPut(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
+	expected, _ := strconv.ParseInt(r.Header.Get("X-File-Size"), 10, 64)
+	if expected <= 0 {
+		expected = r.ContentLength
+	}
+	if sz, ok := a.tryReuse(dest, expected); ok {
+		batchID := ""
+		if sess != nil {
+			batchID = sess.BatchID
+		}
+		a.recordFile(deviceID, batchID, filepath.Base(dest), sz, dest)
+		writeJSON(w, 200, map[string]any{"success": true, "skipped": true, "bytes": sz, "path": dest, "protocol": "http_put"})
+		return
+	}
 	f, err := os.Create(dest)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	n, copyErr := io.Copy(f, r.Body)
+	pw := &progressWriter{w: f, app: a, name: filepath.Base(dest), total: expected}
+	n, copyErr := io.Copy(pw, r.Body)
 	_ = f.Close()
+	a.noteLive(filepath.Base(dest), n)
 	if copyErr != nil {
 		writeJSON(w, 500, map[string]any{"success": false, "error": copyErr.Error()})
 		return
@@ -808,6 +1123,11 @@ func (a *App) uploadInit(w http.ResponseWriter, r *http.Request) {
 	a.inbox.BatchID = batchID
 	a.inbox.Completed = 0
 	a.inbox.Total = len(files)
+	a.inbox.Bytes = 0
+	a.inbox.TotalBytes = total
+	a.inbox.Started = time.Now()
+	a.inbox.Win = rateWin{}
+	a.inbox.Live = map[string]int64{}
 	a.inbox.LastFile = ""
 	a.inbox.LastAt = time.Now()
 	a.inbox.Seq++
@@ -929,6 +1249,13 @@ func (a *App) recordFile(deviceID, batchID, name string, size int64, dest string
 	if name == "" {
 		name = filepath.Base(dest)
 	}
+	if a.inbox.Live != nil {
+		delete(a.inbox.Live, name)
+	}
+	a.inbox.Bytes += size
+	if a.inbox.Started.IsZero() {
+		a.inbox.Started = time.Now()
+	}
 	a.inbox.LastFile = name
 	a.inbox.LastAt = time.Now()
 	a.inbox.Seq++
@@ -968,6 +1295,8 @@ func (a *App) parseDestLocked(dest string) (deviceID, batchID string) {
 
 func (a *App) inboxStatus(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
+	justDone := false
+	nTitle, nBody := "", ""
 	receiving := a.inbox.Receiving
 	if s := a.sessions[a.inbox.DeviceID]; s != nil && s.IsUploading {
 		receiving = true
@@ -978,33 +1307,77 @@ func (a *App) inboxStatus(w http.ResponseWriter, r *http.Request) {
 		if s := a.sessions[a.inbox.DeviceID]; s == nil || !s.IsUploading {
 			receiving = false
 			a.inbox.Receiving = false
+			a.inbox.Live = map[string]int64{}
 			if a.inbox.DeviceID != "" && a.inbox.BatchID != "" {
+				elapsed := 0
+				if !a.inbox.Started.IsZero() {
+					elapsed = int(time.Since(a.inbox.Started).Seconds())
+				}
 				_ = a.Store.SaveBatch(store.Batch{
 					DeviceID: a.inbox.DeviceID, BatchID: a.inbox.BatchID,
-					Timestamp:  time.Now().Format("2006-01-02 15:04:05"),
-					PhotoCount: a.inbox.Completed, Status: "completed",
+					Timestamp:   time.Now().Format("2006-01-02 15:04:05"),
+					PhotoCount:  a.inbox.Completed,
+					TotalSize:   a.inbox.Bytes,
+					TotalSizeMB: float64(a.inbox.Bytes) / 1024 / 1024,
+					Status:      "completed",
+					DurationSec: elapsed,
 				})
+			}
+			if a.inbox.Completed > 0 && a.inbox.Notified != a.inbox.Seq {
+				a.inbox.Notified = a.inbox.Seq
+				justDone = true
+				nTitle = "Wi-Fi 传输完成"
+				nBody = fmt.Sprintf("已收到 %d 张，共 %s", a.inbox.Completed, humanBytes(a.inbox.Bytes))
 			}
 		}
 	}
+	bytesDone := a.inbox.Bytes + liveSum(a.inbox.Live)
+	inst := a.inbox.Win.sample(bytesDone)
+	speed, eta, elapsed := transferPace(bytesDone, a.inbox.TotalBytes, a.inbox.Completed, a.inbox.Total, a.inbox.Started, inst)
 	out := map[string]any{
-		"success":    true,
-		"receiving":  receiving,
-		"device_id":  a.inbox.DeviceID,
-		"device":     a.inbox.DeviceName,
-		"batch_id":   a.inbox.BatchID,
-		"completed":  a.inbox.Completed,
-		"total":      a.inbox.Total,
-		"last_file":  a.inbox.LastFile,
-		"seq":        a.inbox.Seq,
-		"recent":     a.inbox.Recent,
-		"output_dir": a.wifiOut,
+		"success":     true,
+		"receiving":   receiving,
+		"device_id":   a.inbox.DeviceID,
+		"device":      a.inbox.DeviceName,
+		"batch_id":    a.inbox.BatchID,
+		"completed":   a.inbox.Completed,
+		"total":       a.inbox.Total,
+		"bytes_done":  bytesDone,
+		"bytes_total": a.inbox.TotalBytes,
+		"speed_mbps":  speed,
+		"eta_sec":     eta,
+		"elapsed_sec": elapsed,
+		"last_file":   a.inbox.LastFile,
+		"seq":         a.inbox.Seq,
+		"recent":      a.inbox.Recent,
+		"output_dir":  a.wifiOut,
 	}
 	if !a.inbox.LastAt.IsZero() {
 		out["last_at"] = a.inbox.LastAt.Format(time.RFC3339)
 	}
+	onNotify := a.OnNotify
 	a.mu.Unlock()
+	if justDone && onNotify != nil {
+		onNotify(nTitle, nBody)
+	}
 	writeJSON(w, 200, out)
+}
+
+func asInt64(v any) int64 {
+	switch t := v.(type) {
+	case float64:
+		return int64(t)
+	case int64:
+		return t
+	case int:
+		return int64(t)
+	case json.Number:
+		n, err := t.Int64()
+		if err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 func asInt(v any) (int, bool) {
@@ -1104,10 +1477,23 @@ func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 		if len(files) > count {
 			count = len(files)
 		}
+		size := b.TotalSize
+		if size == 0 {
+			for _, f := range files {
+				switch n := f["size"].(type) {
+				case int64:
+					size += n
+				case float64:
+					size += int64(n)
+				}
+			}
+		}
 		out = append(out, map[string]any{
 			"device_id": b.DeviceID, "device_name": name, "batch_id": b.BatchID,
 			"photo_count": count, "folder": folder, "cover": cover,
 			"previews": previews, "timestamp": b.Timestamp, "status": b.Status,
+			"total_size": size, "total_size_mb": float64(size) / 1024 / 1024,
+			"duration_sec": b.DurationSec,
 		})
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "batches": out})

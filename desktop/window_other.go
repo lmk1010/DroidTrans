@@ -9,3 +9,5 @@ func runNativeWindow(url string) {
 }
 
 func requestAttention() {}
+
+func notifyUser(title, body string) {}

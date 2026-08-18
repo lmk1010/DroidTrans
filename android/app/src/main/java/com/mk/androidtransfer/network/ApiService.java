@@ -91,6 +91,9 @@ public interface ApiService {
     @POST("/api/upload/init")
     Call<Map<String, Object>> initUpload(@Body Map<String, Object> request);
 
+    @POST("/api/wifi/check_files")
+    Call<Map<String, Object>> checkFiles(@Body Map<String, Object> request);
+
     /**
      * 获取上传进度
      */

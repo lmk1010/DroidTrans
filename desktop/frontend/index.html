@@ -94,6 +94,11 @@
           <input id="usbOut" type="text" spellcheck="false" />
           <button type="button" id="openUsbOut" class="ghost" data-i18n="open">打开文件夹</button>
         </div>
+        <div id="usbChips" class="chips hidden">
+          <button type="button" id="chipToday" class="ghost" data-range="today" data-i18n="chipToday">今天</button>
+          <button type="button" id="chipWeek" class="ghost" data-range="week" data-i18n="chipWeek">近 7 天</button>
+          <button type="button" id="chipCamera" class="ghost" data-i18n="chipCamera">整个相机</button>
+        </div>
         <div id="usbEmpty" class="empty"></div>
         <div id="albumGrid" class="albums"></div>
         <p id="photoBack" class="jump hidden" data-i18n="backAlbums">← 返回相册</p>
@@ -108,19 +113,28 @@
       <section id="view-wifi" class="view">
         <header class="page-head">
           <h1 data-i18n="wifiTitle">Wi-Fi 接收</h1>
-          <p data-i18n="wifiSub">手机打开卓传，同一 Wi-Fi 会自己连上。也可以扫码。</p>
+          <p data-i18n="wifiSub">手机打开卓传会自己连上。没装 App 就扫下面的下载码。</p>
         </header>
         <div class="listen">
           <div id="wifiQR" class="qr" aria-hidden="true"></div>
           <div class="listen-copy">
             <span class="kicker" data-i18n="localAddr">本机地址</span>
             <strong id="wifiURL" title="">—</strong>
-            <em id="wifiHint" data-i18n="wifiHint">手机打开卓传，会自己搜到。也可以扫左边的码。</em>
+            <em id="wifiHint" data-i18n="wifiHint">已装 App 时扫这个，或等它自己发现。</em>
+            <div id="wifiAlts" class="alts hidden"></div>
           </div>
           <button type="button" id="copyUrl" class="icon-btn" data-i18n-title="copy" title="复制" aria-label="复制">
             <svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
             <svg class="i-check hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
           </button>
+        </div>
+        <div class="listen apk-row">
+          <div id="apkQR" class="qr" aria-hidden="true"></div>
+          <div class="listen-copy">
+            <span class="kicker" data-i18n="apkKicker">下载手机 App</span>
+            <strong data-i18n="apkTitle">扫码安装卓传</strong>
+            <em data-i18n="apkHint">没有 App 时扫这个。装好打开后，会自己找到这台电脑。</em>
+          </div>
         </div>
         <div class="path-row glass">
           <label data-i18n="save">保存到</label>

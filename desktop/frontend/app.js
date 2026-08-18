@@ -12,6 +12,7 @@ const state = {
   usbOut: '',
   names: {},
   usbConnected: false,
+  wifiPick: '',
 };
 
 let viewerPhotos = [];
@@ -29,8 +30,8 @@ const I18N = {
     usbEmptyHint: '用线连上手机，在手机上允许 USB 调试。',
     usbNoAlbum: '还没有相册', usbScanHint: '连上后会自动扫。选出要传的，再开始传输。',
     copy: '复制', copied: '已复制', open: '打开文件夹', openShort: '打开',
-    wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传，同一 Wi-Fi 会自己连上。也可以扫码。',
-    wifiHint: '手机打开卓传，会自己搜到。也可以扫左边的码。',
+    wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。没装 App 就扫下面的下载码。',
+    wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库',
     noPhone: '还没有手机连上来', noPhoneHint: '打开手机 App，搜到这台电脑即可',
     homeNextUsb: '手机已连上，去 USB 选相册。',
@@ -47,6 +48,14 @@ const I18N = {
     goUsb: '打开 USB', goWifi: '打开 Wi-Fi', goHist: '打开图库',
     seeGallery: '查看', backAlbums: '← 返回相册',
     copyName: '复制名称', copyFile: '复制文件名',
+    etaLeft: '还剩',
+    avgSpeed: '均速',
+    chipToday: '今天', chipWeek: '近 7 天', chipCamera: '整个相机',
+    xferN: '传输 {n} 张',
+    recentNone: '这段时间相机里没有新照片',
+    apkKicker: '下载手机 App',
+    apkTitle: '扫码安装卓传',
+    apkHint: '没有 App 时扫这个。装好打开后，会自己找到这台电脑。',
   },
   en: {
     navHome: 'Home', navHist: 'Gallery',
@@ -57,8 +66,8 @@ const I18N = {
     usbEmptyHint: 'Connect the phone and allow USB debugging on the device.',
     usbNoAlbum: 'No albums yet', usbScanHint: 'Albums scan automatically. Pick what to send, then transfer.',
     copy: 'Copy', copied: 'Copied', open: 'Open folder', openShort: 'Open',
-    wifiTitle: 'Wi-Fi receive', wifiSub: 'Open DroidTrans on the phone. Same Wi-Fi connects by itself. Or scan the code.',
-    wifiHint: 'The phone finds this computer on its own. You can also scan the code.',
+    wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself. No app yet? Scan the download code.',
+    wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery',
     noPhone: 'No phone yet', noPhoneHint: 'Open the app on your phone and find this computer',
     homeNextUsb: 'Phone connected. Open USB to pick albums.',
@@ -75,6 +84,14 @@ const I18N = {
     goUsb: 'Open USB', goWifi: 'Open Wi-Fi', goHist: 'Open gallery',
     seeGallery: 'View', backAlbums: '← Back to albums',
     copyName: 'Copy name', copyFile: 'Copy filename',
+    etaLeft: 'left',
+    avgSpeed: 'avg',
+    chipToday: 'Today', chipWeek: 'Last 7 days', chipCamera: 'Whole camera',
+    xferN: 'Transfer {n}',
+    recentNone: 'No new camera photos in that period',
+    apkKicker: 'Get the phone app',
+    apkTitle: 'Scan to install DroidTrans',
+    apkHint: 'Scan this if you don’t have the app yet. Open it and it will find this Mac.',
   },
 };
 
@@ -89,6 +106,7 @@ function applyLang() {
     el.setAttribute('aria-label', label);
   });
   $('#langBtn').textContent = state.lang === 'zh' ? 'EN' : '中文';
+  updateXferBtn();
 }
 
 async function api(path, opts = {}) {
@@ -121,6 +139,57 @@ function formatBatch(id) {
   if (!m) return id || '';
   if (state.lang === 'en') return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
   return `${Number(m[2])}月${Number(m[3])}日 ${m[4]}:${m[5]}`;
+}
+
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(n >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function fmtSpeed(mbps) {
+  const n = Number(mbps) || 0;
+  if (n < 0.04) return '';
+  if (n < 1) return `${(n * 1024).toFixed(0)} KB/s`;
+  return `${n.toFixed(1)} MB/s`;
+}
+
+function fmtDur(sec) {
+  sec = Math.round(Number(sec) || 0);
+  if (sec < 1) return '';
+  if (sec < 60) return state.lang === 'zh' ? `${sec}秒` : `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) {
+    if (state.lang === 'zh') return s ? `${m}分${s}秒` : `${m}分钟`;
+    return s ? `${m}m ${s}s` : `${m}m`;
+  }
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  if (state.lang === 'zh') return mm ? `${h}小时${mm}分` : `${h}小时`;
+  return mm ? `${h}h ${mm}m` : `${h}h`;
+}
+
+function fmtEta(sec) {
+  const d = fmtDur(sec);
+  if (!d) return '';
+  return state.lang === 'zh' ? `还剩 ${d}` : `${d} left`;
+}
+
+function paceLine(st) {
+  const parts = [];
+  const speed = fmtSpeed(st.speed_mbps);
+  if (speed) parts.push(speed);
+  const eta = fmtEta(st.eta_sec);
+  if (eta) parts.push(eta);
+  const size = fmtBytes(st.bytes_done);
+  const total = fmtBytes(st.bytes_total);
+  if (size && total) parts.push(`${size} / ${total}`);
+  else if (size) parts.push(size);
+  return parts.join('  ·  ');
 }
 
 function emptyHTML(icon, title, hint) {
@@ -232,7 +301,64 @@ function updateSelAll() {
 }
 
 function updateXferBtn() {
-  $('#xferBtn').disabled = state.selectedAlbums.size === 0 && state.selectedPhotos.size === 0;
+  const n = state.selectedPhotos.size;
+  const albums = state.selectedAlbums.size;
+  $('#xferBtn').disabled = albums === 0 && n === 0;
+  if (albums === 0 && n > 0) {
+    $('#xferBtn').textContent = t('xferN').replace('{n}', String(n));
+  } else {
+    $('#xferBtn').textContent = t('xfer');
+  }
+}
+
+function albumRank(path, al) {
+  const n = String(al?.name || '').toLowerCase();
+  const p = String(path || '').toLowerCase();
+  if (n === '相机' || p.includes('/dcim/camera') || n === '100media' || n === '100andro') return 0;
+  if (n.includes('截图') || p.includes('screenshot')) return 1;
+  if (n.includes('微信') || p.includes('weixin') || p.includes('wechat')) return 2;
+  return 10;
+}
+
+function setChip(id) {
+  ['chipToday', 'chipWeek', 'chipCamera'].forEach((k) => {
+    const el = $('#' + k);
+    if (el) el.classList.toggle('on', k === id);
+  });
+}
+
+function showUsbChips(albums) {
+  const box = $('#usbChips');
+  if (!box) return;
+  const hasCam = Object.entries(albums || {}).some(([p, al]) => albumRank(p, al) <= 1);
+  box.classList.toggle('hidden', !hasCam);
+}
+
+async function applyRecent(range) {
+  hidePhotos();
+  const data = await api('/api/recent_media?range=' + encodeURIComponent(range));
+  const photos = data.photos || [];
+  state.selectedAlbums.clear();
+  state.selectedPhotos.clear();
+  photos.forEach((p) => { if (p.path) state.selectedPhotos.add(p.path); });
+  setChip(range === 'week' ? 'chipWeek' : 'chipToday');
+  renderAlbums(state.albums);
+  updateXferBtn();
+  if (photos.length) {
+    $('#usbEmpty').classList.add('hidden');
+  }
+}
+
+function selectCameraAlbums() {
+  hidePhotos();
+  state.selectedPhotos.clear();
+  state.selectedAlbums.clear();
+  Object.entries(state.albums).forEach(([p, al]) => {
+    if (albumRank(p, al) === 0) state.selectedAlbums.add(p);
+  });
+  setChip('chipCamera');
+  renderAlbums(state.albums);
+  updateXferBtn();
 }
 
 function hidePhotos() {
@@ -253,9 +379,12 @@ function bindImg(root) {
 
 function renderAlbums(albums) {
   state.albums = albums || {};
+  showUsbChips(state.albums);
   const grid = $('#albumGrid');
   grid.innerHTML = '';
-  Object.entries(state.albums).forEach(([path, al]) => {
+  Object.entries(state.albums)
+    .sort((a, b) => albumRank(a[0], a[1]) - albumRank(b[0], b[1]) || String(a[1].name).localeCompare(String(b[1].name)))
+    .forEach(([path, al]) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'album' + (state.selectedAlbums.has(path) ? ' on' : '');
@@ -268,6 +397,7 @@ function renderAlbums(albums) {
       }
       if (state.selectedAlbums.has(path)) state.selectedAlbums.delete(path);
       else state.selectedAlbums.add(path);
+      setChip('');
       renderAlbums(state.albums);
       updateXferBtn();
     });
@@ -325,6 +455,7 @@ $('#selAll').addEventListener('click', () => {
     const keys = Object.keys(state.albums);
     if (state.selectedAlbums.size >= keys.length) state.selectedAlbums.clear();
     else keys.forEach((k) => state.selectedAlbums.add(k));
+    setChip('');
     renderAlbums(state.albums);
   }
   updateXferBtn();
@@ -332,8 +463,11 @@ $('#selAll').addEventListener('click', () => {
 
 let usbAutoSerial = '';
 let usbScanning = false;
+let bootScanOk = false;
+setTimeout(() => { bootScanOk = true; }, 1200);
 
 async function maybeAutoScan(dev) {
+  if (!bootScanOk && state.view !== 'usb') return;
   if (!dev || !dev.connected) {
     usbAutoSerial = '';
     return;
@@ -341,11 +475,11 @@ async function maybeAutoScan(dev) {
   const serial = dev.selected || '';
   if (!serial || serial === usbAutoSerial || usbScanning) return;
   usbAutoSerial = serial;
-  const ok = await startUsbScan();
+  const ok = await startUsbScan({ preset: true });
   if (!ok) usbAutoSerial = '';
 }
 
-async function startUsbScan() {
+async function startUsbScan(opts = {}) {
   if (!state.usbConnected || usbScanning) return false;
   usbScanning = true;
   $('#scanBtn').disabled = true;
@@ -368,7 +502,7 @@ async function startUsbScan() {
     await new Promise((r) => setTimeout(r, 400));
   }
   const result = await api('/api/scan_result');
-  if (state.view === 'usb') {
+  if (state.view === 'usb' || opts.preset) {
     renderAlbums(result.albums);
     if (err) {
       empty.classList.remove('hidden');
@@ -380,10 +514,16 @@ async function startUsbScan() {
   $('#scanBtn').textContent = t('scan');
   $('#scanBtn').disabled = !state.usbConnected;
   usbScanning = false;
+  if (!err && opts.preset) {
+    await applyRecent('today');
+  }
   return !err;
 }
 
 $('#scanBtn').addEventListener('click', () => startUsbScan());
+$('#chipToday')?.addEventListener('click', () => applyRecent('today'));
+$('#chipWeek')?.addEventListener('click', () => applyRecent('week'));
+$('#chipCamera')?.addEventListener('click', () => selectCameraAlbums());
 
 $('#xferBtn').addEventListener('click', async () => {
   const output_dir = $('#usbOut').value.trim();
@@ -409,15 +549,24 @@ async function pollXfer() {
   $('#xferFill').style.width = pct + '%';
   if (st.is_running) {
     $('#xferSee').classList.add('hidden');
-    $('#xferText').textContent = `${st.current || 0}/${st.total || 0}  ${st.current_file || ''}  ${(st.speed_mbps || 0).toFixed(1)} MB/s`;
+    const pace = paceLine(st);
+    const file = st.current_file || '';
+    $('#xferText').textContent = `${st.current || 0}/${st.total || 0}${file ? '  ' + file : ''}${pace ? '  ·  ' + pace : ''}`;
     setTimeout(pollXfer, 400);
     return;
   }
   const n = st.completed_count || 0;
   const fail = (st.failed || []).length;
-  $('#xferText').textContent = state.lang === 'zh'
-    ? `完成 ${n} 张${fail ? `，失败 ${fail}` : ''}`
-    : `Done ${n}${fail ? `, failed ${fail}` : ''}`;
+  const bits = [];
+  bits.push(state.lang === 'zh' ? `完成 ${n} 张` : `Done ${n}`);
+  if (fail) bits.push(state.lang === 'zh' ? `失败 ${fail}` : `failed ${fail}`);
+  const size = fmtBytes(st.bytes_done);
+  if (size) bits.push(size);
+  const dur = fmtDur(st.elapsed_sec);
+  if (dur) bits.push(dur);
+  const avg = fmtSpeed(st.speed_mbps);
+  if (avg) bits.push(`${t('avgSpeed')} ${avg}`);
+  $('#xferText').textContent = bits.join('  ·  ');
   $('#xferSee').classList.toggle('hidden', n === 0);
   lastXfer = { device: st.device_id || '', batch: st.batch_id || '', folder: st.output_dir || '' };
 }
@@ -453,11 +602,23 @@ function renderGallery(target, batches, limit) {
       ? `<img class="cover" alt="" src="${fileURL(b.cover)}" />`
       : `<div class="cover ph">${I_STACK}</div>`;
     const name = b.device_name || deviceLabel(b.device_id);
+    const extra = [];
+    extra.push(`${b.photo_count || 0} ${t('photos')}`);
+    extra.push(formatBatch(b.batch_id));
+    const sz = fmtBytes(b.total_size);
+    if (sz) extra.push(sz);
+    const dur = fmtDur(b.duration_sec);
+    if (dur) extra.push(dur);
+    if (b.duration_sec > 0 && b.total_size > 0) {
+      const mbps = (b.total_size / 1024 / 1024) / b.duration_sec;
+      const avg = fmtSpeed(mbps);
+      if (avg) extra.push(avg);
+    }
     return `<button type="button" class="shot"
       data-device="${esc(b.device_id)}" data-batch="${esc(b.batch_id)}" data-folder="${esc(b.folder || '')}" data-name="${esc(name)}">
       ${cover}
       <span class="count">${b.photo_count || 0} ${t('photos')}</span>
-      <figcaption><strong>${esc(name)}</strong><small>${esc(formatBatch(b.batch_id))}</small></figcaption>
+      <figcaption><strong>${esc(name)}</strong><small>${esc(extra.join(' · '))}</small></figcaption>
     </button>`;
   }).join('');
   bindImg(el);
@@ -664,6 +825,7 @@ async function openDeviceGallery(deviceId) {
 }
 
 let lastQR = '';
+let lastApkQR = '';
 function renderQR(url) {
   const box = $('#wifiQR');
   if (!box || typeof QRCode === 'undefined') return;
@@ -681,13 +843,60 @@ function renderQR(url) {
   });
 }
 
+function renderApkQR(url) {
+  const box = $('#apkQR');
+  if (!box || typeof QRCode === 'undefined' || !url) return;
+  if (url === lastApkQR && box.childElementCount) return;
+  lastApkQR = url;
+  box.innerHTML = '';
+  new QRCode(box, {
+    text: url,
+    width: 132,
+    height: 132,
+    colorDark: '#f4f5f7',
+    colorLight: '#121317',
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+}
+
+function setWifiURL(url) {
+  state.wifiPick = url || '';
+  $('#wifiURL').textContent = url || '—';
+  $('#wifiURL').title = url || '';
+  renderQR(url || '');
+}
+
+function renderWifiAlts(urls, current) {
+  const box = $('#wifiAlts');
+  if (!box) return;
+  if (!urls || urls.length < 2) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  box.classList.remove('hidden');
+  box.innerHTML = urls.map((u) => {
+    const label = String(u).replace(/^https?:\/\//, '');
+    return `<button type="button" class="ghost${u === current ? ' on' : ''}" data-url="${esc(u)}">${esc(label)}</button>`;
+  }).join('');
+  box.querySelectorAll('button').forEach((b) => {
+    b.addEventListener('click', () => {
+      setWifiURL(b.dataset.url);
+      renderWifiAlts(urls, b.dataset.url);
+    });
+  });
+}
+
 async function refreshWifi() {
   const [info, gal] = await Promise.all([api('/api/wifi/info'), api('/api/gallery')]);
-  const url = info.url || '—';
-  $('#wifiURL').textContent = url;
-  $('#wifiURL').title = url;
-  renderQR(info.url || '');
-  if (info.url && !$('#wifiOut').value) {
+  const urls = (info.urls && info.urls.length) ? info.urls : (info.url ? [info.url] : []);
+  if (!state.wifiPick || !urls.includes(state.wifiPick)) {
+    state.wifiPick = urls[0] || info.url || '';
+  }
+  setWifiURL(state.wifiPick);
+  renderWifiAlts(urls, state.wifiPick);
+  renderApkQR(info.apk_url || '');
+  if (state.wifiPick && !$('#wifiOut').value) {
     const h = await api('/api/health');
     setOut(h.root || '', false);
   }
@@ -814,12 +1023,25 @@ async function pollInbox() {
     inboxBatch = { device: box.device_id || '', batch: box.batch_id || '', folder: '' };
     el.classList.remove('hidden');
     el.classList.toggle('done', !box.receiving);
+    const bytePct = box.bytes_total > 0 ? Math.min(100, (box.bytes_done / box.bytes_total) * 100) : 0;
+    const filePct = total ? Math.min(100, (n / total) * 100) : 0;
+    const pct = bytePct || filePct;
     if (box.receiving) {
-      $('#inboxTitle').textContent = total ? `${t('recv')} ${n}/${total}` : `${t('recv')} ${n}`;
-      $('#inboxFill').style.width = total ? Math.min(100, (n / total) * 100) + '%' : '40%';
+      const pace = paceLine(box);
+      $('#inboxTitle').textContent = total
+        ? `${t('recv')} ${n}/${total}${pace ? '  ·  ' + pace : ''}`
+        : `${t('recv')} ${n}${pace ? '  ·  ' + pace : ''}`;
+      $('#inboxFill').style.width = pct ? pct + '%' : '40%';
       clearTimeout(inboxHideTimer);
     } else {
-      $('#inboxTitle').textContent = `${t('got')} ${n} ${t('photos')}`;
+      const bits = [`${t('got')} ${n} ${t('photos')}`];
+      const size = fmtBytes(box.bytes_done);
+      if (size) bits.push(size);
+      const dur = fmtDur(box.elapsed_sec);
+      if (dur) bits.push(dur);
+      const avg = fmtSpeed(box.speed_mbps);
+      if (avg) bits.push(avg);
+      $('#inboxTitle').textContent = bits.join('  ·  ');
       $('#inboxFill').style.width = '100%';
       if (fresh) {
         clearTimeout(inboxHideTimer);

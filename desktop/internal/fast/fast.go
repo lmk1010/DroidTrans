@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -22,12 +23,14 @@ const (
 var magic = []byte("ATF1")
 
 type FileHandler func(name string, size int64, dest string)
+type ProgressHandler func(name string, written, total int64)
 
 type Server struct {
 	mu         sync.RWMutex
 	outputDir  string
 	lanIP      string
 	onReceived FileHandler
+	onProgress ProgressHandler
 }
 
 func New(outputDir, lanIP string) *Server {
@@ -56,6 +59,21 @@ func (s *Server) SetOnReceived(fn FileHandler) {
 	s.mu.Lock()
 	s.onReceived = fn
 	s.mu.Unlock()
+}
+
+func (s *Server) SetOnProgress(fn ProgressHandler) {
+	s.mu.Lock()
+	s.onProgress = fn
+	s.mu.Unlock()
+}
+
+func (s *Server) progress(name string, written, total int64) {
+	s.mu.RLock()
+	fn := s.onProgress
+	s.mu.RUnlock()
+	if fn != nil {
+		fn(name, written, total)
+	}
 }
 
 func (s *Server) emit(dest string) {
@@ -132,7 +150,9 @@ func (s *Server) handleTCP(conn net.Conn) {
 		_, _ = conn.Write([]byte("ERR " + err.Error() + "\n"))
 		return
 	}
-	if err := writeStream(conn, dest, size); err != nil {
+	if err := writeStream(conn, dest, size, func(n int64) {
+		s.progress(name, n, size)
+	}); err != nil {
 		_, _ = conn.Write([]byte("ERR " + err.Error() + "\n"))
 		return
 	}
@@ -166,17 +186,41 @@ func readATF1(r io.Reader) (string, int64, error) {
 	return string(nameBuf), int64(size), nil
 }
 
-func writeStream(r io.Reader, dest string, size int64) error {
+type countWriter struct {
+	w      io.Writer
+	n      int64
+	last   time.Time
+	report func(int64)
+}
+
+func (c *countWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	if c.report != nil {
+		now := time.Now()
+		if c.last.IsZero() || now.Sub(c.last) >= 200*time.Millisecond || err != nil {
+			c.last = now
+			c.report(c.n)
+		}
+	}
+	return n, err
+}
+
+func writeStream(r io.Reader, dest string, size int64, report func(int64)) error {
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	cw := &countWriter{w: f, report: report}
 	if size > 0 {
-		_, err = io.CopyN(f, r, size)
-		return err
+		_, err = io.CopyN(cw, r, size)
+	} else {
+		_, err = io.Copy(cw, r)
 	}
-	_, err = io.Copy(f, r)
+	if report != nil {
+		report(cw.n)
+	}
 	return err
 }
 
@@ -266,12 +310,10 @@ func (s *Server) handleFTP(conn net.Conn) {
 			}
 			dest, err := SafeJoin(s.OutputDir(), filename)
 			if err == nil {
-				f, e := os.Create(dest)
-				if e == nil {
-					_, _ = io.Copy(f, dataConn)
-					_ = f.Close()
-					s.emit(dest)
-				}
+				_ = writeStream(dataConn, dest, 0, func(n int64) {
+					s.progress(filename, n, 0)
+				})
+				s.emit(dest)
 			}
 			_ = dataConn.Close()
 			_ = dataLn.Close()

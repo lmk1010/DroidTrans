@@ -21,6 +21,7 @@ import com.mk.androidtransfer.adapter.UploadRecordAdapter;
 import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.database.UploadRecordDao;
 import com.mk.androidtransfer.model.UploadRecord;
+import com.mk.androidtransfer.util.TransferFormat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -121,6 +122,15 @@ public class UploadHistoryActivity extends AppCompatActivity {
     }
     
     private void showRecordDetailsDialog(UploadRecord record) {
+        String size = TransferFormat.bytes(record.getTotalBytes());
+        if (size.isEmpty()) size = getString(R.string.unknown_value);
+        String dur = TransferFormat.duration(this, record.getDurationSec());
+        if (dur.isEmpty()) dur = getString(R.string.unknown_value);
+        String avg = getString(R.string.unknown_value);
+        if (record.getDurationSec() > 0 && record.getTotalBytes() > 0) {
+            String speed = TransferFormat.speed(record.getTotalBytes() / Math.max(1, record.getDurationSec()));
+            if (!speed.isEmpty()) avg = speed;
+        }
         String message = getString(
             R.string.upload_detail_body,
             record.getServerName(),
@@ -128,7 +138,9 @@ public class UploadHistoryActivity extends AppCompatActivity {
             record.getTotalCount(),
             record.getSuccessCount(),
             record.getFailedCount(),
-            record.getTotalCount() > 0 ? (record.getSuccessCount() * 100.0 / record.getTotalCount()) : 0
+            size,
+            dur,
+            avg
         );
         
         new AlertDialog.Builder(this)

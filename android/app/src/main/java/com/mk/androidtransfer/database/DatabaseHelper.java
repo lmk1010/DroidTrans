@@ -10,7 +10,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 public class DatabaseHelper extends SQLiteOpenHelper {
     
     private static final String DATABASE_NAME = "android_transfer.db";
-    private static final int DATABASE_VERSION = 1;
+    private static final int DATABASE_VERSION = 2;
     
     // 上传记录表
     public static final String TABLE_UPLOAD_RECORDS = "upload_records";
@@ -22,6 +22,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public static final String COLUMN_FAILED_COUNT = "failed_count";
     public static final String COLUMN_UPLOAD_TIME = "upload_time";
     public static final String COLUMN_FILE_LIST = "file_list";
+    public static final String COLUMN_DURATION_SEC = "duration_sec";
+    public static final String COLUMN_TOTAL_BYTES = "total_bytes";
     
     // 已上传文件表（用于快速查询）
     public static final String TABLE_UPLOADED_FILES = "uploaded_files";
@@ -38,7 +40,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         COLUMN_SUCCESS_COUNT + " INTEGER, " +
         COLUMN_FAILED_COUNT + " INTEGER, " +
         COLUMN_UPLOAD_TIME + " INTEGER, " +
-        COLUMN_FILE_LIST + " TEXT" +
+        COLUMN_FILE_LIST + " TEXT, " +
+        COLUMN_DURATION_SEC + " INTEGER DEFAULT 0, " +
+        COLUMN_TOTAL_BYTES + " INTEGER DEFAULT 0" +
         ")";
     
     private static final String CREATE_UPLOADED_FILES_TABLE = 
@@ -71,9 +75,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_UPLOAD_RECORDS);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_UPLOADED_FILES);
-        onCreate(db);
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE " + TABLE_UPLOAD_RECORDS + " ADD COLUMN " + COLUMN_DURATION_SEC + " INTEGER DEFAULT 0");
+            db.execSQL("ALTER TABLE " + TABLE_UPLOAD_RECORDS + " ADD COLUMN " + COLUMN_TOTAL_BYTES + " INTEGER DEFAULT 0");
+        }
     }
 }
 

@@ -84,6 +84,8 @@ PY
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>LSMultipleInstancesProhibited</key><true/>
+  <key>NSUserNotificationAlertStyle</key><string>banner</string>
 </dict>
 </plist>
 PLIST

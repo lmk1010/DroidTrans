@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.mk.androidtransfer.R;
 import com.mk.androidtransfer.model.UploadRecord;
+import com.mk.androidtransfer.util.TransferFormat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,11 +56,13 @@ public class UploadRecordAdapter extends RecyclerView.Adapter<UploadRecordAdapte
         UploadRecord record = records.get(position);
 
         holder.tvServerName.setText(record.getServerName());
-        holder.tvUploadTime.setText(context.getString(
-                R.string.history_time_duration,
-                formatTime(record.getUploadTimeStr()),
-                formatDuration(estimateDuration(record))
-        ));
+        String time = formatTime(record.getUploadTimeStr());
+        String dur = TransferFormat.duration(context, record.getDurationSec());
+        if (!dur.isEmpty()) {
+            holder.tvUploadTime.setText(context.getString(R.string.history_time_duration, time, dur));
+        } else {
+            holder.tvUploadTime.setText(time);
+        }
 
         holder.tvSuccessCount.setText(String.valueOf(record.getSuccessCount()));
         holder.tvTotalCount.setText(String.valueOf(record.getTotalCount()));
@@ -71,10 +74,25 @@ public class UploadRecordAdapter extends RecyclerView.Adapter<UploadRecordAdapte
             holder.tvFailedCount.setVisibility(View.GONE);
         }
 
+        StringBuilder meta = new StringBuilder();
+        String size = TransferFormat.bytes(record.getTotalBytes());
+        if (!size.isEmpty()) {
+            meta.append(size);
+        }
+        if (record.getDurationSec() > 0 && record.getTotalBytes() > 0) {
+            long bps = record.getTotalBytes() / Math.max(1, record.getDurationSec());
+            String avg = TransferFormat.speed(bps);
+            if (!avg.isEmpty()) {
+                if (meta.length() > 0) meta.append(" · ");
+                meta.append(avg);
+            }
+        }
         float successRate = record.getTotalCount() > 0
                 ? (record.getSuccessCount() * 100.0f / record.getTotalCount())
                 : 0;
-        holder.tvSuccessRate.setText(String.format("%.0f%%", successRate));
+        if (meta.length() > 0) meta.append(" · ");
+        meta.append(String.format("%.0f%%", successRate));
+        holder.tvSuccessRate.setText(meta.toString());
 
         holder.itemView.setOnClickListener(v -> {
             if (listener != null) {
@@ -97,32 +115,6 @@ public class UploadRecordAdapter extends RecyclerView.Adapter<UploadRecordAdapte
             return timeStr.substring(0, 16);
         }
         return timeStr;
-    }
-
-    private int estimateDuration(UploadRecord record) {
-        int successTime = record.getSuccessCount() * 3;
-        int failedTime = record.getFailedCount();
-        return successTime + failedTime;
-    }
-
-    private String formatDuration(int seconds) {
-        if (seconds < 60) {
-            return context.getString(R.string.seconds_unit, seconds);
-        } else if (seconds < 3600) {
-            int minutes = seconds / 60;
-            int secs = seconds % 60;
-            if (secs == 0) {
-                return context.getString(R.string.minutes_unit, minutes);
-            }
-            return context.getString(R.string.minutes_seconds, minutes, secs);
-        } else {
-            int hours = seconds / 3600;
-            int minutes = (seconds % 3600) / 60;
-            if (minutes == 0) {
-                return context.getString(R.string.hours_unit, hours);
-            }
-            return context.getString(R.string.hours_minutes, hours, minutes);
-        }
     }
 
     @Override

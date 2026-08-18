@@ -112,7 +112,9 @@
                 android:layout_marginTop="2dp"
                 android:textColor="@color/radar_blue_primary"
                 android:textSize="12sp"
-                tools:text="96%" />
+                android:maxLines="2"
+                android:gravity="end"
+                tools:text="1.2 GB · 8.4 MB/s · 96%" />
         </LinearLayout>
 
         <ImageButton

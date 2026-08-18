@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -310,6 +311,77 @@ func (a *App) albumPhotos(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func isQuickAlbum(dir, name string) bool {
+	n := strings.ToLower(name + " " + dir)
+	return strings.Contains(n, "相机") || strings.Contains(n, "/camera") ||
+		strings.Contains(n, "100media") || strings.Contains(n, "100andro") ||
+		strings.Contains(n, "截图") || strings.Contains(n, "screenshot") ||
+		strings.Contains(n, "screen record")
+}
+
+func isCameraAlbum(dir, name string) bool {
+	n := strings.ToLower(name + " " + dir)
+	return strings.Contains(n, "相机") || strings.Contains(n, "/dcim/camera") ||
+		strings.Contains(n, "100media") || strings.Contains(n, "100andro")
+}
+
+func (a *App) recentMedia(w http.ResponseWriter, r *http.Request) {
+	a.scanMu.Lock()
+	albums := a.albums
+	a.scanMu.Unlock()
+	var dirs []string
+	for dir, al := range albums {
+		if isQuickAlbum(dir, al.Name) {
+			dirs = append(dirs, dir)
+		}
+	}
+	if len(dirs) == 0 {
+		writeJSON(w, 200, map[string]any{"success": true, "photos": []any{}, "total": 0, "camera": []string{}})
+		return
+	}
+	quoted := make([]string, len(dirs))
+	for i, d := range dirs {
+		quoted[i] = adb.ShellQuote(d)
+	}
+	joined := strings.Join(quoted, " ")
+	kind := strings.TrimSpace(r.URL.Query().Get("range"))
+	script := "H=$(date +%H); M=$(date +%M); H=$((1$H-100)); M=$((1$M-100)); find " + joined + " -type f -mmin -$((H*60+M+1)) 2>/dev/null"
+	if kind == "week" {
+		script = "find " + joined + " -type f -mtime -7 2>/dev/null"
+	}
+	txt, err := a.ADB.Shell(25*time.Second, script)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"success": true, "photos": []any{}, "total": 0, "camera": cameraAlbumPaths(albums)})
+		return
+	}
+	var photos []map[string]any
+	seen := map[string]bool{}
+	for _, line := range strings.Split(txt, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || seen[line] || !isMedia(line) {
+			continue
+		}
+		seen[line] = true
+		photos = append(photos, map[string]any{"path": line, "name": path.Base(line)})
+		if len(photos) >= 1500 {
+			break
+		}
+	}
+	writeJSON(w, 200, map[string]any{
+		"success": true, "photos": photos, "total": len(photos), "camera": cameraAlbumPaths(albums),
+	})
+}
+
+func cameraAlbumPaths(albums map[string]Album) []string {
+	var out []string
+	for dir, al := range albums {
+		if isCameraAlbum(dir, al.Name) {
+			out = append(out, dir)
+		}
+	}
+	return out
+}
+
 func (a *App) thumb(w http.ResponseWriter, r *http.Request) {
 	remote := r.URL.Query().Get("path")
 	if remote == "" {
@@ -381,7 +453,10 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	a.xferDone = 0
 	a.xferFailed = nil
 	a.xferBytes = 0
+	a.xferTotalB = 0
 	a.xferStart = time.Now()
+	a.xferWin = rateWin{}
+	a.xferLive = map[string]int64{}
 	a.xferMu.Unlock()
 
 	body := readJSON(r)
@@ -485,12 +560,26 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 		elapsed := int(time.Since(a.xferStart).Seconds())
 		done := a.xferDone
 		bytes := a.xferBytes
+		failedN := len(a.xferFailed)
+		stopped := a.xferStop
+		a.xferLive = map[string]int64{}
 		a.xferMu.Unlock()
 		_ = a.Store.SaveBatch(store.Batch{
 			DeviceID: deviceID, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 			PhotoCount: done, TotalSize: bytes, TotalSizeMB: float64(bytes) / 1024 / 1024,
 			Status: "completed", DurationSec: elapsed,
 		})
+		if a.OnNotify != nil && done+failedN > 0 {
+			title := "USB 传输完成"
+			if stopped {
+				title = "USB 传输已停止"
+			}
+			body := fmt.Sprintf("已保存 %d 张，共 %s", done, humanBytes(bytes))
+			if failedN > 0 {
+				body += fmt.Sprintf("，失败 %d", failedN)
+			}
+			a.OnNotify(title, body)
+		}
 	}()
 	workers := 8
 	jobs := make(chan string)
@@ -515,26 +604,69 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 				}
 				local := remoteToLocal(remote, output)
 				_ = os.MkdirAll(filepath.Dir(local), 0o755)
-				if st, err := os.Stat(local); err == nil && st.Size() > 0 {
+				name := path.Base(remote)
+				size := a.ADB.FileSize(remote)
+				if size > 0 {
 					a.xferMu.Lock()
-					a.xferDone++
-					a.xferFile = path.Base(remote)
-					a.xferBytes += st.Size()
-					a.Store.AddPhoto(deviceID, batchID, path.Base(local), local, st.Size())
+					a.xferTotalB += size
 					a.xferMu.Unlock()
+				}
+
+				finish := func(sz int64, err error) {
+					a.xferMu.Lock()
+					delete(a.xferLive, remote)
+					a.xferDone++
+					a.xferFile = name
+					if err != nil {
+						a.xferFailed = append(a.xferFailed, map[string]any{"path": remote, "error": err.Error()})
+					} else if sz > 0 {
+						a.xferBytes += sz
+						a.Store.AddPhoto(deviceID, batchID, path.Base(local), local, sz)
+					}
+					a.xferMu.Unlock()
+				}
+
+				if st, err := os.Stat(local); err == nil {
+					if size > 0 && st.Size() == size {
+						finish(st.Size(), nil)
+						continue
+					}
+					_ = os.Remove(local)
+				}
+				if size > 0 {
+					if src := a.Store.ExistingPath(name, size); src != "" && src != local {
+						if err := linkOrCopy(src, local); err == nil {
+							finish(size, nil)
+							continue
+						}
+					}
+				}
+
+				report := func(n int64) {
+					a.xferMu.Lock()
+					if a.xferLive == nil {
+						a.xferLive = map[string]int64{}
+					}
+					a.xferLive[remote] = n
+					a.xferFile = name
+					a.xferMu.Unlock()
+				}
+				err := a.ADB.PullProgress(remote, local, adb.PullTimeout(size), report)
+				if err != nil {
+					_ = os.Remove(local)
+					finish(0, err)
 					continue
 				}
-				err := a.ADB.Pull(remote, local, 45*time.Second)
-				a.xferMu.Lock()
-				a.xferDone++
-				a.xferFile = path.Base(remote)
-				if err != nil {
-					a.xferFailed = append(a.xferFailed, map[string]any{"path": remote, "error": err.Error()})
-				} else if st, e := os.Stat(local); e == nil {
-					a.xferBytes += st.Size()
-					a.Store.AddPhoto(deviceID, batchID, path.Base(local), local, st.Size())
+				got := int64(0)
+				if st, e := os.Stat(local); e == nil {
+					got = st.Size()
 				}
-				a.xferMu.Unlock()
+				if size > 0 && got != size {
+					_ = os.Remove(local)
+					finish(0, fmt.Errorf("size mismatch: got %d want %d", got, size))
+					continue
+				}
+				finish(got, nil)
 			}
 		}()
 	}
@@ -554,25 +686,30 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
 	a.xferMu.Lock()
 	defer a.xferMu.Unlock()
-	elapsed := 0.0
-	speed := 0.0
-	if !a.xferStart.IsZero() {
-		elapsed = time.Since(a.xferStart).Seconds()
-		if elapsed > 0 {
-			speed = float64(a.xferBytes) / 1024 / 1024 / elapsed
-		}
-	}
 	total := a.xferTotal
 	done := a.xferDone
+	elapsed := 0.0
+	speed := 0.0
+	eta := 0
+	bytesDone := a.xferBytes + liveSum(a.xferLive)
+	if !a.xferStart.IsZero() {
+		inst := a.xferWin.sample(bytesDone)
+		speed, eta, elapsed = transferPace(bytesDone, a.xferTotalB, done, total, a.xferStart, inst)
+	}
 	pct := 0
-	if total > 0 {
+	if a.xferTotalB > 0 {
+		pct = int(bytesDone * 100 / a.xferTotalB)
+	} else if total > 0 {
 		pct = done * 100 / total
+	}
+	if pct > 100 {
+		pct = 100
 	}
 	writeJSON(w, 200, map[string]any{
 		"is_running": a.xferRunning, "paused": a.xferPaused, "total": total, "current": done,
 		"completed_count": done, "failed": a.xferFailed, "current_file": a.xferFile,
-		"bytes_done": a.xferBytes, "bytes_total": a.xferTotalB, "speed_mbps": speed,
-		"elapsed_sec": elapsed, "percent_completed": pct, "output_dir": a.xferOut,
+		"bytes_done": bytesDone, "bytes_total": a.xferTotalB, "speed_mbps": speed,
+		"eta_sec": eta, "elapsed_sec": elapsed, "percent_completed": pct, "output_dir": a.xferOut,
 		"device_id": a.xferDevice, "batch_id": a.xferBatch,
 	})
 }

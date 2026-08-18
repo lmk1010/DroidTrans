@@ -42,6 +42,8 @@ public class UploadRecordDao {
         values.put(DatabaseHelper.COLUMN_FAILED_COUNT, record.getFailedCount());
         values.put(DatabaseHelper.COLUMN_UPLOAD_TIME, record.getUploadTime());
         values.put(DatabaseHelper.COLUMN_FILE_LIST, record.getFileList());
+        values.put(DatabaseHelper.COLUMN_DURATION_SEC, record.getDurationSec());
+        values.put(DatabaseHelper.COLUMN_TOTAL_BYTES, record.getTotalBytes());
         
         long id = db.insert(DatabaseHelper.TABLE_UPLOAD_RECORDS, null, values);
         Log.d(TAG, "插入上传记录，ID: " + id);
@@ -112,6 +114,17 @@ public class UploadRecordDao {
                 record.setFailedCount(cursor.getInt(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_FAILED_COUNT)));
                 record.setUploadTime(cursor.getLong(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_UPLOAD_TIME)));
                 record.setFileList(cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_FILE_LIST)));
+                int durCol = cursor.getColumnIndex(DatabaseHelper.COLUMN_DURATION_SEC);
+                int bytesCol = cursor.getColumnIndex(DatabaseHelper.COLUMN_TOTAL_BYTES);
+                if (durCol >= 0) {
+                    record.setDurationSec(cursor.getLong(durCol));
+                }
+                if (bytesCol >= 0) {
+                    record.setTotalBytes(cursor.getLong(bytesCol));
+                }
+                if (record.getTotalBytes() <= 0) {
+                    record.setTotalBytes(sumFileListBytes(record.getFileList()));
+                }
                 
                 records.add(record);
             }
@@ -211,6 +224,25 @@ public class UploadRecordDao {
         }
         
         return count;
+    }
+
+    private long sumFileListBytes(String json) {
+        if (json == null || json.isEmpty()) {
+            return 0;
+        }
+        try {
+            JSONArray fileArray = new JSONArray(json);
+            long total = 0;
+            for (int i = 0; i < fileArray.length(); i++) {
+                JSONObject file = fileArray.getJSONObject(i);
+                if (file.optBoolean("success", true)) {
+                    total += file.optLong("size", 0);
+                }
+            }
+            return total;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 }
 

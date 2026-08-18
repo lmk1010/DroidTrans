@@ -2,16 +2,17 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"runtime"
 	"syscall"
-	"time"
 
 	"droidtrans/internal/app"
 )
@@ -40,30 +41,30 @@ func main() {
 	}
 	application.Frontend = sub
 	application.OnAttention = requestAttention
-	application.StartBackground()
+	application.OnNotify = notifyUser
 
-	srv := &http.Server{Addr: *addr, Handler: application.Handler()}
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		if isAddrInUse(err) && !*headless {
+			activateExisting()
+			os.Exit(0)
+		}
+		fmt.Fprintln(os.Stderr, "listen:", err)
+		os.Exit(1)
+	}
+
+	srv := &http.Server{Handler: application.Handler()}
 	go func() {
-		fmt.Printf("DroidTrans  http://127.0.0.1:%d\n", app.HTTPPort)
-		fmt.Printf("输出目录      %s\n", application.OutputDir)
-		fmt.Printf("ADB          %s\n", application.ADB.Bin())
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	}()
+	go application.StartBackground()
 
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/health", app.HTTPPort))
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == 200 {
-				break
-			}
-		}
-		time.Sleep(150 * time.Millisecond)
-	}
+	fmt.Printf("DroidTrans  http://127.0.0.1:%d\n", app.HTTPPort)
+	fmt.Printf("输出目录      %s\n", application.OutputDir)
+	fmt.Printf("ADB          %s\n", application.ADB.Bin())
 
 	if !*headless {
 		runNativeWindow(fmt.Sprintf("http://127.0.0.1:%d", app.HTTPPort))
@@ -75,6 +76,22 @@ func main() {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
 	_ = srv.Close()
+}
+
+func isAddrInUse(err error) bool {
+	var op *net.OpError
+	if errors.As(err, &op) {
+		err = op.Err
+	}
+	return errors.Is(err, syscall.EADDRINUSE)
+}
+
+func activateExisting() {
+	if runtime.GOOS == "darwin" {
+		_ = exec.Command("open", "-a", "DroidTrans").Start()
+		return
+	}
+	fmt.Fprintln(os.Stderr, "DroidTrans already running")
 }
 
 func openUI(url string) {

@@ -38,7 +38,7 @@
     <string name="radar_center">Radar center</string>
     <string name="searching">Searching</string>
     <string name="wifi_title">Wi-Fi Transfer</string>
-    <string name="wifi_subtitle">Scan and connect to a server on the same network</string>
+    <string name="wifi_subtitle">Finds this computer on the LAN. Scan the Mac QR if you still need the app.</string>
     <string name="scanning_servers_ellipsis">Scanning for servers...</string>
     <string name="refresh_scan">Refresh</string>
     <string name="scan_complete">Scan complete</string>
@@ -129,7 +129,7 @@
     <string name="upload">Upload</string>
     <string name="photos_found">Found %d photos/videos</string>
     <string name="uploading">Uploading…</string>
-    <string name="upload_progress">%d / %d</string>
+    <string name="upload_progress">%1$d / %2$d</string>
     <string name="upload_success">Upload succeeded</string>
     <string name="upload_failed">Upload failed</string>
     <string name="connection_success">Connected</string>
@@ -288,6 +288,12 @@
     <string name="uploading_progress">Uploading %1$d, %2$d / %3$d done</string>
     <string name="all_upload_complete">All uploads complete!</string>
     <string name="all_photos_uploaded">All photos uploaded</string>
+    <string name="notify_channel">Transfers</string>
+    <string name="notify_channel_desc">Notify when photos arrive on the computer</string>
+    <string name="notify_transfer_done">Sent to computer</string>
+    <string name="notify_transfer_partial">Sent to computer (%1$d ok, %2$d failed)</string>
+    <string name="notify_transfer_body">%d photos</string>
+    <string name="notify_transfer_body_size">%1$d photos · %2$s</string>
     <string name="partial_upload">Partial complete (%1$d succeeded, %2$d failed)</string>
     <string name="upload_done_with_failures">Upload finished, %d files failed</string>
     <string name="record_saved">Upload record saved</string>
@@ -327,7 +333,9 @@
     <string name="minutes_seconds">%1$dm %2$ds</string>
     <string name="hours_unit">%dh</string>
     <string name="hours_minutes">%1$dh %2$dm</string>
-    <string name="upload_detail_body">Server: %1$s\n\nTime: %2$s\nTotal: %3$d\nSucceeded: %4$d\nFailed: %5$d\n\nSuccess rate: %6$.1f%%</string>
+    <string name="upload_detail_body">Computer: %1$s\nTime: %2$s\nFiles: %3$d (ok %4$d, failed %5$d)\nSize: %6$s\nDuration: %7$s\nAverage: %8$s</string>
+    <string name="eta_left">%s left</string>
+    <string name="unknown_value">—</string>
 
     <string name="speed_test_title">Protocol speed test</string>
     <string name="computer_address">Computer address</string>

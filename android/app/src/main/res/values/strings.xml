@@ -40,7 +40,7 @@
     <string name="radar_center">雷达中心</string>
     <string name="searching">搜索中</string>
     <string name="wifi_title">Wi-Fi 接收</string>
-    <string name="wifi_subtitle">同一局域网里搜这台电脑，或手动填地址</string>
+    <string name="wifi_subtitle">同一局域网里搜这台电脑。电脑 Wi-Fi 页可以扫码装 App。</string>
     <string name="scanning_servers_ellipsis">正在扫描服务器...</string>
     <string name="refresh_scan">刷新扫描</string>
     <string name="scan_complete">扫描完成</string>
@@ -135,7 +135,7 @@
     <string name="upload">上传</string>
     <string name="photos_found">找到 %d 张照片/视频</string>
     <string name="uploading">上传中…</string>
-    <string name="upload_progress">%d / %d</string>
+    <string name="upload_progress">%1$d / %2$d</string>
     <string name="upload_success">上传成功</string>
     <string name="upload_failed">上传失败</string>
     <string name="connection_success">连接成功</string>
@@ -300,6 +300,12 @@
     <string name="uploading_progress">正在上传 %1$d 个，已完成 %2$d / %3$d</string>
     <string name="all_upload_complete">全部上传完成！</string>
     <string name="all_photos_uploaded">所有照片上传成功</string>
+    <string name="notify_channel">传输完成</string>
+    <string name="notify_channel_desc">照片传到电脑后提醒</string>
+    <string name="notify_transfer_done">传到电脑了</string>
+    <string name="notify_transfer_partial">传到电脑了（成功 %1$d，失败 %2$d）</string>
+    <string name="notify_transfer_body">%d 张</string>
+    <string name="notify_transfer_body_size">%1$d 张 · %2$s</string>
     <string name="partial_upload">部分上传完成（成功 %1$d 个，失败 %2$d 个）</string>
     <string name="upload_done_with_failures">上传完成，失败 %d 个文件</string>
     <string name="record_saved">上传记录已保存</string>
@@ -340,7 +346,9 @@
     <string name="minutes_seconds">%1$d分%2$d秒</string>
     <string name="hours_unit">%d小时</string>
     <string name="hours_minutes">%1$d小时%2$d分</string>
-    <string name="upload_detail_body">服务器: %1$s\n\n上传时间: %2$s\n总数量: %3$d 张\n成功: %4$d 张\n失败: %5$d 张\n\n成功率: %6$.1f%%</string>
+    <string name="upload_detail_body">电脑：%1$s\n时间：%2$s\n数量：%3$d 张（成功 %4$d，失败 %5$d）\n大小：%6$s\n耗时：%7$s\n均速：%8$s</string>
+    <string name="eta_left">还剩 %s</string>
+    <string name="unknown_value">—</string>
 
     <!-- Speed test -->
     <string name="speed_test_title">协议测速</string>
