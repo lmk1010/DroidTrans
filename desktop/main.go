@@ -19,6 +19,10 @@ import (
 //go:embed all:frontend
 var frontendFS embed.FS
 
+func init() {
+	runtime.LockOSThread()
+}
+
 func main() {
 	headless := flag.Bool("headless", false, "只启动服务，不打开窗口")
 	addr := flag.String("addr", fmt.Sprintf("0.0.0.0:%d", app.HTTPPort), "listen address")
@@ -35,6 +39,7 @@ func main() {
 		os.Exit(1)
 	}
 	application.Frontend = sub
+	application.OnAttention = requestAttention
 	application.StartBackground()
 
 	srv := &http.Server{Addr: *addr, Handler: application.Handler()}
@@ -61,7 +66,9 @@ func main() {
 	}
 
 	if !*headless {
-		openUI(fmt.Sprintf("http://127.0.0.1:%d", app.HTTPPort))
+		runNativeWindow(fmt.Sprintf("http://127.0.0.1:%d", app.HTTPPort))
+		_ = srv.Close()
+		return
 	}
 
 	ch := make(chan os.Signal, 1)
@@ -75,9 +82,9 @@ func openUI(url string) {
 		bin  string
 		args []string
 	}{
-		{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", []string{"--app=" + url, "--new-window"}},
-		{"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge", []string{"--app=" + url, "--new-window"}},
-		{"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", []string{"--app=" + url, "--new-window"}},
+		{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", []string{"--app=" + url, "--new-window", "--force-dark-mode"}},
+		{"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge", []string{"--app=" + url, "--new-window", "--force-dark-mode"}},
+		{"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", []string{"--app=" + url, "--new-window", "--force-dark-mode"}},
 	}
 	if runtime.GOOS == "darwin" {
 		for _, c := range candidates {

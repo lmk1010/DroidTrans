@@ -21,10 +21,13 @@ const (
 
 var magic = []byte("ATF1")
 
+type FileHandler func(name string, size int64, dest string)
+
 type Server struct {
-	mu        sync.RWMutex
-	outputDir string
-	lanIP     string
+	mu         sync.RWMutex
+	outputDir  string
+	lanIP      string
+	onReceived FileHandler
 }
 
 func New(outputDir, lanIP string) *Server {
@@ -47,6 +50,26 @@ func (s *Server) SetLANIP(ip string) {
 	s.mu.Lock()
 	s.lanIP = ip
 	s.mu.Unlock()
+}
+
+func (s *Server) SetOnReceived(fn FileHandler) {
+	s.mu.Lock()
+	s.onReceived = fn
+	s.mu.Unlock()
+}
+
+func (s *Server) emit(dest string) {
+	name := filepath.Base(dest)
+	var size int64
+	if st, err := os.Stat(dest); err == nil {
+		size = st.Size()
+	}
+	s.mu.RLock()
+	fn := s.onReceived
+	s.mu.RUnlock()
+	if fn != nil {
+		fn(name, size, dest)
+	}
 }
 
 func (s *Server) Start() {
@@ -113,6 +136,7 @@ func (s *Server) handleTCP(conn net.Conn) {
 		_, _ = conn.Write([]byte("ERR " + err.Error() + "\n"))
 		return
 	}
+	s.emit(dest)
 	_, _ = conn.Write([]byte("OK\n"))
 }
 
@@ -246,6 +270,7 @@ func (s *Server) handleFTP(conn net.Conn) {
 				if e == nil {
 					_, _ = io.Copy(f, dataConn)
 					_ = f.Close()
+					s.emit(dest)
 				}
 			}
 			_ = dataConn.Close()

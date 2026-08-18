@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
   <title>DroidTrans</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+  <div class="aurora" aria-hidden="true"></div>
+
   <div class="shell">
     <aside class="rail">
       <div class="brand">
@@ -21,10 +24,22 @@
         </div>
       </div>
       <nav>
-        <button data-view="home" class="active">总览</button>
-        <button data-view="usb">USB</button>
-        <button data-view="wifi">Wi-Fi</button>
-        <button data-view="history">记录</button>
+        <button data-view="home" class="active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg>
+          总览
+        </button>
+        <button data-view="usb">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4v12"/><path d="M9 7h6"/><circle cx="12" cy="4" r="1.4" fill="currentColor" stroke="none"/></svg>
+          USB
+        </button>
+        <button data-view="wifi">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.2 15.4a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.2" r="1.2" fill="currentColor" stroke="none"/></svg>
+          Wi-Fi
+        </button>
+        <button data-view="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.6"/></svg>
+          记录
+        </button>
       </nav>
       <div class="rail-foot">
         <button id="langBtn" class="ghost">EN</button>
@@ -36,15 +51,21 @@
       <section id="view-home" class="view active">
         <header class="page-head">
           <h1>把手机里的照片，搬到这台电脑</h1>
-          <p>一根线，或同一局域网。后台是 Go，不再起 Python。</p>
+          <p>一根线，或同一局域网。安静、直接、本地完成。</p>
         </header>
         <div class="tiles">
           <button class="tile" data-go="usb">
+            <span class="glyph">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4v12"/><path d="M9 7h6"/></svg>
+            </span>
             <em>USB</em>
             <h2>有线快传</h2>
             <p>开启 USB 调试后扫描相册，并发 pull 到本地。</p>
           </button>
           <button class="tile" data-go="wifi">
+            <span class="glyph">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.2 15.4a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.2" r="1.2" fill="currentColor" stroke="none"/></svg>
+            </span>
             <em>Wi-Fi</em>
             <h2>手机直传</h2>
             <p>App 搜到这台电脑，文件走 TCP / FTP / HTTP。</p>
@@ -64,7 +85,7 @@
             <button id="xferBtn" class="primary" disabled>开始传输</button>
           </div>
         </header>
-        <div class="path-row">
+        <div class="path-row glass">
           <label>保存到</label>
           <input id="usbOut" type="text" />
         </div>
@@ -79,16 +100,19 @@
       <section id="view-wifi" class="view">
         <header class="page-head">
           <h1>Wi-Fi 接收</h1>
-          <p>手机 App 填这个地址，或扫局域网搜索。</p>
+          <p>手机 App 填这个地址，或在同一局域网里搜索。</p>
         </header>
         <div class="listen">
+          <span class="glyph">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.2 15.4a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.2" r="1.2" fill="currentColor" stroke="none"/></svg>
+          </span>
           <div>
             <span class="kicker">本机地址</span>
             <strong id="wifiURL">—</strong>
           </div>
           <button id="copyUrl" class="ghost">复制</button>
         </div>
-        <div class="path-row">
+        <div class="path-row glass">
           <label>保存到</label>
           <input id="wifiOut" type="text" />
           <button id="openOut" class="ghost">打开文件夹</button>
@@ -108,6 +132,14 @@
       </section>
     </main>
   </div>
+  <aside id="inbox" class="inbox hidden" aria-live="polite">
+    <div>
+      <strong id="inboxTitle">正在接收</strong>
+      <span id="inboxText"></span>
+    </div>
+    <div class="bar"><i id="inboxFill"></i></div>
+    <button id="inboxOpen" class="ghost">打开文件夹</button>
+  </aside>
   <script src="/app.js"></script>
 </body>
 </html>

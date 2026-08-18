@@ -24,10 +24,10 @@ import (
 const HTTPPort = 9500
 
 type deviceInfo struct {
-	Name           string `json:"name"`
-	LastHeartbeat  string `json:"last_heartbeat"`
-	ConnectedAt    string `json:"connected_at"`
-	PhotoCount     int    `json:"photo_count"`
+	Name          string `json:"name"`
+	LastHeartbeat string `json:"last_heartbeat"`
+	ConnectedAt   string `json:"connected_at"`
+	PhotoCount    int    `json:"photo_count"`
 }
 
 type uploadSession struct {
@@ -56,10 +56,12 @@ type App struct {
 	ThumbDir  string
 	Frontend  fs.FS
 
-	mu        sync.Mutex
-	devices   map[string]*deviceInfo
-	sessions  map[string]*uploadSession
-	wifiOut   string
+	mu          sync.Mutex
+	devices     map[string]*deviceInfo
+	sessions    map[string]*uploadSession
+	wifiOut     string
+	inbox       inboxState
+	OnAttention func()
 
 	devMu     sync.Mutex
 	connected bool
@@ -86,6 +88,25 @@ type App struct {
 	xferTotalB  int64
 	xferStart   time.Time
 	xferOut     string
+}
+
+type inboxFile struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	At   string `json:"at"`
+}
+
+type inboxState struct {
+	Receiving  bool
+	DeviceID   string
+	DeviceName string
+	BatchID    string
+	Completed  int
+	Total      int
+	LastFile   string
+	LastAt     time.Time
+	Seq        int
+	Recent     []inboxFile
 }
 
 func New() (*App, error) {
@@ -141,6 +162,9 @@ func LanIP() string {
 func (a *App) StartBackground() {
 	a.Fast.SetLANIP(LanIP())
 	a.Fast.SetOutputDir(a.OutputDir)
+	a.Fast.SetOnReceived(func(name string, size int64, dest string) {
+		a.recordFile("", "", name, size, dest)
+	})
 	a.Fast.Start()
 	go a.monitorADB()
 }
@@ -212,6 +236,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/upload/progress/{id}", a.uploadProgress)
 	mux.HandleFunc("POST /api/upload/update", a.uploadUpdate)
 	mux.HandleFunc("POST /api/upload/cancel/{id}", a.uploadCancel)
+	mux.HandleFunc("GET /api/inbox", a.inboxStatus)
 
 	mux.HandleFunc("GET /api/device_status", a.deviceStatus)
 	mux.HandleFunc("GET /api/check_device", a.deviceStatus)
@@ -301,9 +326,9 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	writeJSON(w, 200, map[string]any{
 		"success": true, "ip": ip, "port": HTTPPort,
-		"url": fmt.Sprintf("http://%s:%d", ip, HTTPPort),
+		"url":      fmt.Sprintf("http://%s:%d", ip, HTTPPort),
 		"tcp_port": fast.TCPPort, "ftp_port": fast.FTPPort,
-		"protocols": []string{"tcp", "ftp", "http_put", "http_multipart"},
+		"protocols":         []string{"tcp", "ftp", "http_put", "http_multipart"},
 		"connected_devices": list, "device_count": len(list),
 	})
 }
@@ -499,6 +524,7 @@ func (a *App) wifiUpload(w http.ResponseWriter, r *http.Request) {
 	expected, _ := strconv.ParseInt(r.FormValue("file_size"), 10, 64)
 	if st, err := os.Stat(dest); err == nil {
 		if expected > 0 && st.Size() == expected || expected == 0 && st.Size() > 0 {
+			a.recordFile(deviceID, batchID, filepath.Base(dest), st.Size(), dest)
 			writeJSON(w, 200, map[string]any{"success": true, "skipped": true, "path": dest})
 			return
 		}
@@ -516,7 +542,7 @@ func (a *App) wifiUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if st, err := os.Stat(dest); err == nil && batchID != "" {
-		a.Store.AddPhoto(deviceID, batchID, filepath.Base(dest), rel, st.Size())
+		a.recordFile(deviceID, batchID, filepath.Base(dest), st.Size(), dest)
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "skipped": false, "path": dest})
 }
@@ -617,7 +643,9 @@ func (a *App) fastPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sess != nil && sess.BatchID != "" {
-		a.Store.AddPhoto(deviceID, sess.BatchID, filepath.Base(dest), rel, n)
+		a.recordFile(deviceID, sess.BatchID, filepath.Base(dest), n, dest)
+	} else {
+		a.recordFile(deviceID, "", filepath.Base(dest), n, dest)
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "bytes": n, "path": dest, "protocol": "http_put"})
 }
@@ -654,6 +682,19 @@ func (a *App) uploadInit(w http.ResponseWriter, r *http.Request) {
 		FileStatus: status, BatchID: batchID,
 	}
 	outDir := a.wifiOut
+	name := ""
+	if d := a.devices[id]; d != nil {
+		name = d.Name
+	}
+	a.inbox.Receiving = true
+	a.inbox.DeviceID = id
+	a.inbox.DeviceName = name
+	a.inbox.BatchID = batchID
+	a.inbox.Completed = 0
+	a.inbox.Total = len(files)
+	a.inbox.LastFile = ""
+	a.inbox.LastAt = time.Now()
+	a.inbox.Seq++
 	a.mu.Unlock()
 	_ = a.Store.SaveBatch(store.Batch{
 		DeviceID: id, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
@@ -698,7 +739,18 @@ func (a *App) uploadUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if v, ok := body["is_uploading"].(bool); ok {
 			s.IsUploading = v
+			if !v {
+				a.inbox.Receiving = false
+				a.inbox.LastAt = time.Now()
+				a.inbox.Seq++
+			}
 		}
+		a.inbox.Completed = s.Completed
+		a.inbox.Total = len(s.Files)
+		a.inbox.DeviceID = id
+		a.inbox.BatchID = s.BatchID
+		a.inbox.LastAt = time.Now()
+		a.inbox.Seq++
 	}
 	a.mu.Unlock()
 	writeJSON(w, 200, map[string]any{"success": true})
@@ -712,6 +764,131 @@ func (a *App) uploadCancel(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.Unlock()
 	writeJSON(w, 200, map[string]any{"success": true})
+}
+
+func (a *App) recordFile(deviceID, batchID, name string, size int64, dest string) {
+	a.mu.Lock()
+	if deviceID == "" || batchID == "" {
+		d, b := a.parseDestLocked(dest)
+		if deviceID == "" {
+			deviceID = d
+		}
+		if batchID == "" {
+			batchID = b
+		}
+	}
+	if deviceID == "" {
+		for id, s := range a.sessions {
+			if s != nil && s.IsUploading {
+				deviceID = id
+				if batchID == "" {
+					batchID = s.BatchID
+				}
+				break
+			}
+		}
+	}
+	if s := a.sessions[deviceID]; s != nil {
+		s.Completed++
+		if len(s.Files) > 0 && s.Completed >= len(s.Files) {
+			s.IsUploading = false
+		}
+		if batchID == "" {
+			batchID = s.BatchID
+		}
+		a.inbox.Total = len(s.Files)
+		a.inbox.Completed = s.Completed
+		a.inbox.BatchID = s.BatchID
+	} else {
+		a.inbox.Completed++
+	}
+	first := !a.inbox.Receiving
+	a.inbox.Receiving = true
+	if deviceID != "" {
+		a.inbox.DeviceID = deviceID
+		if d := a.devices[deviceID]; d != nil {
+			a.inbox.DeviceName = d.Name
+		}
+	}
+	if name == "" {
+		name = filepath.Base(dest)
+	}
+	a.inbox.LastFile = name
+	a.inbox.LastAt = time.Now()
+	a.inbox.Seq++
+	a.inbox.Recent = append([]inboxFile{{Name: name, Size: size, At: time.Now().Format("15:04:05")}}, a.inbox.Recent...)
+	if len(a.inbox.Recent) > 16 {
+		a.inbox.Recent = a.inbox.Recent[:16]
+	}
+	notify := first && a.OnAttention != nil
+	onAtt := a.OnAttention
+	a.mu.Unlock()
+
+	if deviceID != "" && batchID != "" {
+		a.Store.AddPhoto(deviceID, batchID, name, dest, size)
+	}
+	if notify {
+		onAtt()
+	}
+}
+
+func (a *App) parseDestLocked(dest string) (deviceID, batchID string) {
+	rel, err := filepath.Rel(a.wifiOut, dest)
+	if err != nil {
+		return "", ""
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) == 0 || parts[0] == ".." {
+		return "", ""
+	}
+	deviceID = parts[0]
+	if len(parts) >= 3 {
+		batchID = parts[1]
+	} else if s := a.sessions[deviceID]; s != nil {
+		batchID = s.BatchID
+	}
+	return deviceID, batchID
+}
+
+func (a *App) inboxStatus(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	receiving := a.inbox.Receiving
+	if s := a.sessions[a.inbox.DeviceID]; s != nil && s.IsUploading {
+		receiving = true
+		a.inbox.Completed = s.Completed
+		a.inbox.Total = len(s.Files)
+	}
+	if receiving && !a.inbox.LastAt.IsZero() && time.Since(a.inbox.LastAt) > 4*time.Second {
+		if s := a.sessions[a.inbox.DeviceID]; s == nil || !s.IsUploading {
+			receiving = false
+			a.inbox.Receiving = false
+			if a.inbox.DeviceID != "" && a.inbox.BatchID != "" {
+				_ = a.Store.SaveBatch(store.Batch{
+					DeviceID: a.inbox.DeviceID, BatchID: a.inbox.BatchID,
+					Timestamp:  time.Now().Format("2006-01-02 15:04:05"),
+					PhotoCount: a.inbox.Completed, Status: "completed",
+				})
+			}
+		}
+	}
+	out := map[string]any{
+		"success":    true,
+		"receiving":  receiving,
+		"device_id":  a.inbox.DeviceID,
+		"device":     a.inbox.DeviceName,
+		"batch_id":   a.inbox.BatchID,
+		"completed":  a.inbox.Completed,
+		"total":      a.inbox.Total,
+		"last_file":  a.inbox.LastFile,
+		"seq":        a.inbox.Seq,
+		"recent":     a.inbox.Recent,
+		"output_dir": a.wifiOut,
+	}
+	if !a.inbox.LastAt.IsZero() {
+		out["last_at"] = a.inbox.LastAt.Format(time.RFC3339)
+	}
+	a.mu.Unlock()
+	writeJSON(w, 200, out)
 }
 
 func asInt(v any) (int, bool) {

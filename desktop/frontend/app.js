@@ -45,9 +45,9 @@ async function refreshHome() {
   ]);
   $('#adbHint').textContent = (dev.adb || 'adb') + (dev.connected ? `\n${dev.model || dev.selected}` : '\n未连接设备');
   $('#homeMeta').innerHTML = `
-    <div><dt>USB</dt><dd>${dev.connected ? (dev.model || '已连接') : '未连接'}</dd></div>
-    <div><dt>局域网</dt><dd>${wifi.ip || '—'}</dd></div>
-    <div><dt>引擎</dt><dd>${health.engine || 'go'}</dd></div>`;
+    <div><dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4v12"/></svg>USB</dt><dd>${dev.connected ? (dev.model || '已连接') : '未连接'}</dd></div>
+    <div><dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 12.5a9 9 0 0 1 14 0"/><path d="M8.2 15.4a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.2" r="1.2" fill="currentColor" stroke="none"/></svg>局域网</dt><dd>${wifi.ip || '—'}</dd></div>
+    <div><dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.6"/></svg>引擎</dt><dd>${health.engine || 'go'}</dd></div>`;
   if (!state.usbOut && health.root) {
     state.usbOut = health.root;
     $('#usbOut').value = health.root;
@@ -200,3 +200,50 @@ $('#langBtn').addEventListener('click', () => {
 
 refreshHome();
 setInterval(refreshHome, 4000);
+pollInbox();
+
+let inboxSeq = -1;
+let inboxHideTimer = 0;
+
+async function pollInbox() {
+  try {
+    const box = await api('/api/inbox');
+    const el = $('#inbox');
+    const has = (box.completed || 0) > 0 || box.receiving || box.last_file;
+    if (!has) {
+      setTimeout(pollInbox, 900);
+      return;
+    }
+    el.classList.remove('hidden');
+    el.classList.toggle('done', !box.receiving && box.completed > 0);
+    const who = box.device || box.device_id || '手机';
+    const n = box.completed || 0;
+    const total = box.total || 0;
+    const file = box.last_file || '';
+    if (box.receiving) {
+      $('#inboxTitle').textContent = total ? `正在接收 ${n}/${total}` : `正在接收 ${n} 张`;
+      $('#inboxText').textContent = file ? `${who} · ${file}` : who;
+      $('#inboxFill').style.width = total ? Math.min(100, (n / total) * 100) + '%' : '35%';
+    } else {
+      $('#inboxTitle').textContent = `已收到 ${n} 张照片`;
+      $('#inboxText').textContent = file ? `${who} · ${file}` : who;
+      $('#inboxFill').style.width = '100%';
+    }
+    if (box.seq !== inboxSeq) {
+      inboxSeq = box.seq;
+      if (state.view === 'wifi') refreshWifi();
+      if (state.view === 'history') refreshHistory();
+      if (!box.receiving) {
+        clearTimeout(inboxHideTimer);
+        inboxHideTimer = setTimeout(() => el.classList.add('hidden'), 12000);
+      } else {
+        clearTimeout(inboxHideTimer);
+      }
+    }
+  } catch (_) { /* keep polling */ }
+  setTimeout(pollInbox, 700);
+}
+
+$('#inboxOpen').addEventListener('click', () => {
+  api('/api/wifi/open_folder', { method: 'POST', body: '{}' });
+});
