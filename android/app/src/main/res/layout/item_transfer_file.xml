@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingVertical="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- 文件图标 -->
+        <ImageView
+            android:id="@+id/ivFileIcon"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_check"
+            android:tint="@color/radar_blue_primary"
+            android:contentDescription="@string/other_files" />
+
+        <!-- 文件信息 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvFileName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="文件名.jpg"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_high_emphasis"
+                android:maxLines="1"
+                android:ellipsize="middle" />
+
+            <TextView
+                android:id="@+id/tvFileSize"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="0 MB"
+                android:textSize="12sp"
+                android:textColor="@color/text_medium_emphasis" />
+
+        </LinearLayout>
+
+        <!-- 状态指示器 -->
+        <TextView
+            android:id="@+id/tvFileStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/status_waiting"
+            android:textSize="12sp"
+            android:textColor="@color/text_medium_emphasis"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="4dp"
+            android:background="@drawable/icon_bg_phone_transfer" />
+
+    </LinearLayout>
+
+    <!-- 单个文件进度条（传输中时显示） -->
+    <ProgressBar
+        android:id="@+id/progressBarFile"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="8dp"
+        android:progressTint="@color/radar_blue_primary"
+        android:progressBackgroundTint="#E3F2FD"
+        android:max="100"
+        android:progress="0"
+        android:visibility="gone" />
+
+</LinearLayout>
+

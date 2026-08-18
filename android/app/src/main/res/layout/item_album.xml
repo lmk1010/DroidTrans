@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp"
+    android:foreground="?attr/selectableItemBackground">
+
+    <com.mk.androidtransfer.widget.SquareImageView
+        android:id="@+id/ivAlbumCover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:contentDescription="@string/photo_albums" />
+
+    <View
+        android:id="@+id/viewSelectedOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#662196F3"
+        android:visibility="gone" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/gradient_bottom" />
+
+    <TextView
+        android:id="@+id/chipPhotoCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="#99000000"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:textColor="@color/white"
+        android:textSize="11sp"
+        android:text="0" />
+
+    <ImageView
+        android:id="@+id/checkboxContainer"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="8dp"
+        android:src="@drawable/checkbox_background"
+        android:visibility="gone"
+        android:contentDescription="@string/select_all" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <ImageView
+            android:id="@+id/ivAlbumIcon"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@drawable/ic_album_camera"
+            android:tint="@color/white"
+            android:contentDescription="@string/photo_albums" />
+
+        <TextView
+            android:id="@+id/tvAlbumName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/album_camera"
+            android:textColor="@color/white"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</FrameLayout>

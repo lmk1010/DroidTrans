@@ -22,11 +22,11 @@ jobs:
           cache: 'gradle'
 
       - name: Grant execute permission for gradlew
-        working-directory: ./AndroidTransferApp
+        working-directory: ./android
         run: chmod +x gradlew
 
       - name: Create release keystore
-        working-directory: ./AndroidTransferApp
+        working-directory: ./android
         run: |
           # 生成临时签名密钥用于 CI 构建
           keytool -genkey -v -keystore release.keystore \
@@ -36,7 +36,7 @@ jobs:
             -dname "CN=Android Transfer, OU=Development, O=MK, L=City, S=State, C=CN"
 
       - name: Build APK
-        working-directory: ./AndroidTransferApp
+        working-directory: ./android
         env:
           RELEASE_KEYSTORE_FILE: release.keystore
           RELEASE_KEYSTORE_PASSWORD: android123
@@ -48,10 +48,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: AndroidTransferApp/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/*.apk
 
   # macOS 版本由本地构建并手动上传到 Release
-  # 本地构建命令: cd AndroidTransferClient && ./build_m1.sh
+  # 本地构建命令: cd desktop && npm start  ；后端在 web/
   # macOS 需要开发者证书签名，GitHub Actions 无法访问
 
   # 构建 Windows 版本
@@ -72,20 +72,20 @@ jobs:
           node-version: '20'
 
       - name: Install Python dependencies
-        working-directory: ./AndroidTransferClient
+        working-directory: ./web
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Create required directories
-        working-directory: ./AndroidTransferClient
+        working-directory: ./web
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path photos_output -Force
           New-Item -ItemType File -Path photos_output/.gitkeep -Force
 
       - name: Build Python backend
-        working-directory: ./AndroidTransferClient
+        working-directory: ./web
         shell: pwsh
         run: |
           pip install pyinstaller
@@ -93,11 +93,11 @@ jobs:
           Move-Item -Path dist/app -Destination dist_app
 
       - name: Install Node dependencies
-        working-directory: ./AndroidTransferClient
-        run: npm ci
+        working-directory: ./desktop
+        run: npm install
 
       - name: Build Electron app for Windows
-        working-directory: ./AndroidTransferClient
+        working-directory: ./desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_DRAFT: false
@@ -109,8 +109,8 @@ jobs:
         with:
           name: windows-builds
           path: |
-            AndroidTransferClient/dist/*.exe
-            AndroidTransferClient/dist/*.exe.blockmap
+            desktop/dist/*.exe
+            desktop/dist/*.exe.blockmap
 
   # 创建 Release 并上传构建产物（Android + Windows）
   # macOS 版本需要手动上传到 Release

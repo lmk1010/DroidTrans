@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-i18n-title-page="upload_in_progress">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卓传</title>
+    <script src="/static/i18n.js"></script>
+    <!-- 移除外网字体以避免阻塞；使用系统字体栈与等宽字体回退 -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            background: #f8f9fa;
+            min-height: 100vh;
+            padding: 16px;
+        }
+
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 2px 6px 2px rgba(60,64,67,0.15);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #34a853 0%, #2d9648 100%);
+            color: white;
+            padding: 32px 24px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+            font-weight: 500;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+            letter-spacing: 0;
+        }
+
+        .overall-progress {
+            padding: 24px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e8eaed;
+        }
+
+        .overall-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid #e8eaed;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 500;
+            color: #202124;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #5f6368;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .progress-bar-container {
+            background: #e8eaed;
+            border-radius: 8px;
+            height: 8px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, #34a853, #2d9648);
+            height: 100%;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 8px;
+        }
+
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #5f6368;
+        }
+
+        .file-list {
+            padding: 16px;
+            max-height: calc(100vh - 400px);
+            overflow-y: auto;
+        }
+
+        .file-item {
+            background: #f8f9fa;
+            border: 1px solid #e8eaed;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .file-item.uploading {
+            border-color: #4285f4;
+            background: rgba(66, 133, 244, 0.05);
+        }
+
+        .file-item.completed {
+            border-color: #34a853;
+            background: rgba(52, 168, 83, 0.05);
+        }
+
+        .file-item.failed {
+            border-color: #ea4335;
+            background: rgba(234, 67, 53, 0.05);
+        }
+
+        .file-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .file-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .file-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .file-item.uploading .file-icon {
+            background: #4285f4;
+            color: white;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .file-item.completed .file-icon {
+            background: #34a853;
+            color: white;
+        }
+
+        .file-item.failed .file-icon {
+            background: #ea4335;
+            color: white;
+        }
+
+        .file-item.pending .file-icon {
+            background: #e8eaed;
+            color: #5f6368;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #202124;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: #5f6368;
+        }
+
+        .file-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .file-item.uploading .file-status {
+            color: #4285f4;
+        }
+
+        .file-item.completed .file-status {
+            color: #34a853;
+        }
+
+        .file-item.failed .file-status {
+            color: #ea4335;
+        }
+
+        .file-item.pending .file-status {
+            color: #5f6368;
+        }
+
+        .file-progress {
+            margin-top: 12px;
+        }
+
+        .file-progress-bar-container {
+            background: #e8eaed;
+            border-radius: 4px;
+            height: 4px;
+            overflow: hidden;
+            margin-bottom: 6px;
+        }
+
+        .file-progress-bar {
+            background: #4285f4;
+            height: 100%;
+            transition: width 0.2s ease-out;
+        }
+
+        .file-progress-text {
+            font-size: 11px;
+            color: #5f6368;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .action-buttons {
+            padding: 16px 24px 24px;
+            display: flex;
+            gap: 12px;
+            background: white;
+            border-top: 1px solid #e8eaed;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 0 24px;
+            height: 48px;
+            border: none;
+            border-radius: 24px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.25px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: none;
+            font-family: 'Roboto', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #34a853;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #2d9648;
+            box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+        }
+
+        .btn-primary:disabled {
+            background: #f1f3f4;
+            color: #80868b;
+            cursor: not-allowed;
+        }
+
+        .btn-tonal {
+            background: rgba(52, 168, 83, 0.1);
+            color: #34a853;
+        }
+
+        .btn-tonal:hover {
+            background: rgba(52, 168, 83, 0.16);
+            box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3);
+        }
+
+        .completion-message {
+            padding: 24px;
+            text-align: center;
+            display: none;
+        }
+
+        .completion-message.show {
+            display: block;
+        }
+
+        .completion-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 16px;
+            background: #34a853;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            color: white;
+        }
+
+        .completion-icon.partial {
+            background: #f57c00;
+        }
+
+        .completion-title {
+            font-size: 20px;
+            font-weight: 500;
+            color: #202124;
+            margin-bottom: 8px;
+        }
+
+        .completion-description {
+            font-size: 14px;
+            color: #5f6368;
+            line-height: 1.6;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(66, 133, 244, 0.3);
+            border-top-color: #4285f4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 滚动条样式 */
+        .file-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .file-list::-webkit-scrollbar-track {
+            background: #f8f9fa;
+        }
+
+        .file-list::-webkit-scrollbar-thumb {
+            background: #dadce0;
+            border-radius: 3px;
+        }
+
+        .file-list::-webkit-scrollbar-thumb:hover {
+            background: #b0b3b8;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 8px;
+            }
+
+            .header {
+                padding: 24px 16px;
+            }
+
+            .overall-stats {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+            }
+
+            .stat-item {
+                padding: 12px 8px;
+            }
+
+            .stat-value {
+                font-size: 20px;
+            }
+
+            .stat-label {
+                font-size: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 data-i18n="upload_in_progress">照片上传中</h1>
+            <p data-i18n="uploading_to_server">正在将照片传输到服务器</p>
+        </div>
+
+        <div class="overall-progress">
+            <div class="overall-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="totalFiles">0</div>
+                    <div class="stat-label" data-i18n="total_files">总文件数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="completedFiles">0</div>
+                    <div class="stat-label" data-i18n="completed">已完成</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="failedFiles">0</div>
+                    <div class="stat-label" data-i18n="failed">失败</div>
+                </div>
+            </div>
+
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="overallProgressBar" style="width: 0%"></div>
+            </div>
+            <div class="progress-text">
+                <span id="progressLabel" data-i18n="preparing_upload">准备上传...</span>
+                <span id="progressPercent">0%</span>
+            </div>
+        </div>
+
+        <div class="file-list" id="fileList">
+            <!-- 文件列表将动态生成 -->
+        </div>
+
+        <div class="completion-message" id="completionMessage">
+            <div class="completion-icon" id="completionIcon">✓</div>
+            <div class="completion-title" id="completionTitle" data-i18n="upload_complete">上传完成！</div>
+            <div class="completion-description" id="completionDescription" data-i18n="all_uploaded">
+                所有照片已成功上传到服务器
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <button class="btn btn-tonal" id="cancelBtn" onclick="cancelUpload()" data-i18n="cancel_upload">
+                取消上传
+            </button>
+            <button class="btn btn-primary" id="doneBtn" onclick="backToMain()" style="display: none;" data-i18n="done">
+                完成
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // URL参数：device_id
+        const urlParams = new URLSearchParams(window.location.search);
+        const deviceId = urlParams.get('device_id') || null;
+
+        let uploadQueue = [];
+        let currentUploadIndex = 0;
+        let isUploading = false;
+        let refreshInterval = null;
+        
+        let stats = {
+            total: 0,
+            completed: 0,
+            failed: 0,
+            cancelled: 0
+        };
+
+        // 从服务器获取上传进度
+        async function loadUploadProgress() {
+            if (!deviceId) {
+                // 如果没有指定设备，尝试获取第一个正在上传的设备
+                await loadActiveDevice();
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/upload/progress/${deviceId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    uploadQueue = data.files || [];
+                    stats.total = data.total || 0;
+                    stats.completed = data.completed || 0;
+                    stats.failed = data.failed || 0;
+                    isUploading = data.is_uploading || false;
+                    currentUploadIndex = data.current_index || 0;
+
+                    updateStats();
+                    renderFileListFromProgress(data.file_status || {});
+
+                    // 如果上传完成，显示完成信息
+                    if (!isUploading && (stats.completed + stats.failed) >= stats.total && stats.total > 0) {
+                        showCompletion();
+                    }
+                } else {
+                    // 未找到上传会话
+                    showNoUpload();
+                }
+            } catch (error) {
+                console.error('加载上传进度失败:', error);
+            }
+        }
+
+        // 获取正在上传的设备
+        async function loadActiveDevice() {
+            try {
+                const response = await fetch('/api/wifi/devices');
+                const data = await response.json();
+                
+                if (data.success && data.devices && data.devices.length > 0) {
+                    // 尝试获取第一个设备的进度
+                    const firstDevice = data.devices[0];
+                    window.location.href = `/upload_progress?device_id=${firstDevice.id}`;
+                } else {
+                    showNoUpload();
+                }
+            } catch (error) {
+                console.error('加载设备失败:', error);
+                showNoUpload();
+            }
+        }
+
+        function showNoUpload() {
+            document.getElementById('fileList').innerHTML = `
+                <div style="text-align: center; padding: 60px 20px; color: #5f6368;">
+                    <div style="font-size: 64px; margin-bottom: 16px;">📱</div>
+                    <h3 style="font-size: 18px; margin-bottom: 8px; color: #202124;">暂无上传活动</h3>
+                    <p style="font-size: 14px;">等待手机开始上传照片...</p>
+                </div>
+            `;
+            document.getElementById('cancelBtn').disabled = true;
+        }
+
+        function renderFileListFromProgress(fileStatus) {
+            const fileList = document.getElementById('fileList');
+            
+            if (uploadQueue.length === 0) {
+                showNoUpload();
+                return;
+            }
+
+            fileList.innerHTML = uploadQueue.map((file, index) => {
+                // 修复大小显示问题
+                const fileSize = file.size || file.size_mb * 1024 * 1024 || 0;
+                const sizeInMB = (fileSize / 1024 / 1024).toFixed(2);
+                const status = fileStatus[index] || 'pending';
+                
+                let statusClass = status;
+                let statusText = '等待中';
+                let showProgress = false;
+                
+                // 生成缩略图URL
+                const photoPath = file.path || file.name;
+                const imageSrc = deviceId ? `/api/wifi/photo/${deviceId}/${encodeURIComponent(photoPath)}` : '';
+                
+                // 根据状态设置图标或缩略图
+                let iconHtml = '';
+                switch (status) {
+                    case 'uploading':
+                        statusClass = 'uploading';
+                        statusText = '<span class="spinner"></span> 上传中';
+                        showProgress = true;
+                        iconHtml = imageSrc ? 
+                            `<img src="${imageSrc}" alt="${file.name}" onerror="this.parentElement.innerHTML='📤'">` :
+                            '📤';
+                        break;
+                    case 'completed':
+                        statusClass = 'completed';
+                        statusText = '✓ 已完成';
+                        iconHtml = imageSrc ? 
+                            `<img src="${imageSrc}" alt="${file.name}" onerror="this.parentElement.innerHTML='✓'">` :
+                            '✓';
+                        break;
+                    case 'failed':
+                        statusClass = 'failed';
+                        statusText = '✗ 失败';
+                        iconHtml = '✗';
+                        break;
+                    default:
+                        statusClass = 'pending';
+                        statusText = '等待中';
+                        iconHtml = '📷';
+                }
+                
+                return `
+                    <div class="file-item ${statusClass}" id="file-${index}">
+                        <div class="file-header">
+                            <div class="file-icon">${iconHtml}</div>
+                            <div class="file-info">
+                                <div class="file-name" title="${file.name}">${file.name}</div>
+                                <div class="file-size">${sizeInMB} MB</div>
+                            </div>
+                            <div class="file-status" id="status-${index}">${statusText}</div>
+                        </div>
+                        ${showProgress ? `
+                        <div class="file-progress" id="progress-${index}">
+                            <div class="file-progress-bar-container">
+                                <div class="file-progress-bar" id="progress-bar-${index}" style="width: 50%"></div>
+                            </div>
+                            <div class="file-progress-text">
+                                <span id="progress-text-${index}">上传中...</span>
+                                <span id="speed-${index}"></span>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+            
+            // 滚动到当前上传的文件
+            if (currentUploadIndex >= 0 && currentUploadIndex < uploadQueue.length) {
+                const currentFile = document.getElementById(`file-${currentUploadIndex}`);
+                if (currentFile) {
+                    currentFile.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('totalFiles').textContent = stats.total;
+            document.getElementById('completedFiles').textContent = stats.completed;
+            document.getElementById('failedFiles').textContent = stats.failed;
+
+            const totalProgress = stats.total > 0 ? 
+                ((stats.completed + stats.failed) / stats.total * 100).toFixed(0) : 0;
+            
+            document.getElementById('overallProgressBar').style.width = totalProgress + '%';
+            document.getElementById('progressPercent').textContent = totalProgress + '%';
+            
+            if (isUploading) {
+                document.getElementById('progressLabel').textContent = 
+                    `正在上传第 ${currentUploadIndex + 1} / ${stats.total} 个文件`;
+            }
+        }
+
+        function startRefresh() {
+            // 每秒刷新一次进度
+            refreshInterval = setInterval(() => {
+                loadUploadProgress();
+            }, 1000);
+        }
+
+        function stopRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+
+        function showCompletion() {
+            document.getElementById('fileList').style.display = 'none';
+            document.getElementById('cancelBtn').style.display = 'none';
+            document.getElementById('doneBtn').style.display = 'flex';
+            
+            const completionMessage = document.getElementById('completionMessage');
+            const completionIcon = document.getElementById('completionIcon');
+            const completionTitle = document.getElementById('completionTitle');
+            const completionDescription = document.getElementById('completionDescription');
+            
+            completionMessage.classList.add('show');
+
+            if (stats.failed === 0) {
+                completionIcon.textContent = '✓';
+                completionIcon.classList.remove('partial');
+                completionTitle.textContent = '上传完成！';
+                completionDescription.textContent = `成功上传 ${stats.completed} 张照片到服务器`;
+                document.getElementById('progressLabel').textContent = '全部完成！';
+            } else {
+                completionIcon.textContent = '⚠';
+                completionIcon.classList.add('partial');
+                completionTitle.textContent = '部分上传完成';
+                completionDescription.textContent = 
+                    `成功上传 ${stats.completed} 张，失败 ${stats.failed} 张照片`;
+                document.getElementById('progressLabel').textContent = '部分完成';
+            }
+        }
+
+        async function cancelUpload() {
+            if (!deviceId) return;
+            
+            if (confirm('确定要通知手机端取消上传吗？')) {
+                try {
+                    const response = await fetch(`/api/upload/cancel/${deviceId}`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        document.getElementById('progressLabel').textContent = '已请求取消上传';
+                        stopRefresh();
+                        loadUploadProgress(); // 刷新一次状态
+                    }
+                } catch (error) {
+                    console.error('取消上传失败:', error);
+                    alert('取消上传失败');
+                }
+            }
+        }
+
+        function backToMain() {
+            // 返回WiFi页面
+            window.location.href = '/wifi';
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('load', () => {
+            loadUploadProgress();
+            startRefresh();
+        });
+
+        // 页面卸载时停止刷新
+        window.addEventListener('beforeunload', () => {
+            stopRefresh();
+        });
+
+        // 页面可见性变化时控制刷新
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopRefresh();
+            } else {
+                loadUploadProgress();
+                startRefresh();
+            }
+        });
+    </script>
+</body>
+</html>

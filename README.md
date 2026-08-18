@@ -1,24 +1,38 @@
 <div align="center">
 
-# 📱 Android Transfer
+# DroidTrans / 卓传
 
-<img src="app_logo.svg" width="120" height="120" alt="Android Transfer Logo">
+<img src="app_logo.svg" width="120" height="120" alt="DroidTrans Logo">
 
-**现代化的 Android 照片传输工具**
-
-一键扫描 · 批量传输 · 智能续传
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.7+-green.svg)](https://www.python.org/)
-[![Electron](https://img.shields.io/badge/Electron-28.0+-47848F.svg)](https://www.electronjs.org/)
-
-[功能特性](#-功能特性) • [快速开始](#-快速开始) • [使用指南](#-使用指南) • [截图预览](#-截图预览)
+**Android 照片传输：手机 App · Web 接收端 · 桌面壳**
 
 </div>
+
+## 目录
+
+| 目录 | 是什么 | 怎么跑 |
+| --- | --- | --- |
+| `android/` | 手机 App（原 AndroidTransferApp） | Android Studio 打开该目录 |
+| `web/` | **浏览器端** Flask + HTML，端口 9500 | `cd web && ./start.sh` → http://127.0.0.1:9500 |
+| `desktop/` | **桌面端 Tauri**（系统 WebView，安装包约 2MB） | 产物在 `dist/DroidTrans-1.0.0-macos-arm64.dmg` |
+
+`web/` 不是桌面端。桌面用 Tauri，体积最小、双击就能装。打开后会启动 `web/` 服务。
+
+### ADB
+
+无线调试配对端口（例如 `192.168.x.x:45999`）需要 **platform-tools 36+** 的 `adb pair`。
+
+本机常见情况：Homebrew `/opt/homebrew/bin/adb` 还是 35.0.2，Android SDK 里才是 36.0.2。启动时会自动选新的那份。
+
+```bash
+adb pair 192.168.10.18:45999
+adb devices
+```
 
 ---
 
 ## ✨ 功能特性
+
 
 ### 🔌 双传输模式
 
@@ -105,7 +119,7 @@
 ```bash
 # 克隆项目
 git clone https://github.com/yourusername/AndroidTransfer.git
-cd AndroidTransfer/AndroidTransferClient
+cd AndroidTransfer/web
 
 # 安装依赖
 pip install -r requirements.txt
@@ -201,20 +215,21 @@ cd AndroidTransfer
 ### 启动开发服务器
 
 ```bash
-cd AndroidTransferClient
+cd web
 pip install -r requirements.txt
 python app.py
 ```
 
-### 构建 Electron 应用
+### 打包桌面端（Tauri）
 
 ```bash
-cd AndroidTransferClient
-npm install
-npm run dist:mac    # macOS
-npm run dist:win    # Windows
-npm run dist:linux  # Linux
+cd desktop/src-tauri
+npx @tauri-apps/cli@2 icon ../../web/icon.png
+npx @tauri-apps/cli@2 build --bundles app
 ```
+
+macOS 安装包约 2MB，在 `desktop/src-tauri/target/release/bundle/macos/DroidTrans.app`。
+
 
 ---
 

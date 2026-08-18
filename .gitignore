@@ -18,6 +18,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
 # Electron 打包输出
 dist/
 dist_app/
@@ -38,6 +41,10 @@ build/
 # *.spec  # 需要保留 app.spec 用于 CI 构建
 
 # Android 构建
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
 AndroidTransferApp/app/build/
 AndroidTransferApp/build/
 AndroidTransferApp/.gradle/

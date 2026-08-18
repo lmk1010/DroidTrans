@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="1dp"
+    android:foreground="?attr/selectableItemBackground">
+
+    <com.mk.androidtransfer.widget.SquareImageView
+        android:id="@+id/ivPhoto"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scaleType="centerCrop"
+        android:contentDescription="@string/photo_preview"
+        tools:src="@tools:sample/backgrounds/scenic" />
+
+    <View
+        android:id="@+id/selectionOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/selection_overlay"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/checkbox"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="6dp"
+        android:src="@drawable/checkbox_selector"
+        android:contentDescription="@string/select_photos" />
+
+    <ImageView
+        android:id="@+id/ivVideoBadge"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="6dp"
+        android:src="@drawable/ic_video_simple"
+        android:tint="@color/white"
+        android:visibility="gone"
+        android:contentDescription="@string/video" />
+
+</FrameLayout>
