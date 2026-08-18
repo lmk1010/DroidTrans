@@ -11,7 +11,6 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowInsetsController;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -21,15 +20,12 @@ import org.json.JSONObject;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.chip.Chip;
-import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
+import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputEditText;
 import android.provider.Settings;
 
-import com.mk.androidtransfer.adapter.ServerAdapter;
 import com.mk.androidtransfer.model.ApiResponse;
 import com.mk.androidtransfer.model.ServerInfo;
 import com.mk.androidtransfer.network.ApiService;
@@ -44,19 +40,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
+import okhttp3.ConnectionPool;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
 /**
- * 主界面Activity - 服务器发现界面
+ * 主界面Activity - 服务器发现界面（雷达交互模式）
  */
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
     private static final int DEFAULT_PORT = 9500;
-    private static final int SCAN_TIMEOUT = 200; // 200ms超时（加快扫描）
     private static final String PREFS_NAME = "ServerCache";
     private static final String KEY_CACHED_SERVERS = "cached_servers";
     private static final long CACHE_VALIDITY_MS = 5 * 60 * 1000; // 5分钟缓存有效期
@@ -70,20 +69,25 @@ public class MainActivity extends AppCompatActivity {
     private RadarScanView radarScanView;
     private Chip chipDeviceName;
     private TextView tvScanStatus;
-    private TextView tvServerCount;
-    private RecyclerView recyclerViewServers;
-    private LinearLayout emptyState;
     private com.google.android.material.button.MaterialButton btnRefresh;
     private com.google.android.material.button.MaterialButton btnManualInput;
 
     // 数据
-    private ServerAdapter serverAdapter;
     private List<ServerInfo> discoveredServers = new ArrayList<>();
     private ExecutorService executorService;
     private Handler mainHandler;
     private boolean isScanning = false;
     private boolean hasCachedServers = false;
     private long lastScanTime = 0;
+
+    private static final OkHttpClient SCAN_CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(180, TimeUnit.MILLISECONDS)
+            .readTimeout(280, TimeUnit.MILLISECONDS)
+            .writeTimeout(180, TimeUnit.MILLISECONDS)
+            .callTimeout(450, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(false)
+            .connectionPool(new ConnectionPool(12, 1, TimeUnit.SECONDS))
+            .build();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,10 +100,9 @@ public class MainActivity extends AppCompatActivity {
 
         initViews();
         setupDeviceName();
-        setupRecyclerView();
         setupListeners();
 
-        executorService = Executors.newFixedThreadPool(50); // 增加并发数加快扫描
+        executorService = Executors.newFixedThreadPool(12);
         mainHandler = new Handler(Looper.getMainLooper());
         
         // 尝试加载缓存的服务器列表
@@ -117,16 +120,18 @@ public class MainActivity extends AppCompatActivity {
             // Android 11及以上
             WindowInsetsController controller = getWindow().getInsetsController();
             if (controller != null) {
-                // 状态栏图标使用浅色（因为状态栏背景是深色青绿色）
-                controller.setSystemBarsAppearance(0, 
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
+                // Dashboard 使用浅色背景，需要深色状态栏图标
+                controller.setSystemBarsAppearance(
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                );
             }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // Android 6.0到10
-            getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            );
+            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            getWindow().getDecorView().setSystemUiVisibility(flags);
         }
     }
 
@@ -137,21 +142,21 @@ public class MainActivity extends AppCompatActivity {
         radarScanView = findViewById(R.id.radarScanView);
         chipDeviceName = findViewById(R.id.chipDeviceName);
         tvScanStatus = findViewById(R.id.tvScanStatus);
-        tvServerCount = findViewById(R.id.tvServerCount);
-        recyclerViewServers = findViewById(R.id.recyclerViewServers);
-        emptyState = findViewById(R.id.emptyState);
         btnRefresh = findViewById(R.id.btnRefresh);
         btnManualInput = findViewById(R.id.btnManualInput);
         
-        // 设置Toolbar菜单
-        androidx.appcompat.widget.Toolbar toolbar = findViewById(R.id.toolbar);
-        toolbar.inflateMenu(R.menu.menu_main);
-        toolbar.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == R.id.action_upload_history) {
-                openUploadHistory();
-                return true;
-            }
-            return false;
+        // 设置返回按钮
+        android.widget.ImageButton btnBack = findViewById(R.id.btnBack);
+        btnBack.setOnClickListener(v -> finish());
+        
+        // 设置历史记录按钮
+        com.google.android.material.button.MaterialButton btnHistory = findViewById(R.id.btnHistory);
+        btnHistory.setOnClickListener(v -> openUploadHistory());
+        
+        // 设置雷达点击监听
+        radarScanView.setOnServerDotClickListener(serverDot -> {
+            // 点击服务器点，直接进入照片选择页面
+            registerDeviceConnection(serverDot.toServerInfo());
         });
     }
 
@@ -161,20 +166,6 @@ public class MainActivity extends AppCompatActivity {
     private void setupDeviceName() {
         String deviceName = DeviceNameGenerator.getOrGenerateDeviceName(this);
         chipDeviceName.setText(deviceName);
-    }
-
-    /**
-     * 设置RecyclerView
-     */
-    private void setupRecyclerView() {
-        serverAdapter = new ServerAdapter();
-        recyclerViewServers.setLayoutManager(new LinearLayoutManager(this));
-        recyclerViewServers.setAdapter(serverAdapter);
-
-        serverAdapter.setOnServerClickListener(server -> {
-            // 点击服务器，先注册设备连接，然后跳转到照片选择页面
-            registerDeviceConnection(server);
-        });
     }
 
     /**
@@ -262,8 +253,8 @@ public class MainActivity extends AppCompatActivity {
                 if (response.isSuccessful() && response.body() != null && response.body().isSuccess()) {
                     ServerInfo server = new ServerInfo(name, ip, port);
                     mainHandler.post(() -> {
-                        serverAdapter.addServer(server);
-                        updateServerCount();
+                        // 在雷达上添加服务器点
+                        radarScanView.addServerDot(server);
                         
                         // 添加到discoveredServers列表
                         if (!discoveredServers.contains(server)) {
@@ -274,7 +265,8 @@ public class MainActivity extends AppCompatActivity {
                         saveServerCache();
                         hasCachedServers = true;
                         
-                        Toast.makeText(MainActivity.this, "服务器连接成功", Toast.LENGTH_SHORT).show();
+                        // 显示Snackbar通知并提供连接按钮
+                        showServerFoundSnackbar(server);
                     });
                 } else {
                     mainHandler.post(() ->
@@ -302,12 +294,9 @@ public class MainActivity extends AppCompatActivity {
 
         isScanning = true;
         discoveredServers.clear();
-        serverAdapter.clearServers();
-        updateServerCount();
+        radarScanView.clearServerDots(); // 清除雷达上的服务器点
 
-        tvScanStatus.setText(R.string.scanning_servers);
-        emptyState.setVisibility(View.VISIBLE);
-        recyclerViewServers.setVisibility(View.GONE);
+        tvScanStatus.setText("正在扫描服务器...");
 
         // 获取本地IP地址前缀
         new Thread(() -> {
@@ -386,68 +375,40 @@ public class MainActivity extends AppCompatActivity {
         }, 8000);
     }
 
-    /**
-     * 扫描单个主机
-     */
     private void scanHost(String ip, int port) {
-        try {
-            InetAddress address = InetAddress.getByName(ip);
-            if (address.isReachable(SCAN_TIMEOUT)) {
-                // 主机可达，尝试连接服务
-                verifyServer(ip, port);
-            }
-        } catch (Exception e) {
-            // 忽略不可达的主机
+        if (!isScanning) {
+            return;
         }
+        if (!probeServer(ip, port)) {
+            return;
+        }
+        String serverName = "传输服务器 " + ip.substring(ip.lastIndexOf('.') + 1);
+        ServerInfo server = new ServerInfo(serverName, ip, port);
+        mainHandler.post(() -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            radarScanView.addServerDot(server);
+            if (!discoveredServers.contains(server)) {
+                discoveredServers.add(server);
+            }
+            saveServerCache();
+            hasCachedServers = true;
+            updateScanStatus();
+            showServerFoundSnackbar(server);
+        });
+        Log.d(TAG, "发现服务器: " + ip);
     }
 
-    /**
-     * 验证服务器
-     */
-    private void verifyServer(String ip, int port) {
-        String serverUrl = "http://" + ip + ":" + port + "/";
-        try {
-            RetrofitClient retrofitClient = RetrofitClient.getInstance(serverUrl);
-            ApiService apiService = retrofitClient.getApiService();
-
-            apiService.getWifiInfo(null, null).enqueue(new Callback<ApiResponse<Object>>() {
-                @Override
-                public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
-                    if (response.isSuccessful() && response.body() != null && response.body().isSuccess()) {
-                        String serverName = "传输服务器 " + ip.substring(ip.lastIndexOf('.') + 1);
-                        ServerInfo server = new ServerInfo(serverName, ip, port);
-
-                        mainHandler.post(() -> {
-                            serverAdapter.addServer(server);
-                            updateServerCount();
-
-                            // 显示服务器列表，隐藏空状态
-                            if (recyclerViewServers.getVisibility() != View.VISIBLE) {
-                                recyclerViewServers.setVisibility(View.VISIBLE);
-                                emptyState.setVisibility(View.GONE);
-                            }
-                            
-                            // 添加到discoveredServers列表
-                            if (!discoveredServers.contains(server)) {
-                                discoveredServers.add(server);
-                            }
-                            
-                            // 保存到缓存
-                            saveServerCache();
-                            hasCachedServers = true;
-                        });
-
-                        Log.d(TAG, "发现服务器: " + ip);
-                    }
-                }
-
-                @Override
-                public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
-                    // 连接失败，不是我们的服务器
-                }
-            });
+    private boolean probeServer(String ip, int port) {
+        Request request = new Request.Builder()
+                .url("http://" + ip + ":" + port + "/api/wifi/info")
+                .get()
+                .build();
+        try (okhttp3.Response response = SCAN_CLIENT.newCall(request).execute()) {
+            return response.isSuccessful();
         } catch (Exception e) {
-            Log.e(TAG, "验证服务器失败: " + ip, e);
+            return false;
         }
     }
 
@@ -478,29 +439,54 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 更新服务器数量显示
+     * 更新扫描状态
      */
-    private void updateServerCount() {
-        int count = serverAdapter.getItemCount();
-        tvServerCount.setText(getString(R.string.found_servers_count, count));
+    private void updateScanStatus() {
+        int count = radarScanView.getServerDotCount();
+        if (count > 0) {
+            tvScanStatus.setText("已发现 " + count + " 台服务器");
+        } else if (isScanning) {
+            tvScanStatus.setText("正在扫描服务器...");
+        } else {
+            tvScanStatus.setText("未发现服务器");
+        }
+    }
+    
+    /**
+     * 显示服务器发现通知（Snackbar）
+     */
+    private void showServerFoundSnackbar(ServerInfo server) {
+        Snackbar snackbar = Snackbar.make(
+                findViewById(android.R.id.content),
+                "发现服务器: " + server.getName(),
+                Snackbar.LENGTH_LONG
+        );
+        
+        snackbar.setAction("连接", v -> {
+            // 点击连接按钮，直接进入照片选择页面
+            registerDeviceConnection(server);
+        });
+        
+        snackbar.setActionTextColor(getColor(R.color.radar_blue_light));
+        snackbar.show();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // 启动雷达扫描动画
         radarScanView.startScanning();
-
-        // 智能扫描：如果有有效缓存就验证，否则重新扫描
-        long currentTime = System.currentTimeMillis();
-        if (hasCachedServers && (currentTime - lastScanTime) < CACHE_VALIDITY_MS) {
-            // 有效缓存存在，只验证服务器是否在线
-            tvScanStatus.setText("验证服务器状态...");
-            validateCachedServers();
-        } else {
-            // 缓存过期或不存在，执行完整扫描
-            startNetworkScan();
-        }
+        radarScanView.post(() -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            long currentTime = System.currentTimeMillis();
+            if (hasCachedServers && (currentTime - lastScanTime) < CACHE_VALIDITY_MS) {
+                tvScanStatus.setText("验证服务器状态...");
+                validateCachedServers();
+            } else {
+                startNetworkScan();
+            }
+        });
     }
 
     @Override
@@ -574,16 +560,14 @@ public class MainActivity extends AppCompatActivity {
                     discoveredServers.clear();
                     discoveredServers.addAll(cachedServers);
                     for (ServerInfo server : cachedServers) {
-                        serverAdapter.addServer(server);
+                        // 在雷达上添加服务器点
+                        radarScanView.addServerDot(server);
                     }
                     
-                    updateServerCount();
                     hasCachedServers = true;
                     
-                    // 显示服务器列表
-                    recyclerViewServers.setVisibility(View.VISIBLE);
-                    emptyState.setVisibility(View.GONE);
-                    tvScanStatus.setText("已加载缓存的服务器");
+                    // 更新状态文字
+                    updateScanStatus();
                     
                     Log.d(TAG, "从缓存加载了 " + cachedServers.size() + " 个服务器");
                 }
@@ -619,21 +603,9 @@ public class MainActivity extends AppCompatActivity {
             List<ServerInfo> offlineServers = new ArrayList<>();
             
             for (ServerInfo server : serversToValidate) {
-                String serverUrl = "http://" + server.getIp() + ":" + server.getPort() + "/";
-                try {
-                    RetrofitClient retrofitClient = RetrofitClient.getInstance(serverUrl);
-                    ApiService apiService = retrofitClient.getApiService();
-                    
-                    // 同步验证
-                    retrofit2.Response<ApiResponse<Object>> response = 
-                        apiService.getWifiInfo(null, null).execute();
-                    
-                    if (response.isSuccessful() && response.body() != null && response.body().isSuccess()) {
-                        onlineCount++;
-                    } else {
-                        offlineServers.add(server);
-                    }
-                } catch (Exception e) {
+                if (probeServer(server.getIp(), server.getPort())) {
+                    onlineCount++;
+                } else {
                     offlineServers.add(server);
                 }
             }
@@ -645,10 +617,10 @@ public class MainActivity extends AppCompatActivity {
                 // 移除离线的服务器
                 for (ServerInfo server : finalOfflineServers) {
                     discoveredServers.remove(server);
-                    serverAdapter.removeServer(server);
+                    radarScanView.removeServerDot(server.getIp());
                 }
                 
-                updateServerCount();
+                updateScanStatus();
                 
                 if (finalOnlineCount > 0) {
                     tvScanStatus.setText("验证完成");
@@ -718,7 +690,9 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(MainActivity.this, PhotoSelectionActivity.class);
         intent.putExtra("server_url", server.getServerUrl());
         intent.putExtra("server_name", server.getName());
+        intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
         startActivity(intent);
+        overridePendingTransition(0, 0);
     }
     
     /**
@@ -726,6 +700,8 @@ public class MainActivity extends AppCompatActivity {
      */
     private void openUploadHistory() {
         Intent intent = new Intent(this, UploadHistoryActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
         startActivity(intent);
+        overridePendingTransition(0, 0);
     }
 }

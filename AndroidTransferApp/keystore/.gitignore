@@ -1,0 +1,4 @@
+# 忽略密钥库文件和密码信息
+*.jks
+keystore_info.txt
+*.jks.backup_*

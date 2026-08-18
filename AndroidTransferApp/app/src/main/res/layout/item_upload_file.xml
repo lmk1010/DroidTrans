@@ -113,7 +113,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="4dp"
                 app:indicatorColor="@color/primary"
-                app:trackColor="@color/surface_variant"
+                app:trackColor="@color/white"
                 app:trackCornerRadius="2dp"
                 app:trackThickness="4dp"
                 tools:progress="50" />

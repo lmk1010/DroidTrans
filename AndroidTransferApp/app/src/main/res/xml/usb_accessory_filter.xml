@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB Accessory Filter for AndroidTransfer -->
+    <usb-accessory
+        manufacturer="MK"
+        model="AndroidTransfer"
+        version="2.0" />
+</resources>
+

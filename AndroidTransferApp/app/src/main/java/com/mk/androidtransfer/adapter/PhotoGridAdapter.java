@@ -1,7 +1,6 @@
 package com.mk.androidtransfer.adapter;
 
 import android.content.Context;
-import android.net.Uri;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -116,6 +115,7 @@ public class PhotoGridAdapter extends RecyclerView.Adapter<PhotoGridAdapter.Phot
         private MaterialCheckBox checkbox;
         private TextView tvPhotoName;
         private TextView tvPhotoSize;
+        private ImageView ivVideoBadge;
 
         public PhotoViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -126,24 +126,26 @@ public class PhotoGridAdapter extends RecyclerView.Adapter<PhotoGridAdapter.Phot
             checkbox = itemView.findViewById(R.id.checkbox);
             tvPhotoName = itemView.findViewById(R.id.tvPhotoName);
             tvPhotoSize = itemView.findViewById(R.id.tvPhotoSize);
+            ivVideoBadge = itemView.findViewById(R.id.ivVideoBadge);
         }
 
         public void bind(PhotoInfo photo, int position) {
-            // 加载图片
-            Uri uri = Uri.parse(photo.getUri());
+            String loadUri = photo.getLoadUri();
             Glide.with(context)
-                    .load(uri)
+                    .load(loadUri)
                     .centerCrop()
                     .placeholder(R.drawable.ic_no_photos)
                     .into(ivPhoto);
 
-            // 设置照片名称和大小
             tvPhotoName.setText(photo.getName());
-            if (photo.getSizeMb() < 1) {
+            if (photo.isVideo() && photo.getDurationMs() > 0) {
+                tvPhotoSize.setText(formatDuration(photo.getDurationMs()));
+            } else if (photo.getSizeMb() < 1) {
                 tvPhotoSize.setText(String.format("%.0f KB", photo.getSizeMb() * 1024));
             } else {
                 tvPhotoSize.setText(String.format("%.1f MB", photo.getSizeMb()));
             }
+            ivVideoBadge.setVisibility(photo.isVideo() ? View.VISIBLE : View.GONE);
 
             // 设置选中状态
             boolean isSelected = photo.isSelected();
@@ -163,5 +165,12 @@ public class PhotoGridAdapter extends RecyclerView.Adapter<PhotoGridAdapter.Phot
                 }
             });
         }
+    }
+
+    private static String formatDuration(long durationMs) {
+        long totalSeconds = Math.max(0, durationMs / 1000);
+        long minutes = totalSeconds / 60;
+        long seconds = totalSeconds % 60;
+        return String.format("%d:%02d", minutes, seconds);
     }
 }

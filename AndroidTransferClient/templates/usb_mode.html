@@ -89,6 +89,64 @@
             letter-spacing: 0;
         }
 
+        /* USB调试必须开启的提示横幅 */
+        .usb-warning-banner {
+            background: #fff3cd;
+            border-left: 4px solid #ff9800;
+            padding: 16px 32px;
+            display: none; /* 默认隐藏，检测到未授权设备时显示 */
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid #e8eaed;
+        }
+
+        .usb-warning-banner.show {
+            display: flex;
+        }
+
+        .usb-warning-icon {
+            font-size: 32px;
+            flex-shrink: 0;
+        }
+
+        .usb-warning-content {
+            flex: 1;
+        }
+
+        .usb-warning-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 4px;
+        }
+
+        .usb-warning-text {
+            font-size: 13px;
+            color: #856404;
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        .usb-warning-actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 768px) {
+            .usb-warning-banner {
+                flex-direction: column;
+                align-items: flex-start;
+                padding: 12px 16px;
+            }
+            .usb-warning-actions {
+                width: 100%;
+            }
+            .usb-warning-actions .btn {
+                flex: 1;
+            }
+        }
+
         .controls {
             padding: 20px 32px;
             background: white;
@@ -116,7 +174,7 @@
         .controls .status #usbSpeedBadge { white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
         .controls .status #deviceSelect { max-width: 50vw; }
 
-        /* 小屏：隐藏细节，仅显示“更多配置”按钮，不再横滑 */
+        /* 小屏：隐藏细节，仅显示"更多配置"按钮，不再横滑 */
         @media (max-width: 768px) {
             .controls .status #usbSpeedBadge,
             .controls .status #deviceStatus,
@@ -124,6 +182,10 @@
             .controls .status #burstModeToggle,
             .controls .status #deviceSelect {
                 display: none !important;
+            }
+            /* 开发者模式教程按钮在小屏幕上也要显示，因为很重要 */
+            .controls .status #developerModeHelpBtn {
+                display: inline-block !important;
             }
             .controls .status #moreBtn { display: inline-block !important; }
         }
@@ -1450,6 +1512,28 @@
             </div>
         </div>
 
+        <!-- 必须开启开发者模式提示 -->
+        <div style="background: #e3f2fd; border-bottom: 1px solid #e8eaed; padding: 12px 32px; display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 16px;">ℹ️</div>
+            <div style="flex: 1; font-size: 13px; color: #1565c0; line-height: 1.5;">
+                <strong>使用提示：</strong>必须在手机上开启<strong>开发者模式</strong>和<strong>USB调试</strong>，否则无法传输照片。
+                <a href="javascript:void(0)" onclick="showDeveloperModeGuide()" style="color: #1a73e8; text-decoration: none; margin-left: 8px; font-weight: 500;">查看如何开启 →</a>
+            </div>
+        </div>
+
+        <!-- USB调试必须开启的警告横幅 -->
+        <div class="usb-warning-banner" id="usbWarningBanner">
+            <div class="usb-warning-icon">⚠️</div>
+            <div class="usb-warning-content">
+                <div class="usb-warning-title">必须开启 USB 调试</div>
+                <p class="usb-warning-text">检测到您的设备未开启开发者模式或未允许USB调试，无法正常传输照片。请立即开启USB调试功能。</p>
+            </div>
+            <div class="usb-warning-actions">
+                <button class="btn btn-primary" onclick="showDeveloperModeGuide()">查看开启教程</button>
+                <button class="btn btn-tonal" onclick="hideUsbWarningBanner()">我知道了</button>
+            </div>
+        </div>
+
         
 
         <div class="controls">
@@ -1463,6 +1547,7 @@
             <div class="status" style="display:flex;align-items:center;gap:8px;">
                 <span class="status-badge status-speed" id="usbSpeedBadge" style="display:none;">USB</span>
                 <span class="status-badge status-disconnected" id="deviceStatus">未连接</span>
+                <button class="btn btn-tonal" id="developerModeHelpBtn" onclick="showDeveloperModeGuide()" title="查看如何开启开发者模式和USB调试">📱 开发者模式教程</button>
                 <button class="btn btn-tonal" id="historyBtn" onclick="openHistoryDialog2()">历史备份记录</button>
                 <div class="burst-mode-toggle-small" id="burstModeToggle" style="display: inline-flex;">
                     <label class="toggle-label">
@@ -1739,6 +1824,18 @@
             return v;
         }
 
+        // 释放所有缓存的 Blob URL，避免内存泄漏
+        function clearThumbCache() {
+            try {
+                for (const [, entry] of thumbCache.entries()) {
+                    try {
+                        if (entry && entry.url) URL.revokeObjectURL(entry.url);
+                    } catch (e) {}
+                }
+            } catch (e) { /* ignore */ }
+            try { thumbCache.clear(); } catch (e) { /* ignore */ }
+        }
+
         function thumbCachePut(key, blob) {
             try {
                 const url = URL.createObjectURL(blob);
@@ -1792,7 +1889,14 @@
                 const done = () => { imgEl.classList.add('loaded'); const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
                 imgEl.onload = done;
                 imgEl.onerror = () => { const sk = imgEl.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); imgEl.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
-                imgEl.src = entry ? entry.url : URL.createObjectURL(blob);
+                if (entry && entry.url) {
+                    imgEl.src = entry.url;
+                } else {
+                    const tmpUrl = URL.createObjectURL(blob);
+                    imgEl.src = tmpUrl;
+                    imgEl.addEventListener('load', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                    imgEl.addEventListener('error', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                }
                 imgEl.removeAttribute('data-ph');
                 if (imgEl.complete && imgEl.naturalWidth > 0) done();
             } catch (e) {
@@ -2018,8 +2122,15 @@
                                           if (!blob) return;
                                           const entry = thumbCachePut(path, blob);
                                           img.onload = done;
-                                          img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class=\"thumb-video-badge\">预览失败</div>'); };
-                                          img.src = (entry && entry.url) ? entry.url : URL.createObjectURL(blob);
+                                          img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
+                                          if (entry && entry.url) {
+                                              img.src = entry.url;
+                                          } else {
+                                              const tmpUrl = URL.createObjectURL(blob);
+                                              img.src = tmpUrl;
+                                              img.addEventListener('load', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                                              img.addEventListener('error', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                                          }
                                           if (img.complete && img.naturalWidth > 0) done();
                                           img.removeAttribute('data-ph');
                                       }).catch(()=>{});
@@ -2040,7 +2151,14 @@
                                           const entry2 = thumbCachePut(path, blob);
                                           cover.onload = () => { onCoverLoaded(cover); };
                                           cover.onerror = () => { fallbackCover(cover, cover.alt || '') };
-                                          cover.src = (entry2 && entry2.url) ? entry2.url : URL.createObjectURL(blob);
+                                          if (entry2 && entry2.url) {
+                                              cover.src = entry2.url;
+                                          } else {
+                                              const tmpUrl2 = URL.createObjectURL(blob);
+                                              cover.src = tmpUrl2;
+                                              cover.addEventListener('load', () => { try { URL.revokeObjectURL(tmpUrl2); } catch (e) {} }, { once: true });
+                                              cover.addEventListener('error', () => { try { URL.revokeObjectURL(tmpUrl2); } catch (e) {} }, { once: true });
+                                          }
                                       }).catch(()=>{});
                                 }
                             }
@@ -2076,7 +2194,12 @@
                                           const done = () => { img.classList.add('loaded'); const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); };
                                           img.onload = done;
                                           img.onerror = () => { const sk = img.parentElement?.querySelector('.thumb-skeleton'); if (sk) sk.remove(); img.parentElement?.insertAdjacentHTML('beforeend', '<div class="thumb-video-badge">预览失败</div>'); };
-                                          img.src = URL.createObjectURL(blob);
+                                          {
+                                              const tmpUrl = URL.createObjectURL(blob);
+                                              img.src = tmpUrl;
+                                              img.addEventListener('load', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                                              img.addEventListener('error', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                                          }
                                           if (img.complete && img.naturalWidth > 0) done();
                                           img.removeAttribute('data-ph');
                                       } else if (img && blob === 'USE_CACHE') {
@@ -2092,7 +2215,12 @@
                                       if (cover && !cover.src) {
                                           if (blob !== 'USE_CACHE') {
                                               cover.onload = () => { onCoverLoaded(cover); };
-                                              cover.src = URL.createObjectURL(blob);
+                                              {
+                                                  const tmpUrl2 = URL.createObjectURL(blob);
+                                                  cover.src = tmpUrl2;
+                                                  cover.addEventListener('load', () => { try { URL.revokeObjectURL(tmpUrl2); } catch (e) {} }, { once: true });
+                                                  cover.addEventListener('error', () => { try { URL.revokeObjectURL(tmpUrl2); } catch (e) {} }, { once: true });
+                                              }
                                           } else {
                                               cover.onload = () => { onCoverLoaded(cover); };
                                               cover.src = `/api/thumb?path=${encodeURIComponent(path)}&size=${COVER_THUMB_SIZE}`;
@@ -2222,8 +2350,16 @@
             }, timeout);
         }
 
-        function renderDialogContent(message) {
+        function renderDialogContent(message, useHTML = false) {
             dialogContentElement.innerHTML = '';
+            
+            // 如果启用HTML渲染，直接设置innerHTML
+            if (useHTML) {
+                dialogContentElement.innerHTML = message;
+                return;
+            }
+            
+            // 否则使用原来的转义逻辑
             const appendParagraph = (content) => {
                 if (content === null || content === undefined || content === '') {
                     return;
@@ -2254,10 +2390,10 @@
             } catch (e) {}
         }
 
-        function showDialog({ title = '提示', message = '', actions = [] } = {}) {
+        function showDialog({ title = '提示', message = '', actions = [], useHTML = false } = {}) {
             try { console.log('[Dialog] show', { title, message, actionsCount: (actions && actions.length) || 0, time: new Date().toISOString() }); } catch (e) {}
             dialogTitleElement.textContent = title;
-            renderDialogContent(message);
+            renderDialogContent(message, useHTML);
 
             dialogActionsElement.innerHTML = '';
             const finalActions = actions.length ? actions : [{ label: '确定', type: 'primary' }];
@@ -2592,6 +2728,20 @@
                     });
                 }
 
+                // 未授权设备检测（需要开启开发者模式）
+                if (data.unauthorized_detected && !window.__unauthorizedDialogVisible) {
+                    // 显示页面顶部的警告横幅
+                    showUsbWarningBanner();
+                }
+                
+                // 如果有未授权设备，持续显示横幅
+                if (data.unauthorized_devices && data.unauthorized_devices.length > 0) {
+                    showUsbWarningBanner();
+                } else {
+                    // 如果没有未授权设备了，隐藏横幅
+                    hideUsbWarningBanner();
+                }
+
                 // 在本轮末尾更新连接状态标记
                 window.__lastDeviceConnected = !!data.connected;
             } catch (error) {
@@ -2615,6 +2765,168 @@
                 try { console.log('[ADB] restart error', e); } catch (ex) {}
                 showToast('重启失败: ' + e.message, { type: 'error' });
             }
+        }
+
+        function showUsbWarningBanner() {
+            const banner = document.getElementById('usbWarningBanner');
+            if (banner && !banner.classList.contains('show')) {
+                banner.classList.add('show');
+            }
+        }
+
+        function hideUsbWarningBanner() {
+            const banner = document.getElementById('usbWarningBanner');
+            if (banner && banner.classList.contains('show')) {
+                banner.classList.remove('show');
+            }
+        }
+
+        function showDeveloperModeGuide() {
+            // 创建开发者模式引导弹窗的HTML内容 - 简约MD风格
+            const guideHTML = `
+                <div style="max-height: 560px; overflow-y: auto; padding: 8px;">
+                    
+                    <!-- 快速提示 - 无左侧彩条 -->
+                    <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+                        <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">📱 快速提示</div>
+                        <div style="font-size: 13px; color: #5f6368; line-height: 1.6;">
+                            大部分手机操作步骤：<strong>连续点击「版本号」7次</strong> → 开启<strong>「USB调试」</strong> → 点击<strong>「允许」</strong>
+                        </div>
+                    </div>
+                    
+                    <!-- 通用步骤 -->
+                    <div style="margin-bottom: 24px;">
+                        <h3 style="font-size: 15px; font-weight: 500; margin-bottom: 16px; color: #202124;">通用步骤（适用大部分手机）</h3>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <div style="background: #4285f4; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0;">1</div>
+                                <div style="flex: 1; padding-top: 2px; font-size: 14px; color: #5f6368; line-height: 1.6;">打开手机<strong>「设置」</strong>应用</div>
+                            </div>
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <div style="background: #4285f4; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0;">2</div>
+                                <div style="flex: 1; padding-top: 2px; font-size: 14px; color: #5f6368; line-height: 1.6;">进入<strong>「关于手机」</strong>或<strong>「系统」</strong></div>
+                            </div>
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <div style="background: #ea4335; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0;">3</div>
+                                <div style="flex: 1; padding-top: 2px; font-size: 14px; color: #5f6368; line-height: 1.6;">找到<strong>「版本号」</strong>，<strong style="color: #ea4335;">连续快速点击 7次</strong></div>
+                            </div>
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <div style="background: #4285f4; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0;">4</div>
+                                <div style="flex: 1; padding-top: 2px; font-size: 14px; color: #5f6368; line-height: 1.6;">返回设置，找到新出现的<strong>「开发者选项」</strong></div>
+                            </div>
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <div style="background: #34a853; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0;">5</div>
+                                <div style="flex: 1; padding-top: 2px; font-size: 14px; color: #5f6368; line-height: 1.6;">开启<strong style="color: #34a853;">「USB调试」</strong>开关</div>
+                            </div>
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <div style="background: #34a853; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0;">6</div>
+                                <div style="flex: 1; padding-top: 2px; font-size: 14px; color: #5f6368; line-height: 1.6;">在手机弹出的对话框中点击<strong style="color: #34a853;">「允许」</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 分隔线 -->
+                    <div style="border-top: 1px solid #e8eaed; margin: 24px 0;"></div>
+                    
+                    <!-- 各品牌详细步骤 - 默认展开 -->
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="font-size: 15px; font-weight: 500; margin-bottom: 16px; color: #202124;">各品牌手机详细步骤</h3>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            
+                            <div style="padding: 16px 18px; background: white; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: box-shadow 0.2s;">
+                                <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">小米 / Redmi / POCO</div>
+                                <div style="font-size: 13px; color: #5f6368; line-height: 1.8;">
+                                    设置 → <strong>我的设备</strong> → <strong>全部参数</strong> → 连续点击<strong>「MIUI版本」</strong>7次<br>
+                                    → 返回设置 → <strong>更多设置</strong> → <strong>开发者选项</strong> → 开启<strong>「USB调试」</strong>
+                                </div>
+                            </div>
+                            
+                            <div style="padding: 16px 18px; background: white; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: box-shadow 0.2s;">
+                                <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">华为 / 荣耀</div>
+                                <div style="font-size: 13px; color: #5f6368; line-height: 1.8;">
+                                    设置 → <strong>关于手机</strong> → 连续点击<strong>「版本号」</strong>7次<br>
+                                    → 返回设置 → <strong>系统和更新</strong> → <strong>开发人员选项</strong> → 开启<strong>「USB调试」</strong>
+                                </div>
+                            </div>
+                            
+                            <div style="padding: 16px 18px; background: white; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: box-shadow 0.2s;">
+                                <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">OPPO / OnePlus</div>
+                                <div style="font-size: 13px; color: #5f6368; line-height: 1.8;">
+                                    设置 → <strong>关于手机</strong> → 连续点击<strong>「版本号」</strong>7次<br>
+                                    → 返回设置 → <strong>其他设置</strong> → <strong>开发者选项</strong> → 开启<strong>「USB调试」</strong>
+                                </div>
+                            </div>
+                            
+                            <div style="padding: 16px 18px; background: white; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: box-shadow 0.2s;">
+                                <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">vivo / iQOO</div>
+                                <div style="font-size: 13px; color: #5f6368; line-height: 1.8;">
+                                    设置 → <strong>系统管理</strong> → <strong>关于手机</strong> → <strong>版本信息</strong> → 连续点击<strong>「软件版本号」</strong>7次<br>
+                                    → 返回 → <strong>系统管理</strong> → <strong>开发者选项</strong> → 开启<strong>「USB调试」</strong>
+                                </div>
+                            </div>
+                            
+                            <div style="padding: 16px 18px; background: white; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: box-shadow 0.2s;">
+                                <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">三星</div>
+                                <div style="font-size: 13px; color: #5f6368; line-height: 1.8;">
+                                    设置 → <strong>关于手机</strong> → <strong>软件信息</strong> → 连续点击<strong>「版本号」</strong>7次<br>
+                                    → 返回设置 → <strong>开发者选项</strong> → 开启<strong>「USB调试」</strong>
+                                </div>
+                            </div>
+                            
+                            <div style="padding: 16px 18px; background: white; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: box-shadow 0.2s;">
+                                <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">魅族</div>
+                                <div style="font-size: 13px; color: #5f6368; line-height: 1.8;">
+                                    设置 → <strong>关于手机</strong> → 连续点击<strong>「版本号」</strong>7次<br>
+                                    → 返回设置 → <strong>辅助功能</strong> → <strong>开发者选项</strong> → 开启<strong>「USB调试」</strong>
+                                </div>
+                            </div>
+                            
+                            <div style="padding: 16px 18px; background: white; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: box-shadow 0.2s;">
+                                <div style="font-size: 14px; font-weight: 500; color: #202124; margin-bottom: 8px;">原生Android / Pixel</div>
+                                <div style="font-size: 13px; color: #5f6368; line-height: 1.8;">
+                                    设置 → <strong>关于手机</strong> → 连续点击<strong>「版本号」</strong>7次<br>
+                                    → 返回设置 → <strong>系统</strong> → <strong>开发者选项</strong> → 开启<strong>「USB调试」</strong>
+                                </div>
+                            </div>
+                            
+                        </div>
+                    </div>
+                    
+                    <!-- 重要提示 -->
+                    <div style="background: #e8f5e9; padding: 14px; border-radius: 8px; border-left: 3px solid #34a853;">
+                        <div style="font-size: 14px; font-weight: 500; color: #1b5e20; margin-bottom: 8px;">💡 重要提示</div>
+                        <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #2e7d32; line-height: 1.8;">
+                            <li>开启USB调试后，手机屏幕上会弹出授权对话框，务必点击<strong>「允许」</strong></li>
+                            <li>建议勾选<strong>「始终允许这台计算机进行调试」</strong>，下次无需重复授权</li>
+                            <li>如果仍然无法连接，请尝试更换USB数据线或重新插拔</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            showDialog({
+                title: '如何开启 USB 调试',
+                message: guideHTML,
+                useHTML: true,
+                actions: [
+                    { 
+                        label: '我已开启', 
+                        type: 'primary', 
+                        onClick: () => {
+                            window.__unauthorizedDialogVisible = false;
+                            checkDeviceStatus();
+                            showToast('正在检查设备连接...', { type: 'info' });
+                        }
+                    },
+                    { 
+                        label: '关闭',
+                        onClick: () => {
+                            window.__unauthorizedDialogVisible = false;
+                        }
+                    }
+                ]
+            });
         }
 
         function handleDeviceConnect() {
@@ -2650,7 +2962,7 @@
             stopThumbPolling();
             globalPendingThumbs.clear();
             thumbRetryCount.clear();
-            thumbCache.clear();
+            clearThumbCache();
             albumPrefetching.clear();
             disconnectThumbIO();
             detachPreviewScroll();
@@ -2788,6 +3100,17 @@
             initialDeviceCheck();
             checkResumeProgress();
             try { renderScanHero(); } catch (e) {}
+        });
+
+        // 页面卸载前清理所有定时器与资源，防止内存泄漏
+        window.addEventListener('beforeunload', () => {
+            try { stopDeviceStatusPolling(); } catch (e) {}
+            try { stopScanStatusPolling(); } catch (e) {}
+            try { stopProgressPolling(); } catch (e) {}
+            try { stopThumbPolling(); } catch (e) {}
+            try { if (batchFetchTimer) { clearTimeout(batchFetchTimer); batchFetchTimer = null; } } catch (e) {}
+            try { clearThumbCache(); } catch (e) {}
+            try { detachPreviewScroll(); } catch (e) {}
         });
 
         async function initialDeviceCheck() {
@@ -3189,6 +3512,13 @@
             if (scanStatusInterval) {
                 clearInterval(scanStatusInterval);
                 scanStatusInterval = null;
+            }
+        }
+
+        function stopProgressPolling() {
+            if (progressInterval) {
+                try { clearInterval(progressInterval); } catch (e) {}
+                progressInterval = null;
             }
         }
 
@@ -3991,7 +4321,14 @@
                           const entry = thumbCachePut(p, blob);
                           img.onload = done;
                           img.onerror = () => { fallbackCover(img, img.alt || ''); };
-                          img.src = (entry && entry.url) ? entry.url : URL.createObjectURL(blob);
+                          if (entry && entry.url) {
+                              img.src = entry.url;
+                          } else {
+                              const tmpUrl = URL.createObjectURL(blob);
+                              img.src = tmpUrl;
+                              img.addEventListener('load', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                              img.addEventListener('error', () => { try { URL.revokeObjectURL(tmpUrl); } catch (e) {} }, { once: true });
+                          }
                       })
                       .catch(() => { img.src = `/api/thumb?path=${encodeURIComponent(p)}&size=${COVER_THUMB_SIZE}`; });
                 });

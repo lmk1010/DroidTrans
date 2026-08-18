@@ -1,172 +1,209 @@
 package com.mk.androidtransfer.utils;
 
 import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.provider.MediaStore;
+import android.text.TextUtils;
+import android.util.Log;
 
+import com.mk.androidtransfer.model.AlbumInfo;
 import com.mk.androidtransfer.model.PhotoInfo;
 
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * 照片扫描工具类
+ * 统一扫描 MediaStore 中的图片和视频，并按系统相册（BUCKET）分组。
  */
 public class PhotoScanner {
+    private static final String TAG = "PhotoScanner";
 
-    /**
-     * 扫描手机中的所有照片和视频
-     */
+    public static class ScanResult {
+        public final List<PhotoInfo> photos;
+        public final List<AlbumInfo> albums;
+
+        public ScanResult(List<PhotoInfo> photos, List<AlbumInfo> albums) {
+            this.photos = photos;
+            this.albums = albums;
+        }
+    }
+
+    public static ScanResult scan(Context context) {
+        List<PhotoInfo> photos = new ArrayList<>();
+        photos.addAll(queryCollection(context, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false));
+        photos.addAll(queryCollection(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true));
+
+        Collections.sort(photos, (a, b) -> Long.compare(b.getMtime(), a.getMtime()));
+
+        Map<String, AlbumInfo> albumMap = new LinkedHashMap<>();
+        for (PhotoInfo photo : photos) {
+            String hintPath = albumHintPath(photo);
+            String albumKey = !TextUtils.isEmpty(photo.getBucketId())
+                    ? photo.getBucketId()
+                    : hintPath;
+            AlbumInfo album = albumMap.get(albumKey);
+            if (album == null) {
+                String displayName = AlbumInfo.getAlbumDisplayName(hintPath);
+                if ("其他".equals(displayName) && !TextUtils.isEmpty(photo.getBucketName())) {
+                    displayName = photo.getBucketName();
+                }
+                album = new AlbumInfo(displayName, albumKey, hintPath);
+                albumMap.put(albumKey, album);
+            }
+            album.addPhoto(photo);
+            if (album.getCoverPhotoPath() == null || photo.getUri() != null) {
+                if (album.getCoverPhotoPath() == null) {
+                    album.setCoverPhotoPath(photo.getLoadUri());
+                }
+            }
+        }
+
+        // 封面优先用 content URI，避免 DATA 为空时 Glide 加载失败
+        for (AlbumInfo album : albumMap.values()) {
+            if (!album.getPhotos().isEmpty()) {
+                album.setCoverPhotoPath(album.getPhotos().get(0).getLoadUri());
+            }
+        }
+
+        List<AlbumInfo> albums = new ArrayList<>(albumMap.values());
+        Collections.sort(albums, (a, b) -> {
+            int p = Integer.compare(albumPriority(a), albumPriority(b));
+            if (p != 0) return p;
+            return Integer.compare(b.getPhotoCount(), a.getPhotoCount());
+        });
+
+        Log.d(TAG, "扫描完成: " + photos.size() + " 个媒体, " + albums.size() + " 个相册");
+        return new ScanResult(photos, albums);
+    }
+
     public static List<PhotoInfo> scanPhotos(Context context) {
-        List<PhotoInfo> photos = new ArrayList<>();
-
-        // 扫描图片
-        photos.addAll(scanImages(context));
-
-        // 扫描视频
-        photos.addAll(scanVideos(context));
-
-        return photos;
+        return scan(context).photos;
     }
 
-    /**
-     * 扫描图片
-     */
-    private static List<PhotoInfo> scanImages(Context context) {
+    private static List<PhotoInfo> queryCollection(Context context, Uri collection, boolean video) {
         List<PhotoInfo> photos = new ArrayList<>();
-        ContentResolver contentResolver = context.getContentResolver();
+        ContentResolver resolver = context.getContentResolver();
 
-        Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-        String[] projection = {
-            MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.DISPLAY_NAME,
-            MediaStore.Images.Media.SIZE,
-            MediaStore.Images.Media.DATE_MODIFIED,
-            MediaStore.Images.Media.DATA
-        };
+        ArrayList<String> projection = new ArrayList<>();
+        projection.add(MediaStore.MediaColumns._ID);
+        projection.add(MediaStore.MediaColumns.DISPLAY_NAME);
+        projection.add(MediaStore.MediaColumns.SIZE);
+        projection.add(MediaStore.MediaColumns.DATE_MODIFIED);
+        projection.add(MediaStore.MediaColumns.MIME_TYPE);
+        projection.add(MediaStore.Images.Media.BUCKET_ID);
+        projection.add(MediaStore.Images.Media.BUCKET_DISPLAY_NAME);
+        projection.add(MediaStore.MediaColumns.DATA);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            projection.add(MediaStore.MediaColumns.RELATIVE_PATH);
+        }
+        if (video) {
+            projection.add(MediaStore.Video.Media.DURATION);
+        }
 
-        String sortOrder = MediaStore.Images.Media.DATE_MODIFIED + " DESC";
+        String sortOrder = MediaStore.MediaColumns.DATE_MODIFIED + " DESC";
 
-        try (Cursor cursor = contentResolver.query(
+        try (Cursor cursor = resolver.query(
                 collection,
-                projection,
+                projection.toArray(new String[0]),
                 null,
                 null,
                 sortOrder
         )) {
-            if (cursor != null) {
-                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-                int nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
-                int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
-                int dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED);
-                int dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+            if (cursor == null) return photos;
 
-                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            int idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID);
+            int nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME);
+            int sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE);
+            int dateCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED);
+            int mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE);
+            int relCol = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH);
+            int bucketIdCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID);
+            int bucketNameCol = cursor.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME);
+            int dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA);
+            int durationCol = video ? cursor.getColumnIndex(MediaStore.Video.Media.DURATION) : -1;
 
-                while (cursor.moveToNext()) {
-                    long id = cursor.getLong(idColumn);
-                    String name = cursor.getString(nameColumn);
-                    long size = cursor.getLong(sizeColumn);
-                    long dateModified = cursor.getLong(dateColumn);
-                    String path = cursor.getString(dataColumn);
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
 
-                    // 构建Content URI
-                    Uri contentUri = Uri.withAppendedPath(
-                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                            String.valueOf(id)
-                    );
+            while (cursor.moveToNext()) {
+                long id = cursor.getLong(idCol);
+                String name = cursor.getString(nameCol);
+                long size = cursor.getLong(sizeCol);
+                if (size <= 0) continue;
 
-                    String date = dateFormat.format(new Date(dateModified * 1000));
+                long dateModified = cursor.getLong(dateCol);
+                String mime = mimeCol >= 0 ? cursor.getString(mimeCol) : null;
+                String relativePath = relCol >= 0 ? cursor.getString(relCol) : null;
+                String bucketId = bucketIdCol >= 0 ? cursor.getString(bucketIdCol) : null;
+                String bucketName = bucketNameCol >= 0 ? cursor.getString(bucketNameCol) : null;
+                String dataPath = dataCol >= 0 ? cursor.getString(dataCol) : null;
+                long duration = durationCol >= 0 ? cursor.getLong(durationCol) : 0;
 
-                    PhotoInfo photo = new PhotoInfo(
-                            path,
-                            name,
-                            size,
-                            dateModified,
-                            date,
-                            contentUri.toString()
-                    );
-
-                    photos.add(photo);
+                if (TextUtils.isEmpty(name)) {
+                    name = video ? ("VID_" + id) : ("IMG_" + id);
                 }
+
+                Uri contentUri = ContentUris.withAppendedId(collection, id);
+                String date = dateFormat.format(new Date(dateModified * 1000L));
+
+                photos.add(new PhotoInfo(
+                        dataPath,
+                        name,
+                        size,
+                        dateModified,
+                        date,
+                        contentUri.toString(),
+                        mime,
+                        video || (mime != null && mime.startsWith("video/")),
+                        relativePath,
+                        bucketId,
+                        bucketName,
+                        duration
+                ));
             }
+        } catch (SecurityException e) {
+            Log.w(TAG, "没有媒体权限，跳过 " + collection, e);
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "扫描失败: " + collection, e);
         }
 
         return photos;
     }
 
-    /**
-     * 扫描视频
-     */
-    private static List<PhotoInfo> scanVideos(Context context) {
-        List<PhotoInfo> videos = new ArrayList<>();
-        ContentResolver contentResolver = context.getContentResolver();
-
-        Uri collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
-        String[] projection = {
-            MediaStore.Video.Media._ID,
-            MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.SIZE,
-            MediaStore.Video.Media.DATE_MODIFIED,
-            MediaStore.Video.Media.DATA
-        };
-
-        String sortOrder = MediaStore.Video.Media.DATE_MODIFIED + " DESC";
-
-        try (Cursor cursor = contentResolver.query(
-                collection,
-                projection,
-                null,
-                null,
-                sortOrder
-        )) {
-            if (cursor != null) {
-                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID);
-                int nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME);
-                int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE);
-                int dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED);
-                int dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA);
-
-                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-
-                while (cursor.moveToNext()) {
-                    long id = cursor.getLong(idColumn);
-                    String name = cursor.getString(nameColumn);
-                    long size = cursor.getLong(sizeColumn);
-                    long dateModified = cursor.getLong(dateColumn);
-                    String path = cursor.getString(dataColumn);
-
-                    // 构建Content URI
-                    Uri contentUri = Uri.withAppendedPath(
-                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                            String.valueOf(id)
-                    );
-
-                    String date = dateFormat.format(new Date(dateModified * 1000));
-
-                    PhotoInfo video = new PhotoInfo(
-                            path,
-                            name,
-                            size,
-                            dateModified,
-                            date,
-                            contentUri.toString()
-                    );
-
-                    videos.add(video);
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    private static String albumHintPath(PhotoInfo photo) {
+        if (!TextUtils.isEmpty(photo.getRelativePath())) {
+            String rel = photo.getRelativePath();
+            return rel.startsWith("/") ? rel : "/" + rel;
         }
+        if (!TextUtils.isEmpty(photo.getPath())) {
+            File parent = new File(photo.getPath()).getParentFile();
+            if (parent != null) return parent.getAbsolutePath();
+        }
+        if (!TextUtils.isEmpty(photo.getBucketName())) {
+            return "/" + photo.getBucketName();
+        }
+        return "其他";
+    }
 
-        return videos;
+    private static int albumPriority(AlbumInfo album) {
+        String name = album.getAlbumName();
+        if ("相机".equals(name)) return 0;
+        if ("截图".equals(name)) return 1;
+        if ("微信".equals(name)) return 2;
+        if ("QQ".equals(name)) return 3;
+        if ("录屏".equals(name)) return 4;
+        if ("下载".equals(name)) return 5;
+        if ("图片".equals(name)) return 6;
+        return 10;
     }
 }

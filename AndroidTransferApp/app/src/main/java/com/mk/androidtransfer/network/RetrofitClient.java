@@ -13,6 +13,7 @@ import retrofit2.converter.gson.GsonConverterFactory;
 public class RetrofitClient {
     private static RetrofitClient instance;
     private ApiService apiService;
+    private OkHttpClient okHttpClient;
     private String baseUrl;
 
     private RetrofitClient(String baseUrl) {
@@ -30,17 +31,18 @@ public class RetrofitClient {
     private void initRetrofit() {
         // 日志拦截器
         HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
-        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BASIC);
 
-        // OkHttp客户端
         OkHttpClient okHttpClient = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.MINUTES)
+                .writeTimeout(10, TimeUnit.MINUTES)
                 .addInterceptor(loggingInterceptor)
                 .build();
 
         // Retrofit实例
+        this.okHttpClient = okHttpClient;
+
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(baseUrl)
                 .client(okHttpClient)
@@ -52,5 +54,9 @@ public class RetrofitClient {
 
     public ApiService getApiService() {
         return apiService;
+    }
+
+    public OkHttpClient getOkHttpClient() {
+        return okHttpClient;
     }
 }

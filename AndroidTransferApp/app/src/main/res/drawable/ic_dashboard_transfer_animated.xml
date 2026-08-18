@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_dashboard_transfer">
+
+    <!-- 上行数据流：三个小点依次亮起 -->
+    <target
+        android:name="dotUp1"
+        android:animation="@animator/avd_dot_up1" />
+    <target
+        android:name="dotUp2"
+        android:animation="@animator/avd_dot_up2" />
+    <target
+        android:name="dotUp3"
+        android:animation="@animator/avd_dot_up3" />
+
+    <!-- 下行数据流：三个小点依次亮起，稍后一点开始 -->
+    <target
+        android:name="dotDown1"
+        android:animation="@animator/avd_dot_down1" />
+    <target
+        android:name="dotDown2"
+        android:animation="@animator/avd_dot_down2" />
+    <target
+        android:name="dotDown3"
+        android:animation="@animator/avd_dot_down3" />
+
+</animated-vector>
+

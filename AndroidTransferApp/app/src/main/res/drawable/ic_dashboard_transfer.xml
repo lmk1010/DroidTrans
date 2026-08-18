@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <!-- 左侧手机轮廓 -->
+    <path
+        android:name="phone"
+        android:strokeWidth="2"
+        android:strokeColor="#E3E7FF"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M24,28h14a3,3 0,0 1,3 3v30a3,3 0,0 1,-3 3h-14a3,3 0,0 1,-3 -3v-30a3,3 0,0 1,3 -3z" />
+
+    <!-- 手机顶部听筒 -->
+    <path
+        android:strokeWidth="1.5"
+        android:strokeColor="#E3E7FF"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M28,32h6" />
+
+    <!-- 手机底部 Home 点 -->
+    <path
+        android:fillColor="#E3E7FF"
+        android:pathData="M34,58a1.5,1.5 0,1 1,-3 0a1.5,1.5 0,0 1,3 0z" />
+
+    <!-- 右侧电脑/服务器轮廓 -->
+    <path
+        android:name="server"
+        android:strokeWidth="2"
+        android:strokeColor="#E3E7FF"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M59,30h16a3,3 0,0 1,3 3v18a3,3 0,0 1,-3 3h-16a3,3 0,0 1,-3 -3v-18a3,3 0,0 1,3 -3z" />
+
+    <!-- 电脑底座 -->
+    <path
+        android:strokeWidth="1.5"
+        android:strokeColor="#E3E7FF"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M60,56h14" />
+
+    <!-- 上行数据箭头（手机 -> 电脑） -->
+    <path
+        android:name="arrowUp"
+        android:strokeWidth="2"
+        android:strokeColor="#E3E7FF"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M38,40h14c3,0 5,2 5,5v1"
+        android:strokeLineCap="round" />
+
+    <path
+        android:name="arrowUpHead"
+        android:fillColor="#E3E7FF"
+        android:pathData="M56,44l3,4l3,-4z" />
+
+    <!-- 上行数据流小点 -->
+    <path
+        android:name="dotUp1"
+        android:fillColor="#4C6FFF"
+        android:pathData="M42,42a1.2,1.2 0,1 1,-0.01,0z" />
+    <path
+        android:name="dotUp2"
+        android:fillColor="#4C6FFF"
+        android:pathData="M47,41a1.2,1.2 0,1 1,-0.01,0z" />
+    <path
+        android:name="dotUp3"
+        android:fillColor="#4C6FFF"
+        android:pathData="M52,41.5a1.2,1.2 0,1 1,-0.01,0z" />
+
+    <!-- 下行数据箭头（电脑 -> 手机） -->
+    <path
+        android:name="arrowDown"
+        android:strokeWidth="2"
+        android:strokeColor="#E3E7FF"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M58,50h-14c-3,0 -5,2 -5,5v1"
+        android:strokeLineCap="round" />
+
+    <path
+        android:name="arrowDownHead"
+        android:fillColor="#E3E7FF"
+        android:pathData="M36,54l-3,4l-3,-4z" />
+
+    <!-- 下行数据流小点 -->
+    <path
+        android:name="dotDown1"
+        android:fillColor="#4C6FFF"
+        android:pathData="M54,51.5a1.2,1.2 0,1 1,-0.01,0z" />
+    <path
+        android:name="dotDown2"
+        android:fillColor="#4C6FFF"
+        android:pathData="M49,52a1.2,1.2 0,1 1,-0.01,0z" />
+    <path
+        android:name="dotDown3"
+        android:fillColor="#4C6FFF"
+        android:pathData="M44,53a1.2,1.2 0,1 1,-0.01,0z" />
+
+    <!-- 中心小点，表示连接节点 -->
+    <path
+        android:fillColor="#FF4C6FFF"
+        android:pathData="M48,48a2,2 0,1 1,-0.01,0z" />
+
+</vector>

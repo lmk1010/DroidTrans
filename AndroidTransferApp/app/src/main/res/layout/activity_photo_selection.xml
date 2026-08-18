@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -8,125 +8,216 @@
     android:background="@color/background"
     tools:context=".PhotoSelectionActivity">
 
-    <!-- AppBar -->
-    <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/appBarLayout"
-        android:layout_width="match_parent"
+    <!-- 顶部标题区域 -->
+    <LinearLayout
+        android:id="@+id/titleContainer"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:fitsSystemWindows="true"
-        android:background="@color/primary"
-        app:elevation="0dp">
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginTop="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="@android:color/transparent"
-            app:titleTextColor="@color/white"
-            app:title="@string/select_photos"
-            app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationIconTint="@color/white">
+        <!-- 返回按钮 -->
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_arrow_back"
+            android:tint="@color/text_high_emphasis"
+            android:contentDescription="返回" />
 
-            <!-- Selection Count Badge -->
-            <TextView
-                android:id="@+id/tvSelectionCount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:layout_marginEnd="16dp"
-                android:text="@string/selected_count_zero"
-                android:textSize="14sp"
-                android:textColor="@color/white"
-                tools:text="已选 0" />
-
-        </com.google.android.material.appbar.MaterialToolbar>
-
-        <!-- Selection Actions Bar -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:padding="16dp"
-            android:background="@color/primary_variant"
-            android:gravity="center_vertical">
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:orientation="vertical">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSelectAll"
-                style="@style/Widget.Material3.Button.TextButton"
+            <TextView
+                android:id="@+id/tvPhotoTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/select_all"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                app:icon="@drawable/ic_check_all"
-                app:iconTint="@color/white" />
+                android:text="照片相册"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.01"
+                android:textColor="@color/text_high_emphasis" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnDeselectAll"
-                style="@style/Widget.Material3.Button.TextButton"
+            <TextView
+                android:id="@+id/tvPhotoSubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="@string/deselect_all"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                app:icon="@drawable/ic_check_none"
-                app:iconTint="@color/white" />
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
-            <!-- Filter Uploaded Button -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnFilterUploaded"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="排除已上传"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                app:icon="@drawable/ic_check_all"
-                app:iconTint="@color/white" />
-
-            <!-- Sort Button -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSort"
-                style="@style/Widget.Material3.Button.TextButton.Icon"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/sort"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                app:icon="@drawable/ic_sort"
-                app:iconTint="@color/white" />
+                android:layout_marginTop="4dp"
+                android:text="浏览并选择要传输的照片"
+                android:textSize="14sp"
+                android:textColor="@color/text_medium_emphasis" />
 
         </LinearLayout>
 
-    </com.google.android.material.appbar.AppBarLayout>
+        <!-- 已选数量 -->
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipSelectionCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="已选 0"
+            android:textSize="14sp"
+            android:textColor="@color/white"
+            app:chipBackgroundColor="@color/radar_blue_primary"
+            app:chipStrokeWidth="0dp"
+            tools:text="已选 5" />
 
-    <!-- Photo Grid -->
+        <!-- 视图切换按钮 -->
+        <ImageButton
+            android:id="@+id/btnViewMode"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_view_grid"
+            android:tint="@color/text_high_emphasis"
+            android:contentDescription="切换视图" />
+
+    </LinearLayout>
+
+    <!-- 操作按钮区域 -->
+    <HorizontalScrollView
+        android:id="@+id/actionButtonsScroll"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:scrollbars="none"
+        app:layout_constraintTop_toBottomOf="@id/titleContainer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <!-- 全选按钮 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSelectAll"
+                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="全选"
+                android:textSize="13sp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                app:strokeColor="@color/radar_blue_primary"
+                app:iconTint="@color/radar_blue_primary"
+                app:icon="@drawable/ic_check_all"
+                app:cornerRadius="20dp" />
+
+            <!-- 取消全选按钮 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDeselectAll"
+                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:text="取消全选"
+                android:textSize="13sp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                app:strokeColor="@color/radar_blue_primary"
+                app:iconTint="@color/radar_blue_primary"
+                app:icon="@drawable/ic_check_none"
+                app:cornerRadius="20dp" />
+
+            <!-- 排序按钮 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSort"
+                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:text="排序"
+                android:textSize="13sp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                app:strokeColor="@color/radar_blue_primary"
+                app:iconTint="@color/radar_blue_primary"
+                app:icon="@drawable/ic_sort"
+                app:cornerRadius="20dp" />
+
+            <!-- 排除已上传按钮 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFilterUploaded"
+                style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:text="排除已上传"
+                android:textSize="13sp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                app:strokeColor="@color/radar_blue_primary"
+                app:iconTint="@color/radar_blue_primary"
+                app:icon="@drawable/ic_filter"
+                app:cornerRadius="20dp" />
+
+        </LinearLayout>
+
+    </HorizontalScrollView>
+
+    <!-- 相册列表 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerViewAlbums"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="16dp"
+        android:clipToPadding="false"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:visibility="visible"
+        app:layout_constraintTop_toBottomOf="@id/actionButtonsScroll"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- 照片网格 -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerViewPhotos"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="16dp"
         android:clipToPadding="false"
-        android:padding="4dp"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        android:padding="16dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/actionButtonsScroll"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
         tools:listitem="@layout/item_photo_grid"
         tools:itemCount="20"
         tools:spanCount="3" />
 
-    <!-- Loading Progress -->
+    <!-- 加载中状态 -->
     <FrameLayout
         android:id="@+id/loadingContainer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
         android:background="@color/background"
         android:visibility="gone"
         android:clickable="true"
-        android:focusable="true">
+        android:focusable="true"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -139,13 +230,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:indeterminate="true"
-                app:indicatorColor="@color/primary" />
+                app:indicatorColor="@color/radar_blue_primary"
+                app:trackColor="@android:color/transparent" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="@string/loading_photos"
+                android:text="加载照片中..."
                 android:textSize="14sp"
                 android:textColor="@color/text_medium_emphasis" />
 
@@ -153,29 +245,32 @@
 
     </FrameLayout>
 
-    <!-- Empty State -->
+    <!-- 空状态 -->
     <LinearLayout
         android:id="@+id/emptyState"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
         android:orientation="vertical"
         android:gravity="center"
         android:visibility="gone"
-        android:padding="32dp">
+        android:padding="32dp"
+        app:layout_constraintTop_toTopOf="@id/recyclerViewPhotos"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
 
         <ImageView
             android:layout_width="120dp"
             android:layout_height="120dp"
             android:src="@drawable/ic_no_photos"
             android:alpha="0.3"
-            android:contentDescription="@string/no_photos" />
+            android:contentDescription="没有照片" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="@string/no_photos_found"
+            android:text="没有找到照片"
             android:textSize="18sp"
             android:textColor="@color/text_high_emphasis"
             android:textStyle="bold" />
@@ -184,27 +279,29 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/no_photos_description"
+            android:text="您的设备中没有照片"
             android:textSize="14sp"
             android:textColor="@color/text_medium_emphasis"
             android:textAlignment="center" />
 
     </LinearLayout>
 
-    <!-- Floating Action Button for Upload -->
+    <!-- 上传按钮 -->
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/fabUpload"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="20dp"
-        android:text="@string/upload_photos"
+        android:layout_margin="24dp"
+        android:text="上传照片"
         android:textColor="@color/white"
         android:textStyle="bold"
+        android:textSize="15sp"
         app:icon="@drawable/ic_upload"
         app:iconTint="@color/white"
-        app:backgroundTint="@color/primary"
+        app:backgroundTint="@color/radar_blue_primary"
         app:cornerRadius="28dp"
-        app:elevation="8dp" />
+        app:elevation="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

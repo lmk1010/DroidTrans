@@ -12,18 +12,30 @@ public class UploadFileItem {
         FAILED      // 失败
     }
 
-    private String name;      // 文件名
-    private String path;      // 文件路径
-    private long size;        // 文件大小（字节）
+    private String name;
+    private String path;
+    private String uri;
+    private String relativePath;
+    private long size;
     private Status status;    // 上传状态
     private int progress;     // 上传进度（0-100）
     private long speed;       // 上传速度（字节/秒）
     private String errorMessage; // 错误信息
 
     public UploadFileItem(String name, String path, long size) {
+        this(name, path, size, null);
+    }
+
+    public UploadFileItem(String name, String path, long size, String uri) {
+        this(name, path, size, uri, name);
+    }
+
+    public UploadFileItem(String name, String path, long size, String uri, String relativePath) {
         this.name = name;
         this.path = path;
         this.size = size;
+        this.uri = uri;
+        this.relativePath = relativePath != null ? relativePath : name;
         this.status = Status.PENDING;
         this.progress = 0;
         this.speed = 0;
@@ -44,6 +56,22 @@ public class UploadFileItem {
 
     public void setPath(String path) {
         this.path = path;
+    }
+
+    public String getUri() {
+        return uri;
+    }
+
+    public void setUri(String uri) {
+        this.uri = uri;
+    }
+
+    public String getRelativePath() {
+        return relativePath;
+    }
+
+    public void setRelativePath(String relativePath) {
+        this.relativePath = relativePath;
     }
 
     public long getSize() {

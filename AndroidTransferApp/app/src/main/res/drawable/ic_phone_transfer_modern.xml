@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    
+    <!-- 手机互传图标 - 现代精致版 -->
+    <!-- 左侧手机 -->
+    <path
+        android:strokeWidth="1.5"
+        android:strokeColor="#4C6FFF"
+        android:fillColor="@android:color/transparent"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M5,4h6c0.55,0 1,0.45 1,1v14c0,0.55 -0.45,1 -1,1H5c-0.55,0 -1,-0.45 -1,-1V5c0,-0.55 0.45,-1 1,-1z" />
+    
+    <!-- 左侧手机屏幕 -->
+    <path
+        android:fillColor="#E8ECFF"
+        android:pathData="M5.5,6h5c0.28,0 0.5,0.22 0.5,0.5v10c0,0.28 -0.22,0.5 -0.5,0.5h-5c-0.28,0 -0.5,-0.22 -0.5,-0.5v-10c0,-0.28 0.22,-0.5 0.5,-0.5z" />
+    
+    <!-- 右侧手机 -->
+    <path
+        android:strokeWidth="1.5"
+        android:strokeColor="#00BFA5"
+        android:fillColor="@android:color/transparent"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M13,4h6c0.55,0 1,0.45 1,1v14c0,0.55 -0.45,1 -1,1h-6c-0.55,0 -1,-0.45 -1,-1V5c0,-0.55 0.45,-1 1,-1z" />
+    
+    <!-- 右侧手机屏幕 -->
+    <path
+        android:fillColor="#E0F7F4"
+        android:pathData="M13.5,6h5c0.28,0 0.5,0.22 0.5,0.5v10c0,0.28 -0.22,0.5 -0.5,0.5h-5c-0.28,0 -0.5,-0.22 -0.5,-0.5v-10c0,-0.28 0.22,-0.5 0.5,-0.5z" />
+    
+    <!-- 传输箭头 - 向右 -->
+    <path
+        android:strokeWidth="1.8"
+        android:strokeColor="#4C6FFF"
+        android:fillColor="@android:color/transparent"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M9,10h6M13,8l2,2 -2,2" />
+    
+    <!-- 传输箭头 - 向左 -->
+    <path
+        android:strokeWidth="1.8"
+        android:strokeColor="#00BFA5"
+        android:fillColor="@android:color/transparent"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M15,14H9M11,12l-2,2 2,2" />
+</vector>
+

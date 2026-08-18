@@ -1,14 +1,17 @@
 package com.mk.androidtransfer;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowInsetsController;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -29,12 +32,17 @@ import com.mk.androidtransfer.model.PhotoInfo;
 import com.mk.androidtransfer.model.UploadFileItem;
 import com.mk.androidtransfer.model.UploadRecord;
 import com.mk.androidtransfer.network.ApiService;
+import com.mk.androidtransfer.network.FastTransferClient;
+import com.mk.androidtransfer.network.ProtocolSelector;
 import com.mk.androidtransfer.network.RetrofitClient;
+import com.mk.androidtransfer.network.TransferProtocol;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -49,7 +57,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
 import okhttp3.RequestBody;
+import okio.Buffer;
+import okio.BufferedSink;
+import okio.ForwardingSink;
+import okio.Okio;
+import okio.Sink;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -62,7 +76,7 @@ public class UploadProgressActivity extends AppCompatActivity {
     private static final String TAG = "UploadProgressActivity";
 
     // UI组件
-    private MaterialToolbar toolbar;
+    private com.mk.androidtransfer.view.DataTransferAnimationView dataTransferAnimation;
     private TextView tvTotalFiles;
     private TextView tvCompletedFiles;
     private TextView tvFailedFiles;
@@ -81,7 +95,9 @@ public class UploadProgressActivity extends AppCompatActivity {
     private String serverName;
     private String deviceId;
     private ApiService apiService;
+    private OkHttpClient okHttpClient;
     private UploadRecordDao uploadRecordDao;
+    private ProtocolSelector.Choice protocolChoice;
 
     // 状态
     private boolean isUploading = false;
@@ -94,6 +110,7 @@ public class UploadProgressActivity extends AppCompatActivity {
     private static final int THREAD_POOL_SIZE = 6; // 并发上传线程数（可调整：4-8）
     private ExecutorService executorService;
     private ConcurrentHashMap<Integer, Boolean> uploadingFiles = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Call<?>> activeCalls = new ConcurrentHashMap<>();
 
     // Handler
     private Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -124,7 +141,9 @@ public class UploadProgressActivity extends AppCompatActivity {
         deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
 
         // 初始化网络
-        apiService = RetrofitClient.getInstance(serverUrl).getApiService();
+        RetrofitClient retrofitClient = RetrofitClient.getInstance(serverUrl);
+        apiService = retrofitClient.getApiService();
+        okHttpClient = retrofitClient.getOkHttpClient();
         
         // 初始化数据库
         uploadRecordDao = new UploadRecordDao(this);
@@ -162,7 +181,8 @@ public class UploadProgressActivity extends AppCompatActivity {
     }
 
     private void initViews() {
-        toolbar = findViewById(R.id.toolbar);
+        ImageButton btnBack = findViewById(R.id.btnBack);
+        dataTransferAnimation = findViewById(R.id.dataTransferAnimation);
         tvTotalFiles = findViewById(R.id.tvTotalFiles);
         tvCompletedFiles = findViewById(R.id.tvCompletedFiles);
         tvFailedFiles = findViewById(R.id.tvFailedFiles);
@@ -174,7 +194,7 @@ public class UploadProgressActivity extends AppCompatActivity {
         btnCancel = findViewById(R.id.btnCancel);
         btnDone = findViewById(R.id.btnDone);
 
-        toolbar.setNavigationOnClickListener(v -> onBackPressed());
+        btnBack.setOnClickListener(v -> onBackPressed());
 
         // 设置RecyclerView
         adapter = new UploadFileAdapter(this);
@@ -184,14 +204,19 @@ public class UploadProgressActivity extends AppCompatActivity {
         // 按钮点击事件
         btnCancel.setOnClickListener(v -> cancelUpload());
         btnDone.setOnClickListener(v -> finish());
+        
+        // 启用滑动
+        recyclerViewFiles.setNestedScrollingEnabled(true);
     }
 
     private void initFileList(ArrayList<PhotoInfo> photos) {
         for (PhotoInfo photo : photos) {
             UploadFileItem item = new UploadFileItem(
                 photo.getName(),
-                photo.getPath(),
-                photo.getSize()
+                photo.getStablePath(),
+                photo.getSize(),
+                photo.getUri(),
+                photo.getUploadRelativePath()
             );
             fileList.add(item);
         }
@@ -241,20 +266,25 @@ public class UploadProgressActivity extends AppCompatActivity {
         }
 
         isUploading = true;
-        
-        // 创建固定大小的线程池
-        executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
-        
-        // 提交所有上传任务到线程池
-        for (int i = 0; i < fileList.size(); i++) {
-            final int index = i;
-            executorService.submit(() -> uploadFile(fileList.get(index), index));
+
+        if (dataTransferAnimation != null) {
+            dataTransferAnimation.startAnimation();
         }
-        
-        // 关闭线程池（不再接受新任务，但会完成已提交的任务）
-        executorService.shutdown();
-        
-        Log.d(TAG, "🚀 已启动多线程上传，线程池大小: " + THREAD_POOL_SIZE);
+
+        tvProgressText.setText("正在选择最快通道…");
+
+        new Thread(() -> {
+            protocolChoice = ProtocolSelector.select(serverUrl);
+            mainHandler.post(() -> tvProgressText.setText("通道: " + protocolChoice.protocol.label));
+
+            executorService = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+            for (int i = 0; i < fileList.size(); i++) {
+                final int index = i;
+                executorService.submit(() -> uploadFile(fileList.get(index), index));
+            }
+            executorService.shutdown();
+            Log.d(TAG, "已启动上传 protocol=" + protocolChoice.protocol);
+        }).start();
     }
 
     private void uploadFile(UploadFileItem item, int index) {
@@ -280,39 +310,69 @@ public class UploadProgressActivity extends AppCompatActivity {
             
             // 更新服务器状态为uploading
             updateFileStatus(index, "uploading");
-            
-            File file = new File(item.getPath());
-            if (!file.exists()) {
-                onFileUploadFailed(index, "文件不存在");
+
+            if (protocolChoice != null && protocolChoice.protocol != TransferProtocol.HTTP_MULTIPART) {
+                FastTransferClient.send(this, protocolChoice, item, deviceId, okHttpClient,
+                        new FastTransferClient.ProgressListener() {
+                            @Override
+                            public boolean isCancelled() {
+                                return UploadProgressActivity.this.isCancelled;
+                            }
+
+                            @Override
+                            public void onBytes(long sent, long total) {
+                                int percent = total > 0 ? (int) Math.min(99, sent * 100 / total) : 0;
+                                mainHandler.post(() -> {
+                                    if (item.getStatus() == UploadFileItem.Status.UPLOADING) {
+                                        item.setProgress(percent);
+                                        adapter.updateItem(index);
+                                    }
+                                });
+                            }
+                        });
+                uploadingFiles.remove(index);
+                uploadingCount.decrementAndGet();
+                if (isCancelled) {
+                    return;
+                }
+                onFileUploadSuccess(index);
                 return;
             }
 
-            RequestBody requestFile = RequestBody.create(MediaType.parse("image/*"), file);
-            MultipartBody.Part body = MultipartBody.Part.createFormData("file", file.getName(), requestFile);
-            
+            RequestBody requestFile = wrapWithProgress(createUploadBody(item), item, index);
+            if (requestFile == null) {
+                onFileUploadFailed(index, "无法读取文件");
+                return;
+            }
+            MultipartBody.Part body = MultipartBody.Part.createFormData("file", item.getName(), requestFile);
+
             RequestBody deviceIdBody = RequestBody.create(MediaType.parse("text/plain"), deviceId);
-            RequestBody relativePathBody = RequestBody.create(MediaType.parse("text/plain"), file.getName());
-            RequestBody fileSizeBody = RequestBody.create(MediaType.parse("text/plain"), String.valueOf(file.length()));
+            String relative = !TextUtils.isEmpty(item.getRelativePath()) ? item.getRelativePath() : item.getName();
+            RequestBody relativePathBody = RequestBody.create(MediaType.parse("text/plain"), relative);
+            RequestBody fileSizeBody = RequestBody.create(MediaType.parse("text/plain"), String.valueOf(item.getSize()));
 
             Call<Map<String, Object>> call = apiService.uploadPhotoMultipart(body, deviceIdBody, relativePathBody, fileSizeBody);
-
-            // 记录开始时间
-            long startTime = System.currentTimeMillis();
+            activeCalls.put(index, call);
 
             call.enqueue(new Callback<Map<String, Object>>() {
                 @Override
                 public void onResponse(Call<Map<String, Object>> call, Response<Map<String, Object>> response) {
+                    activeCalls.remove(index);
                     uploadingFiles.remove(index);
                     uploadingCount.decrementAndGet();
-                    
+
+                    if (isCancelled || call.isCanceled()) {
+                        return;
+                    }
+
                     if (response.isSuccessful()) {
                         Map<String, Object> result = response.body();
                         boolean skipped = result != null && Boolean.TRUE.equals(result.get("skipped"));
-                        
+
                         if (skipped) {
                             Log.d(TAG, "⏭️ 文件已存在，跳过: " + item.getName());
                         }
-                        
+
                         onFileUploadSuccess(index);
                     } else {
                         onFileUploadFailed(index, "上传失败: " + response.code());
@@ -321,14 +381,15 @@ public class UploadProgressActivity extends AppCompatActivity {
 
                 @Override
                 public void onFailure(Call<Map<String, Object>> call, Throwable t) {
+                    activeCalls.remove(index);
                     uploadingFiles.remove(index);
                     uploadingCount.decrementAndGet();
+                    if (isCancelled || call.isCanceled()) {
+                        return;
+                    }
                     onFileUploadFailed(index, t.getMessage());
                 }
             });
-
-            // 模拟进度更新（实际应该使用OkHttp的ProgressRequestBody）
-            simulateProgress(item, index);
 
         } catch (Exception e) {
             uploadingFiles.remove(index);
@@ -337,27 +398,93 @@ public class UploadProgressActivity extends AppCompatActivity {
         }
     }
 
-    private void simulateProgress(UploadFileItem item, int index) {
-        // 简单的模拟进度（实际应该使用ProgressRequestBody）
-        new Thread(() -> {
-            try {
-                for (int progress = 0; progress <= 100; progress += 10) {
-                    if (isCancelled || item.getStatus() != UploadFileItem.Status.UPLOADING) {
-                        break;
-                    }
-                    
-                    final int currentProgress = progress;
-                    mainHandler.post(() -> {
-                        item.setProgress(currentProgress);
-                        adapter.updateItem(index);
-                    });
-                    
-                    Thread.sleep(100); // 模拟上传时间
-                }
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+    private RequestBody wrapWithProgress(RequestBody delegate, UploadFileItem item, int index) {
+        if (delegate == null) {
+            return null;
+        }
+        return new RequestBody() {
+            @Override
+            public MediaType contentType() {
+                return delegate.contentType();
             }
-        }).start();
+
+            @Override
+            public long contentLength() throws IOException {
+                return delegate.contentLength();
+            }
+
+            @Override
+            public void writeTo(BufferedSink sink) throws IOException {
+                final long total = contentLength();
+                final long startedAt = System.currentTimeMillis();
+                Sink forwarding = new ForwardingSink(sink) {
+                    long written = 0;
+                    long lastUiAt = 0;
+
+                    @Override
+                    public void write(Buffer source, long byteCount) throws IOException {
+                        if (isCancelled) {
+                            throw new IOException("cancelled");
+                        }
+                        super.write(source, byteCount);
+                        written += byteCount;
+                        long now = System.currentTimeMillis();
+                        if (now - lastUiAt < 200 && written < total) {
+                            return;
+                        }
+                        lastUiAt = now;
+                        int percent = total > 0 ? (int) Math.min(99, written * 100 / total) : 0;
+                        long elapsed = Math.max(1, now - startedAt);
+                        long speed = written * 1000 / elapsed;
+                        mainHandler.post(() -> {
+                            if (item.getStatus() == UploadFileItem.Status.UPLOADING) {
+                                item.setProgress(percent);
+                                item.setSpeed(speed);
+                                adapter.updateItem(index);
+                            }
+                        });
+                    }
+                };
+                BufferedSink buffered = Okio.buffer(forwarding);
+                delegate.writeTo(buffered);
+                buffered.flush();
+            }
+        };
+    }
+
+    private RequestBody createUploadBody(UploadFileItem item) {
+        File file = item.getPath() != null ? new File(item.getPath()) : null;
+        if (file != null && file.exists() && file.canRead()) {
+            return RequestBody.create(MediaType.parse("application/octet-stream"), file);
+        }
+
+        if (TextUtils.isEmpty(item.getUri())) {
+            return null;
+        }
+
+        final Uri uri = Uri.parse(item.getUri());
+        final long size = item.getSize();
+        return new RequestBody() {
+            @Override
+            public MediaType contentType() {
+                return MediaType.parse("application/octet-stream");
+            }
+
+            @Override
+            public long contentLength() {
+                return size > 0 ? size : -1;
+            }
+
+            @Override
+            public void writeTo(BufferedSink sink) throws IOException {
+                try (InputStream inputStream = getContentResolver().openInputStream(uri)) {
+                    if (inputStream == null) {
+                        throw new IOException("无法打开文件: " + uri);
+                    }
+                    sink.writeAll(Okio.source(inputStream));
+                }
+            }
+        };
     }
 
     private void onFileUploadSuccess(int index) {
@@ -442,13 +569,26 @@ public class UploadProgressActivity extends AppCompatActivity {
         int uploading = uploadingCount.get();
         int percent = total > 0 ? (completed * 100 / total) : 0;
 
-        progressBar.setProgress(percent);
+        // 添加动画效果
+        android.animation.ObjectAnimator animator = android.animation.ObjectAnimator.ofInt(
+            progressBar, "progress", progressBar.getProgress(), percent
+        );
+        animator.setDuration(300);
+        animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        animator.start();
+        
         tvProgressPercent.setText(percent + "%");
         tvProgressText.setText(String.format("正在上传 %d 个，已完成 %d / %d", uploading, completed, total));
     }
 
     private void onUploadComplete() {
         isUploading = false;
+        
+        // 停止传输动画
+        if (dataTransferAnimation != null) {
+            dataTransferAnimation.stopAnimation();
+        }
+        
         btnCancel.setVisibility(View.GONE);
         btnDone.setVisibility(View.VISIBLE);
 
@@ -522,16 +662,20 @@ public class UploadProgressActivity extends AppCompatActivity {
                 isCancelled = true;
                 isUploading = false;
 
-                // 停止线程池接受新任务
+                for (Call<?> call : activeCalls.values()) {
+                    call.cancel();
+                }
+                activeCalls.clear();
+
                 if (executorService != null && !executorService.isShutdown()) {
                     executorService.shutdownNow();
                 }
 
-                // 更新未上传的文件状态
                 int cancelCount = 0;
                 for (int i = 0; i < fileList.size(); i++) {
                     UploadFileItem item = fileList.get(i);
-                    if (item.getStatus() == UploadFileItem.Status.PENDING) {
+                    if (item.getStatus() == UploadFileItem.Status.PENDING
+                            || item.getStatus() == UploadFileItem.Status.UPLOADING) {
                         item.setStatus(UploadFileItem.Status.FAILED);
                         item.setErrorMessage("已取消");
                         cancelCount++;
@@ -594,6 +738,10 @@ public class UploadProgressActivity extends AppCompatActivity {
             executorService.shutdownNow();
             Log.d(TAG, "线程池已关闭");
         }
+        for (Call<?> call : activeCalls.values()) {
+            call.cancel();
+        }
+        activeCalls.clear();
         
         // 清理Handler消息
         if (mainHandler != null) {

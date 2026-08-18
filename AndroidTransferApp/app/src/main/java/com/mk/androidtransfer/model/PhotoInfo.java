@@ -2,27 +2,40 @@ package com.mk.androidtransfer.model;
 
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
 /**
- * 照片信息数据模型
+ * 照片/视频信息
  */
 public class PhotoInfo implements Parcelable {
-    private String path;           // 照片路径
-    private String name;           // 文件名
-    private long size;             // 文件大小（字节）
-    private double sizeMb;         // 文件大小（MB）
-    private long mtime;            // 修改时间戳
-    private String date;           // 格式化日期
-    private boolean selected;      // 是否被选中
-    private String uri;            // Content URI
+    private String path;
+    private String name;
+    private long size;
+    private double sizeMb;
+    private long mtime;
+    private String date;
+    private boolean selected;
+    private String uri;
+    private String mimeType;
+    private boolean video;
+    private String relativePath;
+    private String bucketId;
+    private String bucketName;
+    private long durationMs;
 
     public PhotoInfo() {
         this.selected = false;
     }
 
     public PhotoInfo(String path, String name, long size, long mtime, String date, String uri) {
+        this(path, name, size, mtime, date, uri, null, false, null, null, null, 0);
+    }
+
+    public PhotoInfo(String path, String name, long size, long mtime, String date, String uri,
+                     String mimeType, boolean video, String relativePath, String bucketId,
+                     String bucketName, long durationMs) {
         this.path = path;
         this.name = name;
         this.size = size;
@@ -31,9 +44,14 @@ public class PhotoInfo implements Parcelable {
         this.date = date;
         this.selected = false;
         this.uri = uri;
+        this.mimeType = mimeType;
+        this.video = video;
+        this.relativePath = relativePath;
+        this.bucketId = bucketId;
+        this.bucketName = bucketName;
+        this.durationMs = durationMs;
     }
 
-    // Getters and Setters
     public String getPath() { return path; }
     public void setPath(String path) { this.path = path; }
 
@@ -61,7 +79,49 @@ public class PhotoInfo implements Parcelable {
     public String getUri() { return uri; }
     public void setUri(String uri) { this.uri = uri; }
 
-    // Parcelable implementation
+    public String getMimeType() { return mimeType; }
+    public void setMimeType(String mimeType) { this.mimeType = mimeType; }
+
+    public boolean isVideo() { return video; }
+    public void setVideo(boolean video) { this.video = video; }
+
+    public String getRelativePath() { return relativePath; }
+    public void setRelativePath(String relativePath) { this.relativePath = relativePath; }
+
+    public String getBucketId() { return bucketId; }
+    public void setBucketId(String bucketId) { this.bucketId = bucketId; }
+
+    public String getBucketName() { return bucketName; }
+    public void setBucketName(String bucketName) { this.bucketName = bucketName; }
+
+    public long getDurationMs() { return durationMs; }
+    public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
+
+    public String getLoadUri() {
+        return !TextUtils.isEmpty(uri) ? uri : path;
+    }
+
+    public String getStablePath() {
+        if (!TextUtils.isEmpty(path)) return path;
+        if (!TextUtils.isEmpty(relativePath) && !TextUtils.isEmpty(name)) {
+            String rel = relativePath.endsWith("/") ? relativePath : relativePath + "/";
+            return "/storage/emulated/0/" + rel + name;
+        }
+        return name;
+    }
+
+    public String getUploadRelativePath() {
+        if (!TextUtils.isEmpty(relativePath) && !TextUtils.isEmpty(name)) {
+            String rel = relativePath.endsWith("/") ? relativePath : relativePath + "/";
+            return rel + name;
+        }
+        if (!TextUtils.isEmpty(path)) {
+            return path.replaceFirst("^/storage/emulated/0/", "")
+                    .replaceFirst("^/sdcard/", "");
+        }
+        return name != null ? name : "unknown";
+    }
+
     protected PhotoInfo(Parcel in) {
         path = in.readString();
         name = in.readString();
@@ -71,6 +131,12 @@ public class PhotoInfo implements Parcelable {
         date = in.readString();
         selected = in.readByte() != 0;
         uri = in.readString();
+        mimeType = in.readString();
+        video = in.readByte() != 0;
+        relativePath = in.readString();
+        bucketId = in.readString();
+        bucketName = in.readString();
+        durationMs = in.readLong();
     }
 
     @Override
@@ -83,6 +149,12 @@ public class PhotoInfo implements Parcelable {
         dest.writeString(date);
         dest.writeByte((byte) (selected ? 1 : 0));
         dest.writeString(uri);
+        dest.writeString(mimeType);
+        dest.writeByte((byte) (video ? 1 : 0));
+        dest.writeString(relativePath);
+        dest.writeString(bucketId);
+        dest.writeString(bucketName);
+        dest.writeLong(durationMs);
     }
 
     @Override

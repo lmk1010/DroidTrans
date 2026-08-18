@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 简约扁平时间icon -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    
+    <!-- 简约时钟 -->
+    <path
+        android:pathData="M12,22A10,10,0,1,1,22,12,10,10,0,0,1,12,22ZM12,6v6l3,3"
+        android:strokeWidth="1.5"
+        android:strokeColor="#9E9E9E"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent"/>
+    
+</vector>

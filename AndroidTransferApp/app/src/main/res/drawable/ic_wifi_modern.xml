@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    
+    <!-- WiFi图标 - 增强版：更大更清晰 -->
+    
+    <!-- 最外层波纹 - 加粗加亮 -->
+    <path
+        android:strokeWidth="2.5"
+        android:strokeColor="#4C6FFF"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M1,8.5l2.5,2.5c4.7,-4.7 12.3,-4.7 17,0l2.5,-2.5C16.3,2,7.7,2,1,8.5z" />
+    
+    <!-- 外层波纹填充 - 添加半透明填充增加可见度 -->
+    <path
+        android:fillColor="#204C6FFF"
+        android:pathData="M1,8.5l2.5,2.5c4.7,-4.7 12.3,-4.7 17,0l2.5,-2.5C16.3,2,7.7,2,1,8.5z" />
+    
+    <!-- 中层波纹 - 加粗加亮 -->
+    <path
+        android:strokeWidth="2.8"
+        android:strokeColor="#5C7FFF"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M5,13l2.2,2.2c2.5,-2.5 6.1,-2.5 8.6,0l2.2,-2.2C14.5,9.5,9.5,9.5,5,13z" />
+    
+    <!-- 中层波纹填充 -->
+    <path
+        android:fillColor="#305C7FFF"
+        android:pathData="M5,13l2.2,2.2c2.5,-2.5 6.1,-2.5 8.6,0l2.2,-2.2C14.5,9.5,9.5,9.5,5,13z" />
+    
+    <!-- 内层波纹 - 最粗最亮 -->
+    <path
+        android:strokeWidth="3"
+        android:strokeColor="#6B8FFF"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M9,17l3,3.5 3,-3.5c-1.6,-1.6 -4.4,-1.6 -6,0z" />
+    
+    <!-- 内层波纹填充 -->
+    <path
+        android:fillColor="#406B8FFF"
+        android:pathData="M9,17l3,3.5 3,-3.5c-1.6,-1.6 -4.4,-4.6 -6,0z" />
+    
+    <!-- 外层光晕效果 -->
+    <path
+        android:fillColor="#104C6FFF"
+        android:pathData="M12,12m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0" />
+    
+    <!-- 中心点 - 更大更突出 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,20m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+    
+    <!-- 中心点外圈 -->
+    <path
+        android:strokeWidth="2"
+        android:strokeColor="#4C6FFF"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M12,20m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+    
+    <!-- 中心点内核 -->
+    <path
+        android:fillColor="#4C6FFF"
+        android:pathData="M12,20m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0" />
+</vector>
+

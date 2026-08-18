@@ -18,6 +18,7 @@ from werkzeug.utils import secure_filename
 import re
 import time
 import base64
+import fast_transfer
 
 # 简易调试日志控制（默认安静）。设置环境变量启用：
 # AT_DEBUG=1 开启一般调试；AT_DEBUG_NOISY=1 允许高频调试输出
@@ -98,17 +99,49 @@ scan_generation = 0  # 扫描序号（自增），用于彻底避免旧结果干
 # 配置 - M4 Mac 超级并发优化
 # 智能选择输出目录：开发环境用本地，打包后用用户文档目录
 def get_output_dir():
-    """获取合适的输出目录"""
-    # 检查是否在打包后的应用中运行
-    if getattr(sys, 'frozen', False):
-        # 打包后：使用用户的文档目录
-        home = os.path.expanduser("~")
-        output_dir = os.path.join(home, "Documents", "AndroidTransfer")
+    """获取合适的输出目录（不存放在工程内）。
+
+    - macOS: ~/Movies/AndroidTransfer（Finder 显示为“影片”）
+    - Windows: %USERPROFILE%/Videos/AndroidTransfer，若无则 Documents/AndroidTransfer
+    - 其他: ~/Videos/AndroidTransfer，若无则 Pictures/AndroidTransfer，再退回 Documents/AndroidTransfer
+    """
+    home = os.path.expanduser("~")
+    output_base = None
+
+    if sys.platform == 'darwin':
+        output_base = os.path.join(home, 'Movies')  # 中文显示为“影片”
+    elif os.name == 'nt' or sys.platform.startswith('win'):
+        user = os.environ.get('USERPROFILE', home)
+        candidates = [
+            os.path.join(user, 'Videos'),
+            os.path.join(user, 'Documents'),
+        ]
+        for c in candidates:
+            try:
+                os.makedirs(c, exist_ok=True)
+                output_base = c
+                break
+            except Exception:
+                continue
+        if not output_base:
+            output_base = os.path.join(user, 'Documents')
     else:
-        # 开发环境：使用当前目录
-        output_dir = "./photos_output"
-    
-    # 确保目录存在
+        candidates = [
+            os.path.join(home, 'Videos'),
+            os.path.join(home, 'Pictures'),
+            os.path.join(home, 'Documents'),
+        ]
+        for c in candidates:
+            try:
+                os.makedirs(c, exist_ok=True)
+                output_base = c
+                break
+            except Exception:
+                continue
+        if not output_base:
+            output_base = os.path.join(home, 'Documents')
+
+    output_dir = os.path.join(output_base, 'AndroidTransfer')
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -625,6 +658,7 @@ def check_adb_connection():
 
     connected = False
     devices = []
+    unauthorized_devices = []  # 新增：未授权的设备列表
 
     # 高频检查日志仅在 NOISY 模式输出
     _dlog(f"[ADB] 设备检查 - success={success}, stdout_len={len(stdout) if stdout else 0}", noisy=True)
@@ -636,9 +670,14 @@ def check_adb_connection():
             if AT_DEBUG_NOISY:
                 for line in lines[1:]:
                     _dlog(f"[ADB]   设备行: {line}", noisy=True)
+            # 检测已授权的设备
             devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
+            # 检测未授权的设备（开发者模式未开启或未允许USB调试）
+            unauthorized_devices = [line.split('\t')[0] for line in lines[1:] if '\tunauthorized' in line]
             connected = len(devices) > 0
-            _dlog(f"[ADB] 解析到 {len(devices)} 个设备: {devices}", noisy=True)
+            _dlog(f"[ADB] 解析到 {len(devices)} 个已授权设备: {devices}", noisy=True)
+            if unauthorized_devices:
+                _dlog(f"[ADB] 检测到 {len(unauthorized_devices)} 个未授权设备: {unauthorized_devices}", noisy=True)
         device_status['fail_count'] = 0
         device_status['adb_issue'] = False
         device_status['adb_error'] = ''
@@ -652,8 +691,11 @@ def check_adb_connection():
             lines = retry_out.strip().split('\n')
             if len(lines) > 1:
                 devices = [line.split('\t')[0] for line in lines[1:] if '\tdevice' in line]
+                unauthorized_devices = [line.split('\t')[0] for line in lines[1:] if '\tunauthorized' in line]
                 connected = len(devices) > 0
-                _dlog(f"[ADB] 重试成功，找到 {len(devices)} 个设备", noisy=True)
+                _dlog(f"[ADB] 重试成功，找到 {len(devices)} 个已授权设备", noisy=True)
+                if unauthorized_devices:
+                    _dlog(f"[ADB] 重试检测到 {len(unauthorized_devices)} 个未授权设备", noisy=True)
             device_status['fail_count'] = 0
             device_status['adb_issue'] = False
             device_status['adb_error'] = ''
@@ -681,6 +723,7 @@ def check_adb_connection():
     # 更新全局设备状态
     device_status['connected'] = connected
     device_status['devices'] = devices
+    device_status['unauthorized_devices'] = unauthorized_devices  # 新增：保存未授权设备列表
     device_status['last_check_time'] = datetime.now().isoformat()
 
     just_connected = connected and not was_connected
@@ -703,6 +746,18 @@ def check_adb_connection():
             device_status['connect_detected'] = True
             print(f"\n🎉 检测到新设备连接: {', '.join(new_devices)}")
             just_connected = True
+
+    # 检测未授权设备插入（需要引导用户开启开发者模式）
+    if unauthorized_devices:
+        prev_unauthorized = device_status.get('prev_unauthorized_devices', [])
+        new_unauthorized = set(unauthorized_devices) - set(prev_unauthorized)
+        if new_unauthorized:
+            device_status['unauthorized_detected'] = True
+            print(f"\n⚠️  检测到未授权设备: {', '.join(unauthorized_devices)}")
+            print(f"    提示：请在手机上开启开发者选项并允许USB调试")
+        device_status['prev_unauthorized_devices'] = unauthorized_devices
+    else:
+        device_status['prev_unauthorized_devices'] = []
 
     # 如果之前连接但现在断开，标记断开事件
     if not connected and device_status.get('was_connected', False):
@@ -945,6 +1000,128 @@ def organize_photos_by_album(photos):
 
     return filtered_albums
 
+
+ALBUM_DISPLAY_NAMES = {
+    'camera': '相机',
+    '100media': '相机',
+    '100andro': '相机',
+    'screenshots': '截图',
+    'screenshot': '截图',
+    'weixin': '微信',
+    'wechat': '微信',
+    '微信': '微信',
+    'micromsg': '微信',
+    'qq': 'QQ',
+    'tencent': 'QQ',
+    'download': '下载',
+    'downloads': '下载',
+    'screen recordings': '录屏',
+    'screenrecorder': '录屏',
+    'screen_record': '录屏',
+    'pictures': '图片',
+    'movies': '视频',
+    'instagram': 'Instagram',
+    'telegram': 'Telegram',
+}
+
+KNOWN_NESTED_ALBUMS = (
+    'DCIM/Camera',
+    'DCIM/Screenshots',
+    'DCIM/Screen recordings',
+    'DCIM/ScreenRecorder',
+    'DCIM/100MEDIA',
+    'DCIM/100ANDRO',
+    'Pictures/WeiXin',
+    'Pictures/WeChat',
+    'Pictures/微信',
+    'Pictures/Screenshots',
+    'Pictures/QQ',
+    'Pictures/Telegram',
+    'Pictures/Instagram',
+    'tencent/MicroMsg/WeiXin',
+    'Screenshots',
+    'Movies/Screen recordings',
+)
+
+SCAN_ROOTS = ('DCIM', 'Pictures')
+LEAF_ALBUM_ROOTS = ('Download', 'Downloads', 'Screenshots', 'Movies')
+
+
+def album_display_name(dir_path):
+    base = os.path.basename(dir_path.rstrip('/')) or '相册'
+    mapped = ALBUM_DISPLAY_NAMES.get(base.lower())
+    if mapped:
+        return mapped
+    lower = dir_path.lower()
+    if 'weixin' in lower or 'wechat' in lower or 'micromsg' in lower:
+        return '微信'
+    if '/dcim/camera' in lower:
+        return '相机'
+    if 'screenshot' in lower:
+        return '截图'
+    return base
+
+
+def _adb_dir_exists(path):
+    quoted = path.replace("'", "'\\''")
+    ok, out, _ = run_adb_command(f"adb shell \"test -d '{quoted}' && echo EXISTS\"", timeout=5)
+    return bool(ok and out and 'EXISTS' in out)
+
+
+def _list_first_level_dirs(root):
+    quoted = root.replace("'", "'\\''")
+    ok, out, _ = run_adb_command(
+        f"adb shell \"find '{quoted}' -mindepth 1 -maxdepth 1 -type d 2>/dev/null\"",
+        timeout=10,
+    )
+    if not ok or not out or not out.strip():
+        return []
+    dirs = [line.strip() for line in out.strip().split('\n') if line.strip()]
+    return [d for d in dirs if not os.path.basename(d.rstrip('/')).startswith('.')]
+
+
+def discover_album_dirs(actual_storage):
+    """发现常见媒体相册，覆盖 DCIM / Pictures / 下载 / 微信等，不做全盘扫描。"""
+    found = []
+    seen = set()
+
+    def add_dir(path):
+        if not path:
+            return
+        key = normalize_remote_path(path)
+        if key in seen:
+            return
+        seen.add(key)
+        found.append(path)
+
+    for root_name in SCAN_ROOTS:
+        root = f"{actual_storage}/{root_name}"
+        if not _adb_dir_exists(root):
+            continue
+        children = _list_first_level_dirs(root)
+        for child in children:
+            add_dir(child)
+
+    for leaf in LEAF_ALBUM_ROOTS:
+        path = f"{actual_storage}/{leaf}"
+        if _adb_dir_exists(path):
+            add_dir(path)
+
+    for rel in KNOWN_NESTED_ALBUMS:
+        path = f"{actual_storage}/{rel}"
+        if _adb_dir_exists(path):
+            add_dir(path)
+
+    def sort_key(p):
+        name = album_display_name(p)
+        priority = {
+            '相机': 0, '截图': 1, '微信': 2, 'QQ': 3, '录屏': 4, '下载': 5, '图片': 6,
+        }.get(name, 10)
+        return (priority, p.lower())
+
+    return sorted(found, key=sort_key)
+
+
 def scan_photos_thread(expected_scan_id=None):
     """后台扫描照片线程 - 极速优化版"""
     global scan_status
@@ -1038,46 +1215,17 @@ def scan_photos_thread(expected_scan_id=None):
                 scan_status['is_running'] = False
             return
 
-        # 仅扫描内部存储的 Pictures 目录（避免全盘扫描导致手机卡顿）
-        pictures_root = f"{actual_storage}/Pictures"
-
-        # 检查 Pictures 是否存在
-        check_pictures_cmd = f'adb shell "test -d {pictures_root} && echo EXISTS"'
-        success, stdout, _ = run_adb_command(check_pictures_cmd, timeout=5)
-        if not success or 'EXISTS' not in stdout:
-            print("   ✗ 未找到 Pictures 目录，仅支持扫描内部存储的 Pictures 目录")
+        # 扫描 DCIM / Pictures / 下载 / 微信等常见相册，避免全盘 find
+        print("\n📂 发现相册目录...")
+        album_dirs = discover_album_dirs(actual_storage)
+        if not album_dirs:
+            print("   ✗ 未找到照片目录")
             with scan_status_lock:
-                scan_status['error'] = '未找到内部存储的 Pictures 目录，请确认手机路径 /storage/emulated/0/Pictures 是否存在'
+                scan_status['error'] = '未找到照片目录，请确认手机中存在 DCIM 或 Pictures'
                 scan_status['stage'] = 'error'
                 scan_status['is_running'] = False
             return
-
-        # 列出一级子目录作为相册；若没有子目录，则扫描 Pictures 根目录
-        list_albums_cmd = f'adb shell "find {pictures_root} -mindepth 1 -maxdepth 1 -type d 2>/dev/null"'
-        success, stdout, _ = run_adb_command(list_albums_cmd, timeout=10)
-        album_dirs = []
-        if success and stdout.strip():
-            album_dirs = [line.strip() for line in stdout.strip().split('\n') if line.strip()]
-            # 过滤隐藏相册（以 . 开头的目录）
-            album_dirs = [d for d in album_dirs if not os.path.basename(d.rstrip('/')).startswith('.')]
-        else:
-            album_dirs = [pictures_root]
-
-        # 单独增加 DCIM/Camera（相机）相册，如果存在
-        camera_dir = f"{actual_storage}/DCIM/Camera"
-        has_camera = False
-        cam_check_cmd = f'adb shell "test -d {camera_dir} && echo EXISTS"'
-        ok_cam, cam_out, _ = run_adb_command(cam_check_cmd, timeout=5)
-        if ok_cam and 'EXISTS' in cam_out:
-            has_camera = True
-
-        # 合并列表并去重
-        all_album_dirs = []
-        if has_camera:
-            all_album_dirs.append(camera_dir)
-        all_album_dirs.extend(album_dirs)
-        # 确保 Pictures 根目录优先，再按名称排序子目录
-        album_dirs = sorted(set(all_album_dirs), key=lambda p: (p != pictures_root and p != camera_dir, p.lower()))
+        print(f"   ✓ 发现 {len(album_dirs)} 个相册目录")
 
         if FAST_ALBUM_SCAN:
             print("\n⚡ 启用快速相册扫描模式（仅封面与目录列表）")
@@ -1085,23 +1233,24 @@ def scan_photos_thread(expected_scan_id=None):
             for dir_path in album_dirs:
                 if not scan_status['is_running']:
                     break
-                # 选择封面（优先图片，其次任意文件）
+                # 选择封面（优先图片，其次视频），并按媒体扩展名计数
                 cover = ''
+                total_count = 0
                 try:
                     # -p 为目录名添加斜杠，便于过滤；-t 时间倒序
                     ok_ls, out_ls, _ = run_adb_command(f"adb shell 'ls -1pt " + dir_path.replace("'","'\''") + " 2>/dev/null'", timeout=6)
                     if ok_ls and out_ls:
                         entries = [l.strip() for l in out_ls.splitlines() if l.strip()]
                         files = [nm for nm in entries if not nm.endswith('/')]
-                        # 先选图片封面
-                        for nm in files:
+                        media_files = [nm for nm in files if has_supported_extension(dir_path.rstrip('/') + '/' + nm)]
+                        total_count = len(media_files)
+                        for nm in media_files:
                             p = dir_path.rstrip('/') + '/' + nm
                             if PurePosixPath(p).suffix.lower() in PREVIEW_IMAGE_EXTS:
                                 cover = p
                                 break
-                        # 再选视频封面
                         if not cover:
-                            for nm in files:
+                            for nm in media_files:
                                 p = dir_path.rstrip('/') + '/' + nm
                                 if PurePosixPath(p).suffix.lower() in PREVIEW_VIDEO_EXTS:
                                     cover = p
@@ -1110,7 +1259,7 @@ def scan_photos_thread(expected_scan_id=None):
                     pass
                 # 提前投递预览占位，便于前端首屏尽快展示相册卡片
                 try:
-                    album_name_quick = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
+                    album_name_quick = album_display_name(dir_path)
                     with scan_status_lock:
                         if 'albums_preview' not in scan_status or not isinstance(scan_status['albums_preview'], dict):
                             scan_status['albums_preview'] = {}
@@ -1124,14 +1273,6 @@ def scan_photos_thread(expected_scan_id=None):
                         }
                 except Exception:
                     pass
-                # 统计文件数（快速方式，可能包含少量非媒体）
-                total_count = 0
-                try:
-                    ok_cnt, out_cnt, _ = run_adb_command(f"adb shell 'ls -1 " + dir_path.replace("'","'\''") + " 2>/dev/null | wc -l'", timeout=5)
-                    if ok_cnt and out_cnt.strip().isdigit():
-                        total_count = int(out_cnt.strip())
-                except Exception:
-                    pass
                 # 统计目录大小（KB）
                 total_size = 0
                 try:
@@ -1142,7 +1283,7 @@ def scan_photos_thread(expected_scan_id=None):
                             total_size = int(first) * 1024
                 except Exception:
                     pass
-                album_name = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
+                album_name = album_display_name(dir_path)
                 # 跳过空相册（0 文件）
                 if total_count <= 0:
                     # 同步预览（保持为0），但不纳入最终albums
@@ -1381,7 +1522,7 @@ def scan_photos_thread(expected_scan_id=None):
 
             # 相册完成后，增量更新相册预览（仅该相册）
             try:
-                album_name = os.path.basename(dir_path.rstrip('/')) or 'Pictures'
+                album_name = album_display_name(dir_path)
                 total_size = sum(p['size'] for p in album_photos)
                 cover_path = album_photos[0]['path'] if album_photos else ''
                 with scan_status_lock:
@@ -1423,7 +1564,7 @@ def scan_photos_thread(expected_scan_id=None):
         for album_path, photos in scan_status.get('albums_map', {}).items():
             if not photos:
                 continue
-            album_name = os.path.basename(album_path.rstrip('/')) or 'Pictures'
+            album_name = album_display_name(album_path)
             total_size = sum(p['size'] for p in photos)
             albums[album_path] = {
                 'name': album_name,
@@ -2074,10 +2215,12 @@ def get_device_status():
     status_copy = {
         'connected': device_status['connected'],
         'devices': device_status['devices'],
+        'unauthorized_devices': device_status.get('unauthorized_devices', []),  # 新增：未授权设备列表
         'selected': selected_device,
         'last_check_time': device_status['last_check_time'],
         'disconnect_detected': device_status.get('disconnect_detected', False),
         'connect_detected': device_status.get('connect_detected', False),
+        'unauthorized_detected': device_status.get('unauthorized_detected', False),  # 新增：未授权设备检测标记
         'adb_issue': device_status.get('adb_issue', False),
         'adb_error': device_status.get('adb_error', '')
     }
@@ -2087,6 +2230,8 @@ def get_device_status():
         device_status['disconnect_detected'] = False
     if device_status.get('connect_detected', False):
         device_status['connect_detected'] = False
+    if device_status.get('unauthorized_detected', False):
+        device_status['unauthorized_detected'] = False
 
     return jsonify(status_copy)
 
@@ -3253,12 +3398,15 @@ def api_album_photos():
         names = [l.strip() for l in (out.splitlines() if (ok and out) else []) if l.strip()]
         media = []
         for nm in names:
+            if nm.endswith('/'):
+                continue
             p = album.rstrip('/') + '/' + nm
-            suf = PurePosixPath(p).suffix.lower()
-            if (suf in (PREVIEW_IMAGE_EXTS | PREVIEW_VIDEO_EXTS)) or (suf == ''):
+            if has_supported_extension(p):
                 media.append((p, nm))
-        # 取媒体分页
+        # 取媒体分页；total 为相册内媒体文件总数（当前窗口若被截断则至少不低于本页）
         page_items = media[offset: offset + limit]
+        listed_all = len(names) < end
+        total = len(media) if listed_all else max(len(media), offset + len(page_items))
         photos = [{
             'path': p,
             'name': nm,
@@ -3267,7 +3415,7 @@ def api_album_photos():
             'mtime': _parse_timestamp_from_name(nm) or 0,
             'date': ''
         } for (p, nm) in page_items]
-        return jsonify({'success': True, 'photos': photos, 'total': offset + len(photos)})
+        return jsonify({'success': True, 'photos': photos, 'total': total, 'has_more': (not listed_all) or (offset + len(photos) < total)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -3317,7 +3465,7 @@ def _album_entries_with_times(album: str):
                 ts = w if w > 0 else y if y > 0 else None
                 p = album.rstrip('/') + '/' + nm
                 suf = PurePosixPath(p).suffix.lower()
-                if (suf in (PREVIEW_IMAGE_EXTS | PREVIEW_VIDEO_EXTS)) or (suf == ''):
+                if suf in SUPPORTED_EXTENSIONS:
                     entries.append((p, nm, ts))
             if entries:
                 return entries
@@ -3328,7 +3476,7 @@ def _album_entries_with_times(album: str):
             for nm in names:
                 p = album.rstrip('/') + '/' + nm
                 suf = PurePosixPath(p).suffix.lower()
-                if (suf in (PREVIEW_IMAGE_EXTS | PREVIEW_VIDEO_EXTS)) or (suf == ''):
+                if suf in SUPPORTED_EXTENSIONS:
                     ts = _parse_timestamp_from_name(nm)
                     entries.append((p, nm, ts))
         return entries
@@ -5145,14 +5293,51 @@ def wifi_info():
         'ip': local_ip,
         'port': port,
         'url': f'http://{local_ip}:{port}',
+        'tcp_port': fast_transfer.TCP_PORT,
+        'ftp_port': fast_transfer.FTP_PORT,
+        'protocols': ['tcp', 'ftp', 'http_put', 'http_multipart'],
         'connected_devices': devices_list,
         'device_count': len(devices_list)
     })
 
+
+@app.route('/api/fast/caps')
+def fast_caps():
+    return jsonify(fast_transfer.caps(get_local_ip(), 9500))
+
+
+@app.route('/api/fast/put', methods=['PUT', 'POST'])
+def fast_http_put():
+    """裸 HTTP PUT/POST：无 multipart 边界，接近 FTP 速度。"""
+    filename = request.headers.get('X-Filename') or request.args.get('name') or 'unnamed.bin'
+    relative = request.headers.get('X-Relative-Path') or filename
+    device_id = request.headers.get('X-Device-Id') or 'bench'
+    try:
+        expected = int(request.headers.get('X-File-Size') or request.content_length or 0)
+    except Exception:
+        expected = 0
+    dest_dir = os.path.join(wifi_mode_status.get('output_dir') or OUTPUT_DIR, device_id)
+    dest = fast_transfer._safe_join(dest_dir, relative.replace('\\', '/'))
+    received = 0
+    with open(dest, 'wb') as f:
+        while True:
+            chunk = request.stream.read(256 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            received += len(chunk)
+    ok = expected == 0 or received == expected
+    return jsonify({
+        'success': ok,
+        'bytes': received,
+        'path': dest,
+        'protocol': 'http_put',
+    }), 200 if ok else 400
+
 @app.route('/api/wifi/upload_photo_list', methods=['POST'])
 def wifi_upload_photo_list():
-    """WiFi模式：接收手机发送的照片列表"""
-    global scan_status, device_photos
+    """WiFi模式：接收手机发送的照片列表（旧接口，兼容老版本APP）"""
+    global scan_status, device_photos, device_upload_batches, wifi_mode_status
     
     try:
         data = request.get_json()
@@ -5165,7 +5350,7 @@ def wifi_upload_photo_list():
         device_id = data.get('device_id', 'unknown')
         photos = data.get('photos', [])
         
-        print(f"\n📱 收到照片列表上传请求:")
+        print(f"\n📱 收到照片列表上传请求 (旧接口):")
         print(f"   设备ID: {device_id}")
         print(f"   照片数量: {len(photos)}")
         
@@ -5186,6 +5371,51 @@ def wifi_upload_photo_list():
             if photo.get('path') not in existing_paths:
                 new_photos.append(photo)
                 device_photos[device_id].append(photo)
+        
+        # 🔥 重要：创建批次记录，以便Web界面能够显示照片
+        if new_photos:
+            # 生成批次ID
+            batch_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+            batch_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # 初始化批次存储
+            if device_id not in device_upload_batches:
+                device_upload_batches[device_id] = []
+            
+            # 格式化照片信息
+            batch_photos = []
+            total_size = 0
+            for photo in new_photos:
+                photo_info = {
+                    'name': photo.get('name', ''),
+                    'path': photo.get('path', ''),
+                    'size': photo.get('size', 0),
+                    'size_mb': round(photo.get('size', 0) / 1024.0 / 1024.0, 2),
+                    'date': batch_timestamp
+                }
+                batch_photos.append(photo_info)
+                total_size += photo.get('size', 0)
+            
+            # 创建批次信息
+            batch_info = {
+                'batch_id': batch_id,
+                'timestamp': batch_timestamp,
+                'photo_count': len(batch_photos),
+                'total_size': total_size,
+                'total_size_mb': round(total_size / 1024.0 / 1024.0, 2),
+                'photos': batch_photos,
+                'status': 'uploading',
+                'is_legacy': False  # 标记为新格式，使用批次文件夹
+            }
+            
+            # 添加到批次列表（最新的在前面）
+            device_upload_batches[device_id].insert(0, batch_info)
+            
+            # 保存到数据库
+            save_batch_to_db(device_id, batch_info)
+            
+            print(f"📦 创建新批次: {batch_id}")
+            print(f"📸 本批次照片数: {len(batch_photos)} 张，大小: {batch_info['total_size_mb']} MB")
         
         # 更新扫描状态（仅用于兼容性）
         scan_status['photos'] = device_photos.get(device_id, [])
@@ -5217,16 +5447,20 @@ def wifi_upload_photo_list():
         
         print(f"✅ WiFi模式：收到来自设备 {device_id[:8]}... 的 {len(new_photos)} 个新照片（总计 {len(device_photos[device_id])} 个）")
         print(f"📊 当前已连接设备数: {len(wifi_mode_status['connected_devices'])}")
+        print(f"📊 该设备总批次数: {len(device_upload_batches.get(device_id, []))}")
         
         return jsonify({
             'success': True,
             'message': f'成功接收 {len(new_photos)} 个新照片信息',
             'count': len(new_photos),
-            'total': len(device_photos[device_id])
+            'total': len(device_photos[device_id]),
+            'batch_id': batch_id if new_photos else None
         })
     
     except Exception as e:
         print(f"❌ WiFi模式上传照片列表失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -5235,7 +5469,7 @@ def wifi_upload_photo_list():
 @app.route('/api/wifi/upload_photo', methods=['POST'])
 def wifi_upload_photo():
     """WiFi模式：接收手机上传的照片文件 - 流式处理防止内存泄漏 + 断点续传支持"""
-    global wifi_mode_status, upload_progress_data
+    global wifi_mode_status, upload_progress_data, device_upload_batches
     
     try:
         if 'file' not in request.files:
@@ -5254,10 +5488,18 @@ def wifi_upload_photo():
         # 获取设备ID
         device_id = request.form.get('device_id', 'unknown')
         
-        # 获取当前批次ID
+        # 🔥 重要：获取批次ID（优先从upload_progress_data获取，其次从参数获取，最后尝试从最新批次获取）
         batch_id = None
         if device_id in upload_progress_data:
             batch_id = upload_progress_data[device_id].get('batch_id')
+        
+        # 如果upload_progress_data中没有，尝试从最新的批次获取
+        if not batch_id and device_id in device_upload_batches:
+            batches = device_upload_batches[device_id]
+            if batches and len(batches) > 0:
+                # 获取最新的批次（第一个）
+                batch_id = batches[0]['batch_id']
+                print(f"📦 使用最新批次: {batch_id}")
         
         # 获取相对路径（从手机端传来）
         relative_path = request.form.get('relative_path', '')
@@ -5270,6 +5512,7 @@ def wifi_upload_photo():
         else:
             # 如果没有批次ID，使用默认的设备文件夹
             output_dir = os.path.join(base_output_dir, device_id)
+            print(f"⚠️ 警告：没有找到批次ID，使用默认设备文件夹")
         
         if not relative_path:
             # 如果没有相对路径，使用文件名
@@ -5326,7 +5569,7 @@ def wifi_upload_photo():
                 os.remove(local_path)
         
         # 使用流式保存，避免大文件加载到内存（重要！防止 OOM）
-        CHUNK_SIZE = 8192  # 8KB 块大小
+        CHUNK_SIZE = 256 * 1024
         with open(local_path, 'wb') as f:
             while True:
                 chunk = file.stream.read(CHUNK_SIZE)
@@ -5355,6 +5598,8 @@ def wifi_upload_photo():
     
     except Exception as e:
         print(f"❌ WiFi模式上传照片失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -6421,6 +6666,10 @@ if __name__ == '__main__':
 
     # 在服务启动前启动设备监控线程（避免debug模式重复启动，使用标记控制）
     start_device_monitor()
+    try:
+        fast_transfer.start_fast_servers(OUTPUT_DIR, get_local_ip())
+    except Exception as e:
+        print(f"⚠️ 快速通道启动失败: {e}")
     # 根据环境切换运行模式：默认关闭 debug 与重载器，避免双进程与阻塞
     debug_flag = os.getenv('AT_DEBUG', '0').lower() in ('1','true','yes','on')
     try:

@@ -12,10 +12,9 @@ block_cipher = None
 # 当前目录
 current_dir = Path('.').absolute()
 
-# 需要包含的数据文件
+# 需要包含的数据文件（仅模板；输出目录改为用户系统目录，不随应用打包）
 datas = [
     ('templates', 'templates'),  # HTML模板
-    ('photos_output', 'photos_output'),  # 输出目录（保留目录结构）
 ]
 
 # 需要包含的隐藏导入（Flask相关）
@@ -76,4 +75,3 @@ coll = COLLECT(
     upx_exclude=[],
     name='app',
 )
-

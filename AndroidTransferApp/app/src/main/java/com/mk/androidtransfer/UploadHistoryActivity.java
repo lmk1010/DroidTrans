@@ -7,6 +7,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowInsetsController;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
@@ -31,7 +32,6 @@ public class UploadHistoryActivity extends AppCompatActivity {
     
     private static final String TAG = "UploadHistoryActivity";
     
-    private MaterialToolbar toolbar;
     private RecyclerView recyclerView;
     private LinearLayout emptyState;
     private LinearLayout loadingContainer;
@@ -75,29 +75,18 @@ public class UploadHistoryActivity extends AppCompatActivity {
     }
     
     private void initViews() {
-        toolbar = findViewById(R.id.toolbar);
+        ImageButton btnBack = findViewById(R.id.btnBack);
+        ImageButton btnClearAll = findViewById(R.id.btnClearAll);
         recyclerView = findViewById(R.id.recyclerViewHistory);
         emptyState = findViewById(R.id.emptyState);
         loadingContainer = findViewById(R.id.loadingContainer);
+        
+        btnBack.setOnClickListener(v -> finish());
+        btnClearAll.setOnClickListener(v -> showClearAllDialog());
     }
     
     private void setupToolbar() {
-        setSupportActionBar(toolbar);
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle("上传记录");
-        }
-        toolbar.setNavigationOnClickListener(v -> finish());
-        
-        // 添加清空记录菜单项
-        toolbar.inflateMenu(R.menu.menu_upload_history);
-        toolbar.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == R.id.action_clear_all) {
-                showClearAllDialog();
-                return true;
-            }
-            return false;
-        });
+        // 已在initViews中处理，此方法可移除或保留为空
     }
     
     private void setupRecyclerView() {

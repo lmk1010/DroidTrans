@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <!-- 深色渐变背景，沉浸式无边框 -->
+    <gradient
+        android:type="linear"
+        android:angle="135"
+        android:startColor="@color/dashboard_animation_bg_start"
+        android:endColor="@color/dashboard_animation_bg_end" />
+
+    <corners android:radius="26dp" />
+
+</shape>

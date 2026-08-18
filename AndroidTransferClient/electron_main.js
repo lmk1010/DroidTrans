@@ -6,6 +6,7 @@ const os = require('os');
 
 let mainWindow;
 let flaskProcess;
+let gcIntervalId = null;
 
 // 启用详细日志记录
 const LOG_DIR = path.join(os.homedir(), 'Documents', 'AndroidTransfer', 'logs');
@@ -117,8 +118,8 @@ function createWindow() {
     
     // 防止内存泄漏：定期触发垃圾回收（如果可用）
     if (global.gc && !app.isPackaged) {
-        setInterval(() => {
-            global.gc();
+        gcIntervalId = setInterval(() => {
+            try { global.gc(); } catch (e) {}
             console.log('手动触发垃圾回收');
         }, 60000); // 每分钟一次
     }
@@ -243,6 +244,10 @@ app.on('window-all-closed', function () {
     }
 });
 
+app.on('before-quit', () => {
+    try { if (gcIntervalId) { clearInterval(gcIntervalId); gcIntervalId = null; } } catch (e) {}
+});
+
 app.on('activate', function () {
     if (mainWindow === null) {
         createWindow();
@@ -271,6 +276,7 @@ app.on('quit', () => {
         mainWindow.webContents.removeAllListeners();
         mainWindow = null;
     }
+    try { if (gcIntervalId) { clearInterval(gcIntervalId); gcIntervalId = null; } } catch (e) {}
 });
 
 // 防止内存泄漏：处理未捕获的异常
@@ -288,4 +294,3 @@ process.on('unhandledRejection', (reason, promise) => {
 app.on('ready', () => {
     log('INFO', 'Electron app ready 事件触发');
 });
-
