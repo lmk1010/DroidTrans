@@ -200,3 +200,7 @@ func (s *Store) Clear() error {
 	_, err := s.db.Exec(`DELETE FROM photos; DELETE FROM batches; DELETE FROM devices;`)
 	return err
 }
+
+func (s *Store) Checkpoint() {
+	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+}

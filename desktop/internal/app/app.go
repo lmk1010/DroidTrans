@@ -167,6 +167,65 @@ func (a *App) StartBackground() {
 	})
 	a.Fast.Start()
 	go a.monitorADB()
+	go a.maintainLoop()
+}
+
+func (a *App) maintainLoop() {
+	a.maintain()
+	tick := time.NewTicker(10 * time.Minute)
+	defer tick.Stop()
+	for range tick.C {
+		a.maintain()
+	}
+}
+
+func (a *App) maintain() {
+	ip := LanIP()
+	a.Fast.SetLANIP(ip)
+	a.refreshDevices()
+	a.pruneStaleDevices(10 * time.Minute)
+	a.pruneIdleSessions(10 * time.Minute)
+	a.pruneOldThumbs(7 * 24 * time.Hour)
+	a.Store.Checkpoint()
+	fmt.Println("maintain  lan=", ip)
+}
+
+func (a *App) pruneStaleDevices(maxAge time.Duration) {
+	now := time.Now()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for id, d := range a.devices {
+		if d == nil || d.LastHeartbeat == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, d.LastHeartbeat)
+		if err != nil || now.Sub(t) > maxAge {
+			delete(a.devices, id)
+		}
+	}
+}
+
+func (a *App) pruneIdleSessions(maxAge time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.inbox.Receiving && !a.inbox.LastAt.IsZero() && time.Since(a.inbox.LastAt) > maxAge {
+		a.inbox.Receiving = false
+		if s := a.sessions[a.inbox.DeviceID]; s != nil {
+			s.IsUploading = false
+		}
+	}
+}
+
+func (a *App) pruneOldThumbs(maxAge time.Duration) {
+	_ = filepath.Walk(a.ThumbDir, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		if time.Since(info.ModTime()) > maxAge {
+			_ = os.Remove(p)
+		}
+		return nil
+	})
 }
 
 func (a *App) monitorADB() {
