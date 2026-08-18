@@ -262,6 +262,9 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/history/batches", a.histBatches)
 	mux.HandleFunc("GET /api/history/devices", a.histDevices)
 	mux.HandleFunc("POST /api/history/clear", a.histClear)
+	mux.HandleFunc("GET /api/gallery", a.gallery)
+	mux.HandleFunc("GET /api/gallery/batch", a.galleryBatch)
+	mux.HandleFunc("POST /api/reveal", a.revealPath)
 
 	fileServer := http.FileServer(http.FS(a.Frontend))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +437,57 @@ func (a *App) openFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = cmd.Start()
 	writeJSON(w, 200, map[string]any{"success": true})
+}
+
+func (a *App) revealPath(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	p, _ := body["path"].(string)
+	if p == "" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "缺少路径"})
+		return
+	}
+	if _, ok := a.safeLocal(p); !ok {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "路径不在输出目录内"})
+		return
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", "-R", p)
+	case "windows":
+		cmd = exec.Command("explorer", "/select,", p)
+	default:
+		cmd = exec.Command("xdg-open", filepath.Dir(p))
+	}
+	_ = cmd.Start()
+	writeJSON(w, 200, map[string]any{"success": true})
+}
+
+func (a *App) safeLocal(p string) (string, bool) {
+	if p == "" {
+		return "", false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", false
+	}
+	a.mu.Lock()
+	roots := []string{a.wifiOut, a.OutputDir}
+	a.mu.Unlock()
+	sep := string(os.PathSeparator)
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		r, err := filepath.Abs(root)
+		if err != nil {
+			continue
+		}
+		if abs == r || strings.HasPrefix(abs, r+sep) {
+			return abs, true
+		}
+	}
+	return "", false
 }
 
 func (a *App) wifiDevices(w http.ResponseWriter, r *http.Request) {
@@ -929,6 +983,110 @@ func (a *App) histClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"success": true})
+}
+
+func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.Store.Batches("")
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	devs, _ := a.Store.Devices()
+	names := map[string]string{}
+	for _, d := range devs {
+		id, _ := d["device_id"].(string)
+		name, _ := d["device_name"].(string)
+		if id != "" {
+			names[id] = name
+		}
+	}
+	a.mu.Lock()
+	base := a.wifiOut
+	a.mu.Unlock()
+	limit := 48
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, b := range rows {
+		folder := filepath.Join(base, b.DeviceID, b.BatchID)
+		files := a.batchFiles(b.DeviceID, b.BatchID, folder)
+		cover := ""
+		previews := []map[string]any{}
+		for _, f := range files {
+			p, _ := f["path"].(string)
+			if cover == "" && isImage(p) {
+				cover = p
+			}
+			if len(previews) < 4 {
+				previews = append(previews, f)
+			}
+		}
+		name := names[b.DeviceID]
+		if name == "" {
+			name = "设备 " + shortID(b.DeviceID)
+		}
+		count := b.PhotoCount
+		if len(files) > count {
+			count = len(files)
+		}
+		out = append(out, map[string]any{
+			"device_id": b.DeviceID, "device_name": name, "batch_id": b.BatchID,
+			"photo_count": count, "folder": folder, "cover": cover,
+			"previews": previews, "timestamp": b.Timestamp, "status": b.Status,
+		})
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "batches": out})
+}
+
+func (a *App) galleryBatch(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("device")
+	batch := r.URL.Query().Get("batch")
+	if id == "" || batch == "" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "缺少参数"})
+		return
+	}
+	a.mu.Lock()
+	folder := filepath.Join(a.wifiOut, id, batch)
+	a.mu.Unlock()
+	files := a.batchFiles(id, batch, folder)
+	writeJSON(w, 200, map[string]any{
+		"success": true, "device_id": id, "batch_id": batch, "folder": folder, "photos": files,
+	})
+}
+
+func (a *App) batchFiles(deviceID, batchID, folder string) []map[string]any {
+	seen := map[string]bool{}
+	var out []map[string]any
+	photos, _ := a.Store.Photos(deviceID, batchID)
+	for _, p := range photos {
+		path, _ := p["path"].(string)
+		name, _ := p["name"].(string)
+		if path == "" {
+			path = filepath.Join(folder, name)
+		}
+		if !isMedia(path) {
+			continue
+		}
+		seen[path] = true
+		out = append(out, map[string]any{"name": name, "path": path, "size": p["size"]})
+	}
+	_ = filepath.Walk(folder, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		if !isMedia(p) || seen[p] {
+			return nil
+		}
+		seen[p] = true
+		out = append(out, map[string]any{"name": info.Name(), "path": p, "size": info.Size()})
+		return nil
+	})
+	return out
+}
+
+func isImage(p string) bool {
+	return imageExt[strings.ToLower(filepath.Ext(p))]
 }
 
 func (a *App) listDirs(w http.ResponseWriter, r *http.Request) {

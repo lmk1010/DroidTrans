@@ -316,6 +316,12 @@ func (a *App) thumb(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing path", 400)
 		return
 	}
+	if abs, ok := a.safeLocal(remote); ok {
+		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+			http.ServeFile(w, r, abs)
+			return
+		}
+	}
 	key := strings.ReplaceAll(remote, "/", "_")
 	if len(key) > 180 {
 		key = key[len(key)-180:]
