@@ -468,6 +468,12 @@ setInterval(refreshHome, 4000);
 setInterval(() => {
   if (state.view === 'wifi') refreshWifi();
 }, 2000);
+setInterval(() => {
+  refreshHome();
+  refreshNames();
+  if (state.view === 'wifi') refreshWifi();
+  if (state.view === 'history') refreshHistory();
+}, 10 * 60 * 1000);
 
 let inboxDismissed = -1;
 let inboxHideTimer = 0;
