@@ -140,7 +140,13 @@ public class AlbumListAdapter extends RecyclerView.Adapter<AlbumListAdapter.Albu
         AlbumInfo album = albumList.get(position);
         boolean isSelected = selectedAlbumPaths.contains(album.getAlbumPath());
 
-        holder.tvAlbumName.setText(AlbumInfo.getAlbumDisplayName(context, album.getAlbumPath()));
+        // album.getAlbumPath() 存的是 MediaStore 的 bucketId（形如 -1739773001），
+        // 拿它去反推名字只会把这串数字显示出来。名字在扫描时已经算好了。
+        String albumName = album.getAlbumName();
+        if (android.text.TextUtils.isEmpty(albumName)) {
+            albumName = AlbumInfo.getAlbumDisplayName(context, album.getAlbumPath());
+        }
+        holder.tvAlbumName.setText(albumName);
         holder.chipPhotoCount.setText(String.valueOf(album.getPhotoCount()));
         holder.ivAlbumIcon.setImageResource(album.getIconResId());
 
@@ -157,10 +163,11 @@ public class AlbumListAdapter extends RecyclerView.Adapter<AlbumListAdapter.Albu
                     .override(thumbSize, thumbSize)
                     .dontAnimate()
                     .diskCacheStrategy(DiskCacheStrategy.ALL)
-                    .placeholder(R.drawable.ic_image_placeholder)
+                    .placeholder(R.drawable.thumb_placeholder)
+                    .error(R.drawable.thumb_placeholder)
                     .into(holder.ivCover);
         } else {
-            holder.ivCover.setImageResource(R.drawable.ic_image_placeholder);
+            holder.ivCover.setImageResource(R.drawable.thumb_placeholder);
         }
 
         holder.itemView.setOnClickListener(v -> {

@@ -129,7 +129,8 @@ public class PhotoGridAdapter extends RecyclerView.Adapter<PhotoGridAdapter.Phot
                     .override(thumbSize, thumbSize)
                     .dontAnimate()
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
-                    .placeholder(R.drawable.ic_no_photos)
+                    .placeholder(R.drawable.thumb_placeholder)
+                    .error(R.drawable.thumb_placeholder)
                     .into(ivPhoto);
 
             ivVideoBadge.setVisibility(photo.isVideo() ? View.VISIBLE : View.GONE);

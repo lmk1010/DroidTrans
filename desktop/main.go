@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	"droidtrans/internal/app"
 )
@@ -53,7 +54,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := &http.Server{Handler: application.Handler()}
+	srv := &http.Server{Handler: application.Handler(), ReadHeaderTimeout: 20 * time.Second}
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintln(os.Stderr, err)
@@ -66,16 +67,21 @@ func main() {
 	fmt.Printf("输出目录      %s\n", application.OutputDir)
 	fmt.Printf("ADB          %s\n", application.ADB.Bin())
 
+	shutdown := func() {
+		_ = srv.Close()
+		application.Shutdown()
+	}
+
 	if !*headless {
 		runNativeWindow(fmt.Sprintf("http://127.0.0.1:%d", app.HTTPPort))
-		_ = srv.Close()
+		shutdown()
 		return
 	}
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
-	_ = srv.Close()
+	shutdown()
 }
 
 func isAddrInUse(err error) bool {

@@ -31,6 +31,40 @@ type Server struct {
 	lanIP      string
 	onReceived FileHandler
 	onProgress ProgressHandler
+	tcpUp      bool
+	ftpUp      bool
+}
+
+func (s *Server) setUp(tcp, up bool) {
+	s.mu.Lock()
+	if tcp {
+		s.tcpUp = up
+	} else {
+		s.ftpUp = up
+	}
+	s.mu.Unlock()
+}
+
+// Live 返回两个高速通道当前是否真的在监听。
+// 端口被占时不能照旧通告给手机：手机会先去连一个不存在的端口，白等一次超时。
+func (s *Server) Live() (tcp bool, ftp bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tcpUp, s.ftpUp
+}
+
+// listenRetry 端口刚被上一个实例释放时会短暂占用，重试几次再放弃。
+func listenRetry(addr string) (net.Listener, error) {
+	var err error
+	for i := 0; i < 6; i++ {
+		var ln net.Listener
+		ln, err = net.Listen("tcp", addr)
+		if err == nil {
+			return ln, nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return nil, err
 }
 
 func New(outputDir, lanIP string) *Server {
@@ -120,11 +154,14 @@ func SafeJoin(base, relative string) (string, error) {
 }
 
 func (s *Server) serveTCP() {
-	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", TCPPort))
+	ln, err := listenRetry(fmt.Sprintf("0.0.0.0:%d", TCPPort))
 	if err != nil {
 		fmt.Println("tcp listen:", err)
+		s.setUp(true, false)
 		return
 	}
+	s.setUp(true, true)
+	defer s.setUp(true, false)
 	fmt.Println("⚡ TCP :" + strconv.Itoa(TCPPort))
 	for {
 		conn, err := ln.Accept()
@@ -225,11 +262,14 @@ func writeStream(r io.Reader, dest string, size int64, report func(int64)) error
 }
 
 func (s *Server) serveFTP() {
-	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", FTPPort))
+	ln, err := listenRetry(fmt.Sprintf("0.0.0.0:%d", FTPPort))
 	if err != nil {
 		fmt.Println("ftp listen:", err)
+		s.setUp(false, false)
 		return
 	}
+	s.setUp(false, true)
+	defer s.setUp(false, false)
 	fmt.Println("⚡ FTP :" + strconv.Itoa(FTPPort))
 	for {
 		conn, err := ln.Accept()
@@ -328,19 +368,36 @@ func (s *Server) handleFTP(conn net.Conn) {
 	}
 }
 
-func Caps(lanIP string, httpPort int) map[string]any {
-	return map[string]any{
+// Caps 只通告真正在监听的通道。
+func (s *Server) Caps(lanIP string, httpPort int) map[string]any {
+	tcpUp, ftpUp := s.Live()
+	prefer := []string{}
+	protocols := []map[string]any{}
+	if tcpUp {
+		prefer = append(prefer, "tcp")
+		protocols = append(protocols, map[string]any{"id": "tcp", "port": TCPPort, "priority": 1})
+	}
+	if ftpUp {
+		prefer = append(prefer, "ftp")
+		protocols = append(protocols, map[string]any{"id": "ftp", "port": FTPPort, "priority": 2})
+	}
+	prefer = append(prefer, "http_put", "http_multipart")
+	protocols = append(protocols,
+		map[string]any{"id": "http_put", "path": "/api/fast/put", "priority": 3},
+		map[string]any{"id": "http_multipart", "path": "/api/wifi/upload_photo", "priority": 4},
+	)
+	out := map[string]any{
 		"success":   true,
 		"ip":        lanIP,
 		"http_port": httpPort,
-		"tcp_port":  TCPPort,
-		"ftp_port":  FTPPort,
-		"prefer":    []string{"tcp", "ftp", "http_put", "http_multipart"},
-		"protocols": []map[string]any{
-			{"id": "tcp", "port": TCPPort, "priority": 1},
-			{"id": "ftp", "port": FTPPort, "priority": 2},
-			{"id": "http_put", "path": "/api/fast/put", "priority": 3},
-			{"id": "http_multipart", "path": "/api/wifi/upload_photo", "priority": 4},
-		},
+		"prefer":    prefer,
+		"protocols": protocols,
 	}
+	if tcpUp {
+		out["tcp_port"] = TCPPort
+	}
+	if ftpUp {
+		out["ftp_port"] = FTPPort
+	}
+	return out
 }

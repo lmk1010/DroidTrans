@@ -171,7 +171,11 @@ func (c *Client) env() []string {
 }
 
 func (c *Client) run(timeout time.Duration, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return c.runCtx(context.Background(), timeout, args...)
+}
+
+func (c *Client) runCtx(parent context.Context, timeout time.Duration, args ...string) (string, string, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	all := append(c.prefix(), args...)
 	cmd := exec.CommandContext(ctx, c.Bin(), all...)
@@ -267,6 +271,12 @@ func (c *Client) Pull(remote, local string, timeout time.Duration) error {
 }
 
 func (c *Client) PullProgress(remote, local string, timeout time.Duration, report func(int64)) error {
+	return c.PullProgressCtx(context.Background(), remote, local, timeout, report)
+}
+
+// PullProgressCtx 与 PullProgress 相同，但 ctx 取消时会立刻杀掉 adb pull，
+// 用户点“停止”不用再等一个大文件传完。已落盘的部分留着，下次续传。
+func (c *Client) PullProgressCtx(ctx context.Context, remote, local string, timeout time.Duration, report func(int64)) error {
 	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
 		return err
 	}
@@ -284,7 +294,7 @@ func (c *Client) PullProgress(remote, local string, timeout time.Duration, repor
 	if have == 0 {
 		done := make(chan error, 1)
 		go func() {
-			_, stderr, err := c.run(timeout, "pull", remote, local)
+			_, stderr, err := c.runCtx(ctx, timeout, "pull", remote, local)
 			if err != nil {
 				done <- fmt.Errorf("%v: %s", err, stderr)
 				return
@@ -302,7 +312,7 @@ func (c *Client) PullProgress(remote, local string, timeout time.Duration, repor
 		have = 0
 	}
 	if have >= block && want > have {
-		if err := c.resumePull(remote, local, have, timeout, report); err == nil {
+		if err := c.resumePull(ctx, remote, local, have, timeout, report); err == nil {
 			if st, e := os.Stat(local); e == nil && (want == 0 || st.Size() == want) {
 				return nil
 			}
@@ -312,7 +322,7 @@ func (c *Client) PullProgress(remote, local string, timeout time.Duration, repor
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, stderr, err := c.run(timeout, "pull", remote, local)
+		_, stderr, err := c.runCtx(ctx, timeout, "pull", remote, local)
 		if err != nil {
 			done <- fmt.Errorf("%v: %s", err, stderr)
 			return
@@ -322,9 +332,9 @@ func (c *Client) PullProgress(remote, local string, timeout time.Duration, repor
 	return c.waitPull(local, done, report)
 }
 
-func (c *Client) resumePull(remote, local string, have int64, timeout time.Duration, report func(int64)) error {
+func (c *Client) resumePull(parent context.Context, remote, local string, have int64, timeout time.Duration, report func(int64)) error {
 	skip := have / (1024 * 1024)
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	script := fmt.Sprintf("dd if=%s bs=1048576 skip=%d 2>/dev/null", shellQuote(remote), skip)
 	args := append(c.prefix(), "exec-out", "sh", "-c", script)

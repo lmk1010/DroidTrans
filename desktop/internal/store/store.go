@@ -213,6 +213,26 @@ func (s *Store) Photos(deviceID, batchID string) ([]map[string]any, error) {
 	return out, nil
 }
 
+// DeleteBatch 删掉一个批次及其照片记录。传输被停掉、一张都没落盘时用，
+// 免得图库里堆一排「0 张」的空卡片。
+func (s *Store) DeleteBatch(deviceID, batchID string) {
+	_, _ = s.db.Exec(`DELETE FROM photos WHERE device_id=? AND batch_id=?`, deviceID, batchID)
+	_, _ = s.db.Exec(`DELETE FROM batches WHERE device_id=? AND batch_id=?`, deviceID, batchID)
+}
+
+// PruneEmptyBatches 清掉历史遗留的空批次。
+func (s *Store) PruneEmptyBatches() int64 {
+	res, err := s.db.Exec(`
+DELETE FROM batches
+WHERE photo_count <= 0
+  AND NOT EXISTS (SELECT 1 FROM photos p WHERE p.device_id = batches.device_id AND p.batch_id = batches.batch_id)`)
+	if err != nil {
+		return 0
+	}
+	n, _ := res.RowsAffected()
+	return n
+}
+
 func (s *Store) Clear() error {
 	_, err := s.db.Exec(`DELETE FROM photos; DELETE FROM batches; DELETE FROM devices;`)
 	return err

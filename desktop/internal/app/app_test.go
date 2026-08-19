@@ -1,0 +1,226 @@
+package app
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestAllowedHost(t *testing.T) {
+	ok := []string{"", "localhost", "localhost:9500", "127.0.0.1:9500", "192.168.1.7:9500", "[::1]:9500"}
+	for _, h := range ok {
+		if !allowedHost(h) {
+			t.Errorf("allowedHost(%q) = false, 想要 true", h)
+		}
+	}
+	bad := []string{"evil.com", "evil.com:9500", "rebind.attacker.net:9500", "droidtrans.local:9500"}
+	for _, h := range bad {
+		if allowedHost(h) {
+			t.Errorf("allowedHost(%q) = true, 应当挡掉（DNS rebinding）", h)
+		}
+	}
+}
+
+func TestAllowedOrigin(t *testing.T) {
+	if !allowedOrigin("http://127.0.0.1:9500") || !allowedOrigin("http://localhost:9500") {
+		t.Error("本机来源应放行")
+	}
+	if allowedOrigin("https://evil.com") || allowedOrigin("http://evil.com:9500") {
+		t.Error("外部网站来源应挡掉（CSRF）")
+	}
+}
+
+func TestSafeSegment(t *testing.T) {
+	for _, s := range []string{"..", ".", "", "a/b", "a\\b", "/abs"} {
+		if _, ok := safeSegment(s); ok {
+			t.Errorf("safeSegment(%q) 不该通过", s)
+		}
+	}
+	if v, ok := safeSegment("20260819_101112"); !ok || v != "20260819_101112" {
+		t.Errorf("正常批次号被拒: %q %v", v, ok)
+	}
+}
+
+func TestSafeUnder(t *testing.T) {
+	root := t.TempDir()
+	if _, ok := safeUnder(root, "../../etc/passwd"); ok {
+		t.Error("safeUnder 放过了越界路径")
+	}
+	got, ok := safeUnder(root, "dev/batch/a.jpg")
+	if !ok || got != filepath.Join(root, "dev", "batch", "a.jpg") {
+		t.Errorf("got %q ok=%v", got, ok)
+	}
+}
+
+func newTestApp(t *testing.T) *App {
+	t.Helper()
+	dir := t.TempDir()
+	return &App{
+		OutputDir: dir,
+		wifiOut:   dir,
+		devices:   map[string]*deviceInfo{},
+		sessions:  map[string]*uploadSession{},
+		albums:    map[string]Album{},
+	}
+}
+
+func TestSafeLocal(t *testing.T) {
+	a := newTestApp(t)
+	if _, ok := a.safeLocal(filepath.Join(a.OutputDir, "..", "secret.txt")); ok {
+		t.Error("safeLocal 放过了输出目录之外的路径")
+	}
+	if _, ok := a.safeLocal("/etc/hosts"); ok {
+		t.Error("safeLocal 放过了系统文件")
+	}
+	if _, ok := a.safeLocal(filepath.Join(a.OutputDir, "dev", "a.jpg")); !ok {
+		t.Error("safeLocal 拒绝了输出目录内的路径")
+	}
+}
+
+func TestDeletePhotoRefusesOutsidePaths(t *testing.T) {
+	a := newTestApp(t)
+	outside := filepath.Join(t.TempDir(), "keepme.txt")
+	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/api/wifi/delete_photo", strings.NewReader(`{"path":"`+outside+`"}`))
+	w := httptest.NewRecorder()
+	a.wifiDeletePhoto(w, r)
+	if w.Code != 400 {
+		t.Errorf("状态码 %d，想要 400", w.Code)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Error("输出目录外的文件被删掉了")
+	}
+}
+
+func TestDeleteBatchRefusesTraversal(t *testing.T) {
+	a := newTestApp(t)
+	victim := filepath.Join(a.OutputDir, "sibling")
+	if err := os.MkdirAll(victim, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/api/wifi/delete_batch",
+		strings.NewReader(`{"device_id":"..","batch_id":"sibling"}`))
+	w := httptest.NewRecorder()
+	a.wifiDeleteBatch(w, r)
+	if w.Code != 400 {
+		t.Errorf("状态码 %d，想要 400", w.Code)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Error("../ 批次删除把别的目录删了")
+	}
+}
+
+func TestGuardBlocksForeignOrigin(t *testing.T) {
+	h := withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	r := httptest.NewRequest("POST", "http://127.0.0.1:9500/api/history/clear", nil)
+	r.Header.Set("Origin", "https://evil.com")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("外部网站请求返回 %d，应当 403", w.Code)
+	}
+
+	r2 := httptest.NewRequest("POST", "http://127.0.0.1:9500/api/history/clear", nil)
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, r2)
+	if w2.Code != 200 {
+		t.Errorf("手机原生请求（无 Origin）返回 %d，应当放行", w2.Code)
+	}
+}
+
+func TestGuardBlocksRebindHost(t *testing.T) {
+	h := withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	r := httptest.NewRequest("GET", "/api/health", nil)
+	r.Host = "rebind.attacker.net:9500"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("域名 Host 返回 %d，应当 403", w.Code)
+	}
+}
+
+func TestRemoteToLocal(t *testing.T) {
+	got := remoteToLocal("/sdcard/DCIM/Camera/IMG_1.jpg", "/out")
+	if got != filepath.Join("/out", "DCIM", "Camera", "IMG_1.jpg") {
+		t.Errorf("got %q", got)
+	}
+	got = remoteToLocal("/storage/emulated/0/Pictures/a.png", "/out")
+	if got != filepath.Join("/out", "Pictures", "a.png") {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestHumanBytes(t *testing.T) {
+	cases := map[int64]string{512: "512 B", 2048: "2.0 KB", 5 << 20: "5.0 MB", 3 << 30: "3.00 GB"}
+	for in, want := range cases {
+		if got := humanBytes(in); got != want {
+			t.Errorf("humanBytes(%d) = %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestTransferPaceETA(t *testing.T) {
+	started := time.Now().Add(-10 * time.Second)
+	speed, eta, elapsed := transferPace(10<<20, 20<<20, 1, 2, started, 1.0)
+	if elapsed < 9 || elapsed > 11 {
+		t.Errorf("elapsed = %v", elapsed)
+	}
+	if speed <= 0 || eta <= 0 {
+		t.Errorf("speed=%v eta=%v", speed, eta)
+	}
+	if _, _, e := transferPace(0, 0, 0, 0, time.Time{}, 0); e != 0 {
+		t.Error("未开始时应返回零值")
+	}
+}
+
+func TestSettingsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	a := &App{settingsPath: filepath.Join(dir, "settings.json")}
+	a.saveSettings("/tmp/somewhere")
+	if got := loadSettings(a.settingsPath); got.OutputDir != "/tmp/somewhere" {
+		t.Errorf("重启后输出目录没留住: %q", got.OutputDir)
+	}
+}
+
+func TestInboxElapsedStopsAtLastFile(t *testing.T) {
+	a := newTestApp(t)
+	a.Store = nil // 这条路径不写库
+	start := time.Now().Add(-40 * time.Second)
+	a.inbox = inboxState{
+		Receiving: false,
+		DeviceID:  "phone",
+		BatchID:   "b1",
+		Completed: 3,
+		Total:     3,
+		Bytes:     3 << 20,
+		Started:   start,
+		LastAt:    start.Add(3 * time.Second), // 最后一张是 3 秒时收到的
+	}
+	r := httptest.NewRequest("GET", "/api/inbox", nil)
+	w := httptest.NewRecorder()
+	a.inboxStatus(w, r)
+
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	elapsed, _ := out["elapsed_sec"].(float64)
+	if elapsed < 2.5 || elapsed > 3.5 {
+		t.Errorf("耗时 = %.1fs，应当是最后一张收到时的 3s，而不是干等到现在的 40s", elapsed)
+	}
+	speed, _ := out["speed_mbps"].(float64)
+	if speed < 0.5 {
+		t.Errorf("均速 = %.2f MB/s，耗时算错会把它压下去", speed)
+	}
+}

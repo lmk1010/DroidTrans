@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,7 +26,7 @@ import (
 )
 
 const (
-	HTTPPort      = 9500
+	HTTPPort       = 9500
 	APKDownloadURL = "https://dl.neox-dev.com/droidtrans/latest.apk"
 )
 
@@ -60,6 +62,8 @@ type App struct {
 	OutputDir string
 	ThumbDir  string
 	Frontend  fs.FS
+
+	settingsPath string
 
 	mu          sync.Mutex
 	devices     map[string]*deviceInfo
@@ -106,6 +110,10 @@ type App struct {
 	xferDevice  string
 	xferBatch   string
 	xferLive    map[string]int64
+	xferActive  bool
+	xferCancel  context.CancelFunc
+	xferOK      int
+	xferStopped bool
 }
 
 type inboxFile struct {
@@ -214,12 +222,12 @@ func linkOrCopy(src, dest string) error {
 }
 
 type progressWriter struct {
-	w      io.Writer
-	app    *App
-	name   string
-	total  int64
-	n      int64
-	last   time.Time
+	w     io.Writer
+	app   *App
+	name  string
+	total int64
+	n     int64
+	last  time.Time
 }
 
 func (p *progressWriter) Write(b []byte) (int, error) {
@@ -296,18 +304,52 @@ func New() (*App, error) {
 		return nil, err
 	}
 	a := &App{
-		ADB:       adb.New(),
-		Fast:      fast.New(out, ""),
-		Store:     st,
-		OutputDir: out,
-		ThumbDir:  thumbs,
-		devices:   map[string]*deviceInfo{},
-		sessions:  map[string]*uploadSession{},
-		wifiOut:   out,
-		albums:    map[string]Album{},
-		scanStage: "idle",
+		ADB:          adb.New(),
+		Fast:         fast.New(out, ""),
+		Store:        st,
+		OutputDir:    out,
+		ThumbDir:     thumbs,
+		devices:      map[string]*deviceInfo{},
+		sessions:     map[string]*uploadSession{},
+		wifiOut:      out,
+		albums:       map[string]Album{},
+		scanStage:    "idle",
+		settingsPath: filepath.Join(out, "settings.json"),
+	}
+	if saved := loadSettings(a.settingsPath); saved.OutputDir != "" {
+		if err := os.MkdirAll(saved.OutputDir, 0o755); err == nil {
+			a.OutputDir = saved.OutputDir
+			a.wifiOut = saved.OutputDir
+			a.Fast.SetOutputDir(saved.OutputDir)
+		}
 	}
 	return a, nil
+}
+
+type settings struct {
+	OutputDir string `json:"output_dir"`
+}
+
+func loadSettings(path string) settings {
+	var s settings
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return s
+	}
+	_ = json.Unmarshal(b, &s)
+	return s
+}
+
+// saveSettings 把用户选的输出目录写盘，下次启动直接用。
+func (a *App) saveSettings(outputDir string) {
+	if a.settingsPath == "" || outputDir == "" {
+		return
+	}
+	b, err := json.MarshalIndent(settings{OutputDir: outputDir}, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(a.settingsPath, b, 0o644)
 }
 
 func defaultOutputDir() string {
@@ -403,7 +445,23 @@ func LanIPs() []string {
 	return out
 }
 
+// Shutdown 退出前把 mDNS 注销、WAL 收尾、数据库关掉。
+func (a *App) Shutdown() {
+	a.mu.Lock()
+	stop := a.mdnsStop
+	a.mdnsStop = nil
+	a.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
+	if a.Store != nil {
+		a.Store.Checkpoint()
+		_ = a.Store.Close()
+	}
+}
+
 func (a *App) StartBackground() {
+	a.Store.PruneEmptyBatches()
 	a.Fast.SetLANIP(LanIP())
 	a.Fast.SetOutputDir(a.OutputDir)
 	a.Fast.SetOnReceived(func(name string, size int64, dest string) {
@@ -460,6 +518,7 @@ func (a *App) maintain() {
 	a.pruneStaleDevices(10 * time.Minute)
 	a.pruneIdleSessions(10 * time.Minute)
 	a.pruneOldThumbs(7 * 24 * time.Hour)
+	a.Store.PruneEmptyBatches()
 	a.Store.Checkpoint()
 	fmt.Println("maintain  lan=", ip)
 }
@@ -691,10 +750,10 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/usb/speed", a.usbSpeed)
 	mux.HandleFunc("POST /api/usb/retry_speed_test", a.usbSpeed)
 	mux.HandleFunc("POST /api/usb/skip_speed_test", a.skipSpeed)
-	mux.HandleFunc("POST /api/directories/list", a.listDirs)
 	mux.HandleFunc("GET /api/history/batches", a.histBatches)
 	mux.HandleFunc("GET /api/history/devices", a.histDevices)
 	mux.HandleFunc("POST /api/history/clear", a.histClear)
+	mux.HandleFunc("POST /api/history/forget", a.histForget)
 	mux.HandleFunc("GET /api/gallery", a.gallery)
 	mux.HandleFunc("GET /api/gallery/batch", a.galleryBatch)
 	mux.HandleFunc("POST /api/reveal", a.revealPath)
@@ -711,20 +770,89 @@ func (a *App) Handler() http.Handler {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
-	return withCORS(mux)
+	return withGuard(mux)
 }
 
-func withCORS(next http.Handler) http.Handler {
+// withGuard 只放行本机界面与局域网里的手机：
+//   - Host 必须是 IP 或 localhost，挡住 DNS rebinding（用域名指到 127.0.0.1 的网页）。
+//   - 带 Origin 的请求（浏览器发起）只认 localhost / 纯 IP 的来源，
+//     普通网站的 Origin 是域名，会被挡在 CSRF 之外。
+//   - 手机 App 是原生请求，没有 Origin，直接放行。
+func withGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		if !allowedHost(r.Host) {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			if !allowedOrigin(origin) {
+				http.Error(w, "forbidden origin", http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func allowedHost(host string) bool {
+	if host == "" {
+		return true
+	}
+	h := host
+	if v, _, err := net.SplitHostPort(host); err == nil {
+		h = v
+	}
+	h = strings.Trim(h, "[]")
+	if h == "localhost" {
+		return true
+	}
+	return net.ParseIP(h) != nil
+}
+
+func allowedOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return allowedHost(u.Host)
+}
+
+// safeSegment 保证 device_id / batch_id 这类值只能当一层目录名用，
+// 不会被 ../ 或绝对路径带出输出目录。
+func safeSegment(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "." || s == ".." {
+		return "", false
+	}
+	if strings.ContainsAny(s, "/\\") || strings.ContainsRune(s, 0) {
+		return "", false
+	}
+	return s, true
+}
+
+// safeUnder 把 rel 拼到 base 下，越界就拒绝（不建目录，读路径专用）。
+func safeUnder(base, rel string) (string, bool) {
+	root, err := filepath.Abs(base)
+	if err != nil {
+		return "", false
+	}
+	abs, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return "", false
+	}
+	if abs != root && !strings.HasPrefix(abs, root+string(os.PathSeparator)) {
+		return "", false
+	}
+	return abs, true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -768,15 +896,21 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 	for _, x := range ips {
 		urls = append(urls, fmt.Sprintf("http://%s:%d", x, HTTPPort))
 	}
-	writeJSON(w, 200, map[string]any{
+	info := map[string]any{
 		"success": true, "ip": ip, "ips": ips, "port": HTTPPort,
-		"url":      fmt.Sprintf("http://%s:%d", ip, HTTPPort),
-		"urls":     urls,
-		"tcp_port": fast.TCPPort, "ftp_port": fast.FTPPort,
+		"url":               fmt.Sprintf("http://%s:%d", ip, HTTPPort),
+		"urls":              urls,
 		"apk_url":           APKDownloadURL,
-		"protocols":         []string{"tcp", "ftp", "http_put", "http_multipart"},
 		"connected_devices": list, "device_count": len(list),
-	})
+	}
+	caps := a.Fast.Caps(ip, HTTPPort)
+	for _, k := range []string{"tcp_port", "ftp_port", "prefer"} {
+		if v, ok := caps[k]; ok {
+			info[k] = v
+		}
+	}
+	info["protocols"] = caps["prefer"]
+	writeJSON(w, 200, info)
 }
 
 func (a *App) touchDevice(id, name string) {
@@ -856,6 +990,7 @@ func (a *App) wifiSetOut(w http.ResponseWriter, r *http.Request) {
 	a.OutputDir = dir
 	a.mu.Unlock()
 	a.Fast.SetOutputDir(dir)
+	a.saveSettings(dir)
 	writeJSON(w, 200, map[string]any{"success": true, "output_dir": dir})
 }
 
@@ -941,7 +1076,8 @@ func (a *App) safeLocal(p string) (string, bool) {
 		return "", false
 	}
 	a.mu.Lock()
-	roots := []string{a.wifiOut, a.OutputDir}
+	// 默认目录也算数：用户改过输出目录之后，老批次仍然躺在默认目录里
+	roots := []string{a.wifiOut, a.OutputDir, defaultOutputDir()}
 	a.mu.Unlock()
 	sep := string(os.PathSeparator)
 	for _, root := range roots {
@@ -993,7 +1129,16 @@ func (a *App) wifiPhoto(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	base := a.wifiOut
 	a.mu.Unlock()
-	p := filepath.Join(base, id, filepath.FromSlash(rest))
+	seg, ok := safeSegment(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	p, ok := safeUnder(filepath.Join(base, seg), rest)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 	http.ServeFile(w, r, p)
 }
 
@@ -1072,8 +1217,14 @@ func (a *App) wifiUpload(w http.ResponseWriter, r *http.Request) {
 func (a *App) wifiDeletePhoto(w http.ResponseWriter, r *http.Request) {
 	body := readJSON(r)
 	p, _ := body["path"].(string)
-	if p != "" {
-		_ = os.Remove(p)
+	abs, ok := a.safeLocal(p)
+	if !ok {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "路径不在输出目录内"})
+		return
+	}
+	if err := os.Remove(abs); err != nil && !os.IsNotExist(err) {
+		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+		return
 	}
 	writeJSON(w, 200, map[string]any{"success": true})
 }
@@ -1085,9 +1236,18 @@ func (a *App) wifiDeleteBatch(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	base := a.wifiOut
 	a.mu.Unlock()
-	if deviceID != "" && batchID != "" {
-		_ = os.RemoveAll(filepath.Join(base, deviceID, batchID))
+	dev, okDev := safeSegment(deviceID)
+	bat, okBat := safeSegment(batchID)
+	if !okDev || !okBat {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "参数不合法"})
+		return
 	}
+	target, ok := safeUnder(base, filepath.Join(dev, bat))
+	if !ok {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "路径不在输出目录内"})
+		return
+	}
+	_ = os.RemoveAll(target)
 	writeJSON(w, 200, map[string]any{"success": true})
 }
 
@@ -1132,7 +1292,7 @@ func (a *App) wifiCheckFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) fastCaps(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, fast.Caps(LanIP(), HTTPPort))
+	writeJSON(w, 200, a.Fast.Caps(LanIP(), HTTPPort))
 }
 
 func (a *App) fastPut(w http.ResponseWriter, r *http.Request) {
@@ -1427,18 +1587,22 @@ func (a *App) inboxStatus(w http.ResponseWriter, r *http.Request) {
 			a.inbox.Live = map[string]int64{}
 			if a.inbox.DeviceID != "" && a.inbox.BatchID != "" {
 				elapsed := 0
-				if !a.inbox.Started.IsZero() {
-					elapsed = int(time.Since(a.inbox.Started).Seconds())
+				if !a.inbox.Started.IsZero() && a.inbox.LastAt.After(a.inbox.Started) {
+					elapsed = int(a.inbox.LastAt.Sub(a.inbox.Started).Seconds())
 				}
-				_ = a.Store.SaveBatch(store.Batch{
-					DeviceID: a.inbox.DeviceID, BatchID: a.inbox.BatchID,
-					Timestamp:   time.Now().Format("2006-01-02 15:04:05"),
-					PhotoCount:  a.inbox.Completed,
-					TotalSize:   a.inbox.Bytes,
-					TotalSizeMB: float64(a.inbox.Bytes) / 1024 / 1024,
-					Status:      "completed",
-					DurationSec: elapsed,
-				})
+				if a.inbox.Completed > 0 {
+					_ = a.Store.SaveBatch(store.Batch{
+						DeviceID: a.inbox.DeviceID, BatchID: a.inbox.BatchID,
+						Timestamp:   time.Now().Format("2006-01-02 15:04:05"),
+						PhotoCount:  a.inbox.Completed,
+						TotalSize:   a.inbox.Bytes,
+						TotalSizeMB: float64(a.inbox.Bytes) / 1024 / 1024,
+						Status:      "completed",
+						DurationSec: elapsed,
+					})
+				} else {
+					a.Store.DeleteBatch(a.inbox.DeviceID, a.inbox.BatchID)
+				}
 			}
 			if a.inbox.Completed > 0 && a.inbox.Notified != a.inbox.Seq {
 				a.inbox.Notified = a.inbox.Seq
@@ -1451,6 +1615,17 @@ func (a *App) inboxStatus(w http.ResponseWriter, r *http.Request) {
 	bytesDone := a.inbox.Bytes + liveSum(a.inbox.Live)
 	inst := a.inbox.Win.sample(bytesDone)
 	speed, eta, elapsed := transferPace(bytesDone, a.inbox.TotalBytes, a.inbox.Completed, a.inbox.Total, a.inbox.Started, inst)
+	if !receiving {
+		// 收完之后别再继续走秒表：以前把「最后一张之后的等待时间」也算成耗时，
+		// 3 张小图会显示成 34 秒，均速跟着失真。
+		eta = 0
+		if !a.inbox.Started.IsZero() && a.inbox.LastAt.After(a.inbox.Started) {
+			elapsed = a.inbox.LastAt.Sub(a.inbox.Started).Seconds()
+			if elapsed > 0.05 {
+				speed = float64(bytesDone) / 1024 / 1024 / elapsed
+			}
+		}
+	}
 	out := map[string]any{
 		"success":     true,
 		"receiving":   receiving,
@@ -1537,6 +1712,19 @@ func (a *App) histClear(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"success": true})
 }
 
+// histForget 把一条批次记录从图库里去掉，不删除磁盘上的任何文件。
+func (a *App) histForget(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	deviceID, _ := body["device_id"].(string)
+	batchID, _ := body["batch_id"].(string)
+	if deviceID == "" || batchID == "" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "缺少参数"})
+		return
+	}
+	a.Store.DeleteBatch(deviceID, batchID)
+	writeJSON(w, 200, map[string]any{"success": true})
+}
+
 func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.Store.Batches("")
 	if err != nil {
@@ -1594,6 +1782,14 @@ func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 		if len(files) > count {
 			count = len(files)
 		}
+		missing := len(files) == 0
+		if !missing {
+			if p, _ := files[0]["path"].(string); p != "" {
+				if _, err := os.Stat(p); err != nil {
+					missing = true
+				}
+			}
+		}
 		size := b.TotalSize
 		if size == 0 {
 			for _, f := range files {
@@ -1608,7 +1804,7 @@ func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 		out = append(out, map[string]any{
 			"device_id": b.DeviceID, "device_name": name, "batch_id": b.BatchID,
 			"photo_count": count, "folder": folder, "cover": cover,
-			"previews": previews, "timestamp": b.Timestamp, "status": b.Status,
+			"previews": previews, "timestamp": b.Timestamp, "status": b.Status, "missing": missing,
 			"total_size": size, "total_size_mb": float64(size) / 1024 / 1024,
 			"duration_sec": b.DurationSec,
 		})
@@ -1676,27 +1872,4 @@ func (a *App) batchFiles(deviceID, batchID, folder string) []map[string]any {
 
 func isImage(p string) bool {
 	return imageExt[strings.ToLower(filepath.Ext(p))]
-}
-
-func (a *App) listDirs(w http.ResponseWriter, r *http.Request) {
-	body := readJSON(r)
-	path, _ := body["path"].(string)
-	if path == "" {
-		home, _ := os.UserHomeDir()
-		path = home
-	}
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		writeJSON(w, 400, map[string]any{"success": false, "error": err.Error()})
-		return
-	}
-	var dirs []map[string]any
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		dirs = append(dirs, map[string]any{"name": e.Name(), "path": filepath.Join(path, e.Name())})
-	}
-	parent := filepath.Dir(path)
-	writeJSON(w, 200, map[string]any{"success": true, "current": path, "parent": parent, "directories": dirs})
 }

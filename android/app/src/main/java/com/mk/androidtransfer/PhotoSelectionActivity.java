@@ -83,6 +83,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
     private MaterialButton btnWeek;
     private MaterialButton btnSort;
     private MaterialButton btnFilterUploaded;
+    private MaterialButton btnMore;
     private RecyclerView recyclerViewPhotos;
     private RecyclerView recyclerViewAlbums;  // 相册列表
     private FrameLayout loadingContainer;
@@ -168,15 +169,19 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         btnWeek = findViewById(R.id.btnWeek);
         btnSort = findViewById(R.id.btnSort);
         btnFilterUploaded = findViewById(R.id.btnFilterUploaded);
+        btnMore = findViewById(R.id.btnMore);
         recyclerViewPhotos = findViewById(R.id.recyclerViewPhotos);
         recyclerViewAlbums = findViewById(R.id.recyclerViewAlbums);
         loadingContainer = findViewById(R.id.loadingContainer);
         emptyState = findViewById(R.id.emptyState);
         fabUpload = findViewById(R.id.fabUpload);
         
-        // 设置服务器名称
+        // 标题写「相册」，副标题只写传给谁。
+        // 之前标题是空的，副标题塞成「从 Mingkang MacBook Air (618) 选择照片」，
+        // 一行放不下就折成两行，页头看着是断的。
+        tvPhotoTitle.setText(R.string.photo_albums);
         if (serverName != null && !serverName.isEmpty()) {
-            tvPhotoSubtitle.setText(getString(R.string.select_from_server, serverName));
+            tvPhotoSubtitle.setText(getString(R.string.send_to_server, serverName));
         }
     }
 
@@ -242,6 +247,12 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         btnFilterUploaded.setOnClickListener(v -> {
             toggleFilterUploaded();
         });
+
+        // 次级操作：取消全选 / 排序 / 排除已上传，都收在这里，
+        // 复用上面已有的点击逻辑，避免两套实现走散。
+        if (btnMore != null) {
+            btnMore.setOnClickListener(this::showMoreMenu);
+        }
 
         // 上传照片
         fabUpload.setOnClickListener(v -> {
@@ -469,9 +480,8 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         // 在相册视图下，始终显示操作按钮（用于相册选择）
         findViewById(R.id.actionButtonsScroll).setVisibility(View.VISIBLE);
         
-        // 显示全选和取消全选按钮
+        // 显示全选；取消全选已经收进「更多」菜单
         btnSelectAll.setVisibility(View.VISIBLE);
-        btnDeselectAll.setVisibility(View.VISIBLE);
         
         // 隐藏排序和过滤按钮（相册视图不需要）
         btnSort.setVisibility(View.GONE);
@@ -501,13 +511,10 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         findViewById(R.id.actionButtonsScroll).setVisibility(View.VISIBLE);
         chipSelectionCount.setVisibility(View.VISIBLE);
         
-        // 显示全选和取消全选按钮
+        // 显示全选；取消全选已经收进「更多」菜单
         btnSelectAll.setVisibility(View.VISIBLE);
-        btnDeselectAll.setVisibility(View.VISIBLE);
         
         // 显示排序和过滤按钮
-        btnSort.setVisibility(View.VISIBLE);
-        btnFilterUploaded.setVisibility(View.VISIBLE);
         
         // 如果选中了相册，显示相册名称
         if (currentAlbum != null) {
@@ -614,7 +621,6 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         
         // 确保选择按钮可见
         btnSelectAll.setVisibility(View.VISIBLE);
-        btnDeselectAll.setVisibility(View.VISIBLE);
         
         // 隐藏其他按钮
         btnSort.setVisibility(View.GONE);
@@ -646,7 +652,6 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         
         // 保持选择按钮可见（方便用户再次快速选择）
         btnSelectAll.setVisibility(View.VISIBLE);
-        btnDeselectAll.setVisibility(View.VISIBLE);
         
         // 隐藏其他按钮（相册视图不需要排序和过滤）
         btnSort.setVisibility(View.GONE);
@@ -699,18 +704,35 @@ public class PhotoSelectionActivity extends AppCompatActivity {
             photosToUpload.addAll(album.getPhotos());
         }
         
-        // 显示确认对话框
-        int albumCount = selectedAlbums.size();
-        int photoCount = photosToUpload.size();
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.confirm_upload)
-                .setMessage(getString(R.string.upload_albums_message, albumCount, photoCount))
-                .setPositiveButton(R.string.confirm, (dialog, which) -> {
-                    startUpload(photosToUpload);
-                    exitAlbumSelectionMode();
-                })
-                .setNegativeButton(R.string.cancel, null)
-                .show();
+        // 按钮上已经写着要传多少张，传输页本身可以随时取消，
+        // 这里再弹一次「确定吗」只是多一步点击。
+        startUpload(photosToUpload);
+        exitAlbumSelectionMode();
+    }
+
+    private void showMoreMenu(View anchor) {
+        android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
+        menu.getMenu().add(0, 1, 0, R.string.deselect_all);
+        if (!isAlbumView) {
+            menu.getMenu().add(0, 2, 1, R.string.sort);
+            menu.getMenu().add(0, 3, 2, R.string.exclude_uploaded);
+        }
+        menu.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case 1:
+                    btnDeselectAll.performClick();
+                    return true;
+                case 2:
+                    showSortDialog();
+                    return true;
+                case 3:
+                    toggleFilterUploaded();
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        menu.show();
     }
 
     /**
@@ -758,22 +780,14 @@ public class PhotoSelectionActivity extends AppCompatActivity {
             return;
         }
 
-        // 显示确认对话框
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.confirm_upload)
-                .setMessage(getString(R.string.upload_files_message, selectedPhotos.size()))
-                .setPositiveButton(R.string.upload, (dialog, which) -> {
-                    // 跳转到上传进度页面
-                    Intent intent = new Intent(PhotoSelectionActivity.this, UploadProgressActivity.class);
-                    intent.putExtra("server_url", serverUrl);
-                    intent.putExtra("server_name", serverName);
-                    intent.putParcelableArrayListExtra("selected_photos", new ArrayList<>(selectedPhotos));
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
-                    startActivity(intent);
-                    overridePendingTransition(0, 0);
-                })
-                .setNegativeButton(R.string.cancel, null)
-                .show();
+        // 同上：直接进传输页，少一次确认
+        Intent intent = new Intent(PhotoSelectionActivity.this, UploadProgressActivity.class);
+        intent.putExtra("server_url", serverUrl);
+        intent.putExtra("server_name", serverName);
+        intent.putParcelableArrayListExtra("selected_photos", new ArrayList<>(selectedPhotos));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        startActivity(intent);
+        overridePendingTransition(0, 0);
     }
 
     /**

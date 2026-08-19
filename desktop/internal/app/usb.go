@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -412,16 +413,18 @@ func (a *App) thumb(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// 缓存键带上文件大小：手机上同名文件换了内容时，不能再给旧缩略图
+	size := a.ADB.FileSize(remote)
 	key := strings.ReplaceAll(remote, "/", "_")
-	if len(key) > 180 {
-		key = key[len(key)-180:]
+	if len(key) > 160 {
+		key = key[len(key)-160:]
 	}
+	key = fmt.Sprintf("%s.%d", key, size)
 	local := filepath.Join(a.ThumbDir, key)
 	if st, err := os.Stat(local); err == nil && st.Size() > 0 {
 		http.ServeFile(w, r, local)
 		return
 	}
-	size := a.ADB.FileSize(remote)
 	if size > 2*1024*1024 {
 		http.Error(w, "too large", 404)
 		return
@@ -465,15 +468,18 @@ func (a *App) listAlbumMedia(album string) []string {
 
 func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	a.xferMu.Lock()
-	if a.xferRunning {
+	if a.xferActive {
 		a.xferMu.Unlock()
 		writeJSON(w, 400, map[string]any{"success": false, "error": "传输正在进行中"})
 		return
 	}
+	a.xferActive = true
 	a.xferRunning = true
 	a.xferPaused = false
 	a.xferStop = false
 	a.xferDone = 0
+	a.xferOK = 0
+	a.xferStopped = false
 	a.xferFailed = nil
 	a.xferBytes = 0
 	a.xferTotalB = 0
@@ -536,6 +542,7 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(photos) == 0 {
 		a.xferMu.Lock()
+		a.xferActive = false
 		a.xferRunning = false
 		a.xferMu.Unlock()
 		writeJSON(w, 400, map[string]any{"success": false, "error": "没有要传输的文件"})
@@ -545,7 +552,9 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	if deviceID == "" {
 		deviceID = "usb"
 	}
+	a.devMu.Lock()
 	deviceName := strings.TrimSpace(a.model)
+	a.devMu.Unlock()
 	if deviceName == "" {
 		deviceName = strings.TrimSpace(a.ADB.Prop("ro.product.model"))
 	}
@@ -560,38 +569,56 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	a.OutputDir = output
 	a.mu.Unlock()
 	a.Fast.SetOutputDir(output)
+	a.saveSettings(output)
 	a.Store.UpsertDevice(deviceID, deviceName)
+	ctx, cancel := context.WithCancel(context.Background())
 	a.xferMu.Lock()
 	a.xferTotal = len(photos)
 	a.xferOut = dest
 	a.xferDevice = deviceID
 	a.xferBatch = batchID
+	a.xferCancel = cancel
 	a.xferMu.Unlock()
 	_ = a.Store.SaveBatch(store.Batch{
 		DeviceID: deviceID, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 		PhotoCount: len(photos), Status: "uploading",
 	})
-	go a.runTransfer(photos, dest, deviceID, batchID)
+	go a.runTransfer(ctx, photos, dest, deviceID, batchID)
 	writeJSON(w, 200, map[string]any{"success": true, "total": len(photos), "device_id": deviceID, "batch_id": batchID})
 }
 
-func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
+func (a *App) runTransfer(ctx context.Context, photos []string, output, deviceID, batchID string) {
 	defer func() {
 		a.xferMu.Lock()
+		a.xferActive = false
 		a.xferRunning = false
+		if a.xferCancel != nil {
+			a.xferCancel()
+			a.xferCancel = nil
+		}
 		a.xferFile = "完成"
 		elapsed := int(time.Since(a.xferStart).Seconds())
-		done := a.xferDone
+		done := a.xferOK
 		bytes := a.xferBytes
 		failedN := len(a.xferFailed)
 		stopped := a.xferStop
 		a.xferLive = map[string]int64{}
 		a.xferMu.Unlock()
-		_ = a.Store.SaveBatch(store.Batch{
-			DeviceID: deviceID, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
-			PhotoCount: done, TotalSize: bytes, TotalSizeMB: float64(bytes) / 1024 / 1024,
-			Status: "completed", DurationSec: elapsed,
-		})
+		if done == 0 {
+			// 一张都没落盘（多半是刚开始就被停掉）：别在图库里留一张「0 张」的空卡
+			a.Store.DeleteBatch(deviceID, batchID)
+			_ = os.Remove(filepath.Join(a.OutputDir, deviceID, batchID))
+		} else {
+			status := "completed"
+			if stopped {
+				status = "stopped"
+			}
+			_ = a.Store.SaveBatch(store.Batch{
+				DeviceID: deviceID, BatchID: batchID, Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+				PhotoCount: done, TotalSize: bytes, TotalSizeMB: float64(bytes) / 1024 / 1024,
+				Status: status, DurationSec: elapsed,
+			})
+		}
 		if a.OnNotify != nil && done+failedN > 0 {
 			title := "USB 传输完成"
 			if stopped {
@@ -643,11 +670,15 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 					a.xferFile = name
 					if err != nil {
 						a.xferFailed = append(a.xferFailed, map[string]any{"path": remote, "error": err.Error()})
-					} else if sz > 0 {
+					} else {
+						a.xferOK++ // 「完成」只算真正落盘的；中断和失败不能混进来
 						a.xferBytes += sz
-						a.Store.AddPhoto(deviceID, batchID, path.Base(local), local, sz)
 					}
 					a.xferMu.Unlock()
+					// 落库放在锁外，别让 SQLite 写盘卡住其他 worker 的进度上报
+					if err == nil && sz > 0 {
+						a.Store.AddPhoto(deviceID, batchID, path.Base(local), local, sz)
+					}
 				}
 
 				if st, err := os.Stat(local); err == nil {
@@ -675,13 +706,24 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 					a.xferMu.Unlock()
 				}
 				if size >= 32<<20 {
-					largeCh <- struct{}{}
+					select {
+					case largeCh <- struct{}{}:
+					case <-ctx.Done():
+						return
+					}
 				}
-				err := a.ADB.PullProgress(remote, local, adb.PullTimeout(size), report)
+				err := a.ADB.PullProgressCtx(ctx, remote, local, adb.PullTimeout(size), report)
 				if size >= 32<<20 {
 					<-largeCh
 				}
 				if err != nil {
+					// 用户点了停止导致的中断不是「失败」，不进失败清单也不计数
+					if ctx.Err() != nil {
+						a.xferMu.Lock()
+						delete(a.xferLive, remote)
+						a.xferMu.Unlock()
+						return
+					}
 					finish(0, err)
 					continue
 				}
@@ -697,6 +739,11 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 			}
 		}()
 	}
+	workersDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(workersDone)
+	}()
 	for _, p := range photos {
 		a.xferMu.Lock()
 		stop := a.xferStop
@@ -704,10 +751,18 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 		if stop {
 			break
 		}
-		jobs <- p
+		select {
+		case jobs <- p:
+		case <-ctx.Done():
+			// 用户点了停止，worker 可能已经全退了，别在这里卡住
+		case <-workersDone:
+		}
+		if ctx.Err() != nil {
+			break
+		}
 	}
 	close(jobs)
-	wg.Wait()
+	<-workersDone
 }
 
 func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
@@ -715,6 +770,7 @@ func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
 	defer a.xferMu.Unlock()
 	total := a.xferTotal
 	done := a.xferDone
+	ok := a.xferOK
 	elapsed := 0.0
 	speed := 0.0
 	eta := 0
@@ -734,7 +790,8 @@ func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"is_running": a.xferRunning, "paused": a.xferPaused, "total": total, "current": done,
-		"completed_count": done, "failed": a.xferFailed, "current_file": a.xferFile,
+		"completed_count": ok, "failed": a.xferFailed, "current_file": a.xferFile,
+		"stopped":    a.xferStopped,
 		"bytes_done": bytesDone, "bytes_total": a.xferTotalB, "speed_mbps": speed,
 		"eta_sec": eta, "elapsed_sec": elapsed, "percent_completed": pct, "output_dir": a.xferOut,
 		"device_id": a.xferDevice, "batch_id": a.xferBatch,
@@ -758,8 +815,14 @@ func (a *App) resumeTransfer(w http.ResponseWriter, r *http.Request) {
 func (a *App) stopTransfer(w http.ResponseWriter, r *http.Request) {
 	a.xferMu.Lock()
 	a.xferStop = true
+	a.xferStopped = true
+	a.xferPaused = false
 	a.xferRunning = false
+	cancel := a.xferCancel
 	a.xferMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	writeJSON(w, 200, map[string]any{"success": true})
 }
 

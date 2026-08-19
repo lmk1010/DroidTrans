@@ -1,3 +1,23 @@
+// 前端一旦抛异常，视图可能一个都没激活，用户看到的就是一片空白。
+// 把错误显示出来，至少知道发生了什么、能截图反馈。
+window.addEventListener('error', (e) => {
+  showFatal(e.message + (e.filename ? `  (${String(e.filename).split('/').pop()}:${e.lineno})` : ''));
+});
+window.addEventListener('unhandledrejection', (e) => {
+  showFatal(String(e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+
+function showFatal(msg) {
+  let el = document.getElementById('fatal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fatal';
+    el.className = 'fatal';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+}
+
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
@@ -32,7 +52,7 @@ const I18N = {
     copy: '复制', copied: '已复制', open: '打开文件夹', openShort: '打开',
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
-    localAddr: '本机地址', online: '在线设备', batches: '最近图库',
+    localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
     noPhone: '还没有手机连上来', noPhoneHint: '打开手机 App，搜到这台电脑即可',
     homeNextUsb: '手机已连上，去 USB 选相册。',
     homeNextAllow: '点 USB，页面会停在「允许调试」这一步。',
@@ -44,7 +64,7 @@ const I18N = {
     noHist: '图库还是空的', noHistHint: '从 USB 或 Wi-Fi 传过来，就会出现在这里。',
     unauth: '设备未授权 USB 调试', offline: '未连接设备',
     recv: '正在接收', got: '已收到', photos: '张',
-    recentGallery: '最近图库', openGallery: '打开图库', reveal: '在访达中显示',
+    recentGallery: '最近图库', openGallery: '打开图库', reveal: '在访达中显示', forget: '从图库移除记录',
     copyPath: '复制路径', delBatch: '删除这一批', copyAddr: '复制本机地址',
     goUsb: '打开 USB', goWifi: '打开 Wi-Fi', goHist: '打开图库',
     seeGallery: '查看', backAlbums: '← 返回相册',
@@ -53,6 +73,7 @@ const I18N = {
     etaLeft: '还剩',
     avgSpeed: '均速',
     chipToday: '今天', chipWeek: '近 7 天', chipCamera: '整个相机',
+    pause: '暂停', resume: '继续', stop: '停止', paused: '已暂停', stopping: '正在停止…',
     xferN: '传输 {n} 张',
     recentNone: '这段时间相机里没有新照片',
     apkBtn: '下载 App',
@@ -77,7 +98,7 @@ const I18N = {
     copy: 'Copy', copied: 'Copied', open: 'Open folder', openShort: 'Open',
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
-    localAddr: 'This computer', online: 'Online', batches: 'Recent gallery',
+    localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
     noPhone: 'No phone yet', noPhoneHint: 'Open the app on your phone and find this computer',
     homeNextUsb: 'Phone connected. Open USB to pick albums.',
     homeNextAllow: 'Open USB. The page will stop on Allow debugging.',
@@ -89,7 +110,7 @@ const I18N = {
     noHist: 'Gallery is empty', noHistHint: 'Files you send over USB or Wi-Fi show up here.',
     unauth: 'USB debugging not authorized', offline: 'No device',
     recv: 'Receiving', got: 'Received', photos: 'photos',
-    recentGallery: 'Recent', openGallery: 'Open gallery', reveal: 'Reveal in Finder',
+    recentGallery: 'Recent', openGallery: 'Open gallery', reveal: 'Reveal in Finder', forget: 'Remove from gallery',
     copyPath: 'Copy path', delBatch: 'Delete batch', copyAddr: 'Copy address',
     goUsb: 'Open USB', goWifi: 'Open Wi-Fi', goHist: 'Open gallery',
     toPhotos: 'Add to Photos',
@@ -98,6 +119,7 @@ const I18N = {
     etaLeft: 'left',
     avgSpeed: 'avg',
     chipToday: 'Today', chipWeek: 'Last 7 days', chipCamera: 'Whole camera',
+    pause: 'Pause', resume: 'Resume', stop: 'Stop', paused: 'Paused', stopping: 'Stopping…',
     xferN: 'Transfer {n}',
     recentNone: 'No new camera photos in that period',
     apkBtn: 'Get app',
@@ -157,6 +179,21 @@ function formatBatch(id) {
   if (!m) return id || '';
   if (state.lang === 'en') return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
   return `${Number(m[2])}月${Number(m[3])}日 ${m[4]}:${m[5]}`;
+}
+
+// 批次是按「什么时候传的」找的，所以标题给时间：今天/昨天用相对说法，更快定位
+function batchTitle(id) {
+  const m = String(id || '').match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
+  if (!m) return id || '';
+  const zh = state.lang === 'zh';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const today = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(today) - day(d)) / 86400000);
+  const hhmm = `${m[4]}:${m[5]}`;
+  if (diff === 0) return zh ? `今天 ${hhmm}` : `Today ${hhmm}`;
+  if (diff === 1) return zh ? `昨天 ${hhmm}` : `Yesterday ${hhmm}`;
+  return zh ? `${Number(m[2])}月${Number(m[3])}日 ${hhmm}` : `${m[2]}-${m[3]} ${hhmm}`;
 }
 
 function fmtBytes(n) {
@@ -219,6 +256,7 @@ const I_USB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 const I_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5L20 7"/></svg>';
 const I_DEVICE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="8" y="2.5" width="8" height="14" rx="1.6"/><path d="M10 18.5h4"/><path d="M7 21h10"/></svg>';
 const I_STACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/></svg>';
+const I_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const I_FILM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M8 5v14M16 5v14M3.5 9h17M3.5 15h17"/></svg>';
 
 const BRANDS = [
@@ -262,13 +300,7 @@ function phoneFrame(inner) {
   </svg>`;
 }
 
-function sceneBadge(brand) {
-  if (!brand || !BRAND_LOGO[brand]) return '';
-  return `<span class="scene-badge">${BRAND_LOGO[brand]}</span>`;
-}
-
-function sceneHTML(scene, brand) {
-  const badge = sceneBadge(brand);
+function sceneHTML(scene) {
   if (scene === 'brand') {
     return `<div class="scene-art scene-pick">
       <span class="scene-app">${APP_LOGO}</span>
@@ -283,7 +315,7 @@ function sceneHTML(scene, brand) {
         <circle r="7" fill="rgba(76,141,255,0.18)" stroke="#4C8DFF" stroke-width="1.8"/>
         <text y="4" text-anchor="middle" fill="#4C8DFF" font-size="9" font-weight="700" font-family="-apple-system,sans-serif">7</text>
       </g>
-    `)}${badge}</div>`;
+    `)}</div>`;
   }
   if (scene === 'debug') {
     return `<div class="scene-art">${phoneFrame(`
@@ -291,14 +323,13 @@ function sceneHTML(scene, brand) {
       <circle cx="41" cy="47" r="5.2" fill="#fff"/>
       <path d="M26 64h20" stroke="rgba(255,255,255,0.18)" stroke-width="2.2" stroke-linecap="round"/>
       <path d="M28 70h16" stroke="rgba(255,255,255,0.1)" stroke-width="2.2" stroke-linecap="round"/>
-    `)}${badge}</div>`;
+    `)}</div>`;
   }
   if (scene === 'cable') {
     return `<div class="scene-art scene-link">
       <svg class="mac-svg" viewBox="0 0 56 40" fill="none"><rect x="4" y="4" width="48" height="28" rx="4" fill="#16181f" stroke="rgba(255,255,255,0.22)" stroke-width="1.6"/><rect x="10" y="10" width="36" height="16" rx="2" fill="rgba(76,141,255,0.18)"/><path d="M18 36h20" stroke="rgba(255,255,255,0.35)" stroke-width="2.4" stroke-linecap="round"/></svg>
       <span class="cable"><i></i></span>
       ${phoneFrame('<rect x="24" y="36" width="24" height="28" rx="3" fill="rgba(76,141,255,0.16)"/>')}
-      ${badge}
     </div>`;
   }
   if (scene === 'allow') {
@@ -306,27 +337,26 @@ function sceneHTML(scene, brand) {
       <rect x="22" y="32" width="28" height="36" rx="5" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.16)"/>
       <rect x="26" y="50" width="20" height="8" rx="4" fill="#4C8DFF"/>
       <path d="M28 40h16M28 45h10" stroke="rgba(255,255,255,0.35)" stroke-width="1.6" stroke-linecap="round"/>
-    `)}<span class="ring"></span><span class="ring delay"></span>${badge}</div>`;
+    `)}<span class="ring"></span><span class="ring delay"></span></div>`;
   }
   if (scene === 'mtp') {
     return `<div class="scene-art">${phoneFrame(`
       <rect x="22" y="28" width="28" height="10" rx="2" fill="rgba(255,211,106,0.22)"/>
       <rect x="26" y="48" width="20" height="16" rx="3" fill="none" stroke="#4C8DFF" stroke-width="1.8"/>
       <path d="M32 56h8M36 52v8" stroke="#4C8DFF" stroke-width="1.8" stroke-linecap="round"/>
-    `)}${badge}</div>`;
+    `)}</div>`;
   }
   if (scene === 'offline') {
     return `<div class="scene-art scene-link">
       <svg class="mac-svg" viewBox="0 0 56 40" fill="none"><rect x="4" y="4" width="48" height="28" rx="4" fill="#16181f" stroke="rgba(255,255,255,0.22)" stroke-width="1.6"/></svg>
       <span class="cable broken"><i></i></span>
       ${phoneFrame('')}
-      ${badge}
     </div>`;
   }
   if (scene === 'done') {
-    return `<div class="scene-art scene-ok"><span class="ok-ring"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12l5 5L20 7"/></svg>${badge}</div>`;
+    return `<div class="scene-art scene-ok"><span class="ok-ring"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12l5 5L20 7"/></svg></div>`;
   }
-  return `<div class="scene-art scene-wait"><span class="ring"></span><span class="ring delay"></span>${badge}</div>`;
+  return `<div class="scene-art scene-wait"><span class="ring"></span><span class="ring delay"></span></div>`;
 }
 
 function liveCopy(kind) {
@@ -551,6 +581,7 @@ function paintWizard(force) {
   }
   if (stepsHTML) {
     stepsEl.classList.remove('hidden');
+    stepsEl.classList.toggle('note-only', !!st.brands);
     setHTML(stepsEl, stepsHTML);
   } else {
     stepsEl.classList.add('hidden');
@@ -572,7 +603,7 @@ function paintWizard(force) {
   const sceneKey = `${st.scene || st.kind}:${guideBrand || ''}`;
   if (scene && scene.dataset.key !== sceneKey) {
     scene.dataset.key = sceneKey;
-    scene.innerHTML = sceneHTML(st.scene || st.kind, guideBrand);
+    scene.innerHTML = sceneHTML(st.scene || st.kind);
   }
   const liveEl = $('#wizLive');
   if (liveEl) liveEl.classList.toggle('wait', st.kind === 'allow' || st.kind === 'mtp' || st.kind === 'offline');
@@ -655,6 +686,7 @@ function hideGuidePanel() {
   wizardKind = '';
   const panel = $('#usbGuide');
   if (panel) panel.classList.add('hidden');
+  $('#view-usb')?.classList.remove('guiding');
 }
 
 function armUsbWatch() {
@@ -671,6 +703,7 @@ function disarmUsbWatch() {
 function startGuide() {
   const panel = $('#usbGuide');
   if (panel) panel.classList.remove('hidden');
+  $('#view-usb')?.classList.add('guiding');
   if (!wizardOpen) {
     lastUsbCode = lastUsbCode || '';
     if (lastGuide.dev?.brand && lastGuide.dev.brand !== 'generic' && !localStorage.getItem('droidtrans.brand')) {
@@ -758,7 +791,16 @@ document.addEventListener('click', (e) => {
 
 function show(view) {
   state.view = view;
-  $$('.view').forEach((el) => el.classList.toggle('active', el.id === 'view-' + view));
+  $$('.view').forEach((el) => {
+    const on = el.id === 'view-' + view;
+    el.classList.toggle('active', on);
+    el.classList.remove('enter');
+    if (on) {
+      void el.offsetWidth;
+      el.classList.add('enter');
+      setTimeout(() => el.classList.remove('enter'), 400);
+    }
+  });
   $$('nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   if (view !== 'usb') disarmUsbWatch();
   if (view === 'usb') refreshUsb();
@@ -825,6 +867,27 @@ async function refreshHome() {
   }
   maybeAutoScan(dev);
   lastGuide = { dev, wifiN: n };
+  renderHomeRecent();
+}
+
+let homeRecentKey = '';
+
+// 总览页下半屏原来是空的。把最近几批放上来：传完之后「东西在哪」一眼可见。
+async function renderHomeRecent() {
+  const box = $('#homeRecent');
+  if (!box) return;
+  const gal = await api('/api/gallery');
+  const items = (gal.batches || []).slice(0, 4);
+  if (!items.length) {
+    box.classList.add('hidden');
+    homeRecentKey = '';
+    return;
+  }
+  box.classList.remove('hidden');
+  const key = items.map((b) => `${b.device_id}/${b.batch_id}/${b.photo_count}/${b.cover || ''}`).join('|');
+  if (key === homeRecentKey) return;   // 每 4 秒刷新一次，内容没变就别重画，避免缩略图闪
+  homeRecentKey = key;
+  renderGallery('#homeGallery', items, 4);
 }
 
 async function refreshUsb() {
@@ -950,10 +1013,36 @@ function hidePhotos() {
   updateSelAll();
 }
 
+// 图片取不到时（文件被删/被移走）换成占位块，不要留一个裂图图标
 function bindImg(root) {
   (root.querySelectorAll ? root.querySelectorAll('img') : []).forEach((img) => {
-    img.addEventListener('error', () => { img.style.opacity = '0.18'; });
+    img.addEventListener('error', () => {
+      if (img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const ph = document.createElement('div');
+      ph.className = img.className ? `${img.className} ph gone` : 'ph gone';
+      ph.innerHTML = I_STACK;
+      img.replaceWith(ph);
+    });
   });
+}
+
+// 这个相册里有多少张被单独勾中了
+function selectedInAlbum(path) {
+  const prefix = String(path).replace(/\/+$/, '') + '/';
+  let n = 0;
+  state.selectedPhotos.forEach((p) => { if (p.startsWith(prefix)) n += 1; });
+  return n;
+}
+
+function albumMeta(al, picked, whole) {
+  const zh = state.lang === 'zh';
+  const total = al.total_count || 0;
+  const unit = zh ? '项' : 'items';
+  if (whole) return `${total} ${unit} · ${zh ? '全选' : 'all'}`;
+
+  if (picked > 0) return `${total} ${unit} · ${zh ? `已选 ${picked}` : `${picked} picked`}`;
+  return `${total} ${unit}`;
 }
 
 function renderAlbums(albums) {
@@ -966,18 +1055,37 @@ function renderAlbums(albums) {
     .forEach(([path, al]) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'album' + (state.selectedAlbums.has(path) ? ' on' : '');
+    // 按「今天 / 近 7 天」挑出来的是一张张单图，整册并没有被选中。
+    // 以前卡片上一点痕迹都没有，按钮却写着「传输 16 张」，用户根本看不出选了什么。
+    const picked = selectedInAlbum(path);
+    const total = al.total_count || 0;
+    // 散选正好覆盖整册时，就按「全选」显示，别让用户看着一横去数数
+    const whole = state.selectedAlbums.has(path) || (total > 0 && picked >= total);
+    btn.className = 'album' + (whole ? ' on' : (picked > 0 ? ' part' : ''));
     const src = al.cover ? `/api/thumb?path=${encodeURIComponent(al.cover)}` : '';
-    btn.innerHTML = `<img alt="" src="${src}" /><figcaption><strong>${esc(al.name || path)}</strong><small>${al.total_count || 0} ${state.lang === 'zh' ? '项' : 'items'}</small></figcaption>`;
+    // 勾选圈常驻，说明「点一下＝整册选中」；「挑单张」悬停出现，
+    // 原来只有双击能进相册，界面上没有任何提示。
+    btn.innerHTML = `<span class="thumb">
+        <img alt="" src="${src}" />
+        <span class="pick" aria-hidden="true">${I_CHECK}</span>
+        <span class="peek" data-peek="1">${state.lang === 'zh' ? '挑单张' : 'Pick photos'}</span>
+      </span>
+      <figcaption><strong>${esc(al.name || path)}</strong><small>${albumMeta(al, picked, whole)}</small></figcaption>`;
     btn.addEventListener('click', (e) => {
-      if (e.shiftKey) {
+      if (e.shiftKey || e.target.closest('[data-peek]')) {
         openAlbum(path);
         return;
       }
-      if (state.selectedAlbums.has(path)) state.selectedAlbums.delete(path);
-      else state.selectedAlbums.add(path);
+      const on = state.selectedAlbums.has(path);
+      if (on) {
+        state.selectedAlbums.delete(path);
+      } else {
+        state.selectedAlbums.add(path);
+        const prefix = String(path).replace(/\/+$/, '') + '/';
+        [...state.selectedPhotos].forEach((p) => { if (p.startsWith(prefix)) state.selectedPhotos.delete(p); });
+      }
       setChip('');
-      renderAlbums(state.albums);
+      renderAlbums(state.albums);   // 整册与散选互相影响，这里要重算所有卡的状态
       updateXferBtn();
     });
     btn.addEventListener('dblclick', () => openAlbum(path));
@@ -1003,13 +1111,29 @@ async function openAlbum(path) {
     b.type = 'button';
     b.className = 'photo' + (state.selectedPhotos.has(p.path) ? ' on' : '');
     const vid = p.video || isVideoPath(p.path || p.name);
-    b.innerHTML = vid
-      ? `<span class="vid" aria-hidden="true">${I_FILM}</span><figcaption><strong>${esc(p.name)}</strong></figcaption>`
-      : `<img alt="" src="/api/thumb?path=${encodeURIComponent(p.path)}" /><figcaption><strong>${esc(p.name)}</strong></figcaption>`;
-    b.addEventListener('click', () => {
-      if (state.selectedPhotos.has(p.path)) state.selectedPhotos.delete(p.path);
+    const media = vid
+      ? `<span class="vid" aria-hidden="true">${I_FILM}</span>`
+      : `<img alt="" src="/api/thumb?path=${encodeURIComponent(p.path)}" />`;
+    b.innerHTML = `<span class="thumb">
+        ${media}
+        <span class="pick" aria-hidden="true">${I_CHECK}</span>
+        <span class="peek" data-peek="1">${state.lang === 'zh' ? '看大图' : 'View'}</span>
+      </span>
+      <figcaption><strong>${esc(p.name)}</strong></figcaption>`;
+    b.addEventListener('click', (e) => {
+      if (e.target.closest('[data-peek]')) {
+        viewerPhotos = state.albumPhotos;
+        const idx = viewerPhotos.findIndex((x) => x.path === p.path);
+        showLightbox(idx < 0 ? 0 : idx);
+        return;
+      }
+      const on = state.selectedPhotos.has(p.path);
+      if (on) state.selectedPhotos.delete(p.path);
       else state.selectedPhotos.add(p.path);
-      openAlbum(path);
+      // 原来每选一张都重新 openAlbum()：走一次 adb 拉全相册再整片重画。
+      // 选 20 张就是 20 次设备往返，缩略图跟着闪。这里只切当前这张。
+      b.classList.toggle('on', !on);
+      updateSelAll();
       updateXferBtn();
     });
     b.addEventListener('dblclick', (e) => {
@@ -1103,6 +1227,20 @@ async function startUsbScan(opts = {}) {
 }
 
 $('#scanBtn').addEventListener('click', () => startUsbScan());
+$('#xferPause')?.addEventListener('click', async () => {
+  const st = await api('/api/transfer_status');
+  await api(st.paused ? '/api/resume_live' : '/api/pause_transfer', { method: 'POST', body: '{}' });
+  pollXfer();
+});
+
+$('#xferStop')?.addEventListener('click', async () => {
+  $('#xferText').textContent = t('stopping');
+  $('#xferPause').classList.add('hidden');
+  $('#xferStop').classList.add('hidden');
+  await api('/api/stop_transfer', { method: 'POST', body: '{}' });
+  pollXfer();
+});
+
 $('#chipToday')?.addEventListener('click', () => applyRecent('today'));
 $('#chipWeek')?.addEventListener('click', () => applyRecent('week'));
 $('#chipCamera')?.addEventListener('click', () => selectCameraAlbums());
@@ -1132,17 +1270,28 @@ async function pollXfer() {
   if (st.is_running) {
     $('#xferSee').classList.add('hidden');
     $('#xferImport')?.classList.add('hidden');
+    // 传输中必须能停下来：以前这里一个控制都没有，只能退出 App
+    $('#xferPause').classList.remove('hidden');
+    $('#xferStop').classList.remove('hidden');
+    $('#xferPause').textContent = st.paused ? t('resume') : t('pause');
     const pace = paceLine(st);
     const file = st.current_file || '';
-    $('#xferText').textContent = `${st.current || 0}/${st.total || 0}${file ? '  ' + file : ''}${pace ? '  ·  ' + pace : ''}`;
-    setTimeout(pollXfer, 400);
+    $('#xferText').textContent = st.paused
+      ? `${t('paused')}  ·  ${st.current || 0}/${st.total || 0}`
+      : `${st.current || 0}/${st.total || 0}${file ? '  ' + file : ''}${pace ? '  ·  ' + pace : ''}`;
+    setTimeout(pollXfer, st.paused ? 900 : 400);
     return;
   }
+  $('#xferPause').classList.add('hidden');
+  $('#xferStop').classList.add('hidden');
   const n = st.completed_count || 0;
   const fail = (st.failed || []).length;
   const bits = [];
-  bits.push(state.lang === 'zh' ? `完成 ${n} 张` : `Done ${n}`);
-  if (fail) bits.push(state.lang === 'zh' ? `失败 ${fail}` : `failed ${fail}`);
+  const zh = state.lang === 'zh';
+  // 停止过就别说「完成」——那是两回事
+  if (st.stopped) bits.push(zh ? `已停止 · 存下 ${n} 张` : `Stopped · ${n} saved`);
+  else bits.push(zh ? `完成 ${n} 张` : `Done ${n}`);
+  if (fail) bits.push(zh ? `失败 ${fail}` : `failed ${fail}`);
   const size = fmtBytes(st.bytes_done);
   if (size) bits.push(size);
   const dur = fmtDur(st.elapsed_sec);
@@ -1172,6 +1321,17 @@ function fileURL(p) {
   return `/api/thumb?path=${encodeURIComponent(p)}`;
 }
 
+// 只把记录从图库里去掉，磁盘上的文件不动
+async function forgetBatch(device, batch) {
+  await api('/api/history/forget', {
+    method: 'POST',
+    body: JSON.stringify({ device_id: device, batch_id: batch }),
+  });
+  homeRecentKey = '';
+  refreshHistory();
+  renderHomeRecent();
+}
+
 function renderGallery(target, batches, limit) {
   const el = $(target);
   const items = (batches || []).slice(0, limit || 48);
@@ -1192,23 +1352,29 @@ function renderGallery(target, batches, limit) {
       ? `<img class="cover" alt="" src="${fileURL(b.cover)}" />`
       : `<div class="cover ph">${I_STACK}</div>`;
     const name = b.device_name || deviceLabel(b.device_id);
-    const extra = [];
-    extra.push(`${b.photo_count || 0} ${t('photos')}`);
-    extra.push(formatBatch(b.batch_id));
     const sz = fmtBytes(b.total_size);
-    if (sz) extra.push(sz);
     const dur = fmtDur(b.duration_sec);
-    if (dur) extra.push(dur);
+    let avg = '';
     if (b.duration_sec > 0 && b.total_size > 0) {
-      const mbps = (b.total_size / 1024 / 1024) / b.duration_sec;
-      const avg = fmtSpeed(mbps);
-      if (avg) extra.push(avg);
+      avg = fmtSpeed((b.total_size / 1024 / 1024) / b.duration_sec) || '';
     }
-    return `<button type="button" class="shot"
-      data-device="${esc(b.device_id)}" data-batch="${esc(b.batch_id)}" data-folder="${esc(b.folder || '')}" data-name="${esc(name)}">
-      ${cover}
-      <span class="count">${b.photo_count || 0} ${t('photos')}</span>
-      <figcaption><strong>${esc(name)}</strong><small>${esc(extra.join(' · '))}</small></figcaption>
+    // 卡片一行放得下三项就够：张数、大小、哪台手机。
+    // 耗时和均速塞进去只会被省略号吃掉，放到悬停提示里。
+    const extra = [`${b.photo_count || 0} ${t('photos')}`];
+    if (sz) extra.push(sz);
+    extra.push(name);
+    const tip = [batchTitle(b.batch_id), `${b.photo_count || 0} ${t('photos')}`, sz, dur, avg, name]
+      .filter(Boolean).join('  ·  ');
+    const gone = !!b.missing;
+    // 放在最前面：这行会被省略号截断，最该看到的是「文件已不在」
+    if (gone) extra.unshift(state.lang === 'zh' ? '文件已不在' : 'files missing');
+    return `<button type="button" class="shot${gone ? ' gone-batch' : ''}" title="${esc(tip)}"
+      data-device="${esc(b.device_id)}" data-batch="${esc(b.batch_id)}" data-folder="${esc(b.folder || '')}" data-name="${esc(name)}" data-missing="${gone ? '1' : ''}">
+      <span class="thumb">
+        ${cover}
+        <span class="count">${b.photo_count || 0} ${t('photos')}</span>
+      </span>
+      <figcaption><strong>${esc(batchTitle(b.batch_id))}</strong><small>${esc(extra.join(' · '))}</small></figcaption>
     </button>`;
   }).join('');
   bindImg(el);
@@ -1224,6 +1390,7 @@ function renderGallery(target, batches, limit) {
         { label: t('copyPath'), act: () => copyText(btn.dataset.folder) },
         { label: t('copyName'), act: () => copyText(btn.dataset.name) },
         { sep: true },
+        { label: t('forget'), act: () => forgetBatch(btn.dataset.device, btn.dataset.batch) },
         { label: t('delBatch'), danger: true, act: () => deleteBatch(btn.dataset.device, btn.dataset.batch) },
       ],
     );
@@ -1497,9 +1664,7 @@ async function refreshWifi() {
   const jump = $('#wifiRecent');
   if (n) {
     jump.classList.remove('hidden');
-    jump.textContent = state.lang === 'zh'
-      ? `已收到 ${n} 批，去图库看`
-      : `${n} batches received — open gallery`;
+    jump.textContent = state.lang === 'zh' ? `去图库 · ${n} 批` : `Gallery · ${n}`;
   } else {
     jump.classList.add('hidden');
   }

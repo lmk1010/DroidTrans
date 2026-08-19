@@ -349,4 +349,13 @@
     <string name="protocol_ftp">FTP</string>
     <string name="protocol_http_put">HTTP PUT</string>
     <string name="protocol_http_form">HTTP form</string>
+
+    <string name="notif_channel_upload">Transfer progress</string>
+    <string name="notif_channel_upload_desc">Shows progress while files are being sent</string>
+    <string name="notif_uploading">Sending photos</string>
+    <string name="notif_upload_done">Transfer complete</string>
+    <string name="notif_upload_preparing">Preparing…</string>
+    <string name="notif_upload_progress">%1$d / %2$d  ·  %3$s</string>
+    <string name="more">More</string>
+    <string name="send_to_server">To %1$s</string>
 </resources>

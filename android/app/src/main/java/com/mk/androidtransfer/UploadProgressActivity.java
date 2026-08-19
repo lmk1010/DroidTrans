@@ -14,7 +14,9 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
+import android.annotation.SuppressLint;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.WindowInsetsController;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -137,6 +139,10 @@ public class UploadProgressActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_upload_progress);
 
+        // 传输期间保持屏幕常亮；真正保证「切后台也能传」的是 UploadService
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        ensureNotificationPermission();
+
         // 设置沉浸式状态栏
         setupImmersiveStatusBar();
 
@@ -178,6 +184,10 @@ public class UploadProgressActivity extends AppCompatActivity {
         ThemeBars.apply(this);
     }
 
+    // lint 把这里报成 InvalidSetHasFixedSize：usb_receiver / usb_transfer 两个布局里
+    // 有同名的 recyclerViewFiles 且是 wrap_content，它分不清本页面用的是哪一个。
+    // 本页面用的是 activity_upload_progress，高度 match_parent，setHasFixedSize 是对的。
+    @SuppressLint("InvalidSetHasFixedSize")
     private void initViews() {
         ImageButton btnBack = findViewById(R.id.btnBack);
         dataTransferAnimation = findViewById(R.id.dataTransferAnimation);
@@ -316,6 +326,8 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         isUploading = true;
         startedAt = System.currentTimeMillis();
+        // 拉起前台服务：这样锁屏、切到别的 App 都不会把传输掐掉，通知栏也能看到进度
+        UploadService.start(this, fileList.size());
         uploadedBytes.set(0);
         inflightBytes.clear();
 
@@ -656,6 +668,31 @@ public class UploadProgressActivity extends AppCompatActivity {
         }
     }
 
+    /** Android 13+ 不给通知权限就看不到传输进度通知，进页面时顺手要一次。 */
+    private void ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return;
+        }
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 9101);
+    }
+
+    private long lastNotifyAt = 0;
+
+    private void notifyService(int done, int total) {
+        long now = System.currentTimeMillis();
+        if (now - lastNotifyAt < 1000 && done < total) {
+            return;   // 通知一秒最多刷一次，避免频繁 startForegroundService
+        }
+        lastNotifyAt = now;
+        String text = getString(R.string.notif_upload_progress, done, total,
+                TransferFormat.bytes(uploadedBytes.get()));
+        UploadService.update(this, done, total, text);
+    }
+
     private void updateProgress() {
         int total = fileList.size();
         int completed = completedCount.get() + failedCount.get();
@@ -667,6 +704,9 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         progressBar.setProgressCompat(percent, true);
         tvProgressPercent.setText(percent + "%");
+        if (isUploading) {
+            notifyService(completed, total);
+        }
         tvProgressText.setText(getString(R.string.uploading_progress, uploading, completed, total));
 
         if (tvSpeedEta != null) {
@@ -725,9 +765,11 @@ public class UploadProgressActivity extends AppCompatActivity {
         if (failed == 0) {
             tvProgressText.setText(R.string.all_upload_complete);
             Toast.makeText(this, R.string.all_photos_uploaded, Toast.LENGTH_LONG).show();
+            UploadService.finish(this, getString(R.string.all_upload_complete));
         } else {
             tvProgressText.setText(getString(R.string.partial_upload, completed, failed));
             Toast.makeText(this, getString(R.string.upload_done_with_failures, failed), Toast.LENGTH_LONG).show();
+            UploadService.finish(this, getString(R.string.partial_upload, completed, failed));
         }
         if (tvSpeedEta != null) {
             long elapsedSec = Math.max(1, (System.currentTimeMillis() - startedAt) / 1000);
@@ -810,6 +852,7 @@ public class UploadProgressActivity extends AppCompatActivity {
             .setPositiveButton(R.string.confirm, (dialog, which) -> {
                 isCancelled = true;
                 isUploading = false;
+                UploadService.stop(UploadProgressActivity.this);
 
                 for (Call<?> call : activeCalls.values()) {
                     call.cancel();
@@ -928,7 +971,11 @@ public class UploadProgressActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        
+
+        if (isFinishing()) {
+            UploadService.stop(this);
+        }
+
         // 清理线程池资源
         if (executorService != null && !executorService.isShutdown()) {
             executorService.shutdownNow();

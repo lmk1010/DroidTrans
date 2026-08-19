@@ -71,11 +71,20 @@ public class PhotoScanner {
             }
         }
 
-        // 封面优先用 content URI，避免 DATA 为空时 Glide 加载失败
+        // 封面优先用 content URI，避免 DATA 为空时 Glide 加载失败。
+        // 同时优先挑一张图片当封面：视频要抽帧才能出图，慢且更容易失败。
         for (AlbumInfo album : albumMap.values()) {
-            if (!album.getPhotos().isEmpty()) {
-                album.setCoverPhotoPath(album.getPhotos().get(0).getLoadUri());
+            if (album.getPhotos().isEmpty()) {
+                continue;
             }
+            PhotoInfo cover = album.getPhotos().get(0);
+            for (PhotoInfo p : album.getPhotos()) {
+                if (!p.isVideo()) {
+                    cover = p;
+                    break;
+                }
+            }
+            album.setCoverPhotoPath(cover.getLoadUri());
         }
 
         List<AlbumInfo> albums = new ArrayList<>(albumMap.values());

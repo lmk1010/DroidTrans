@@ -18,6 +18,13 @@ import (
 
 static NSString *gURL;
 
+static BOOL dtCanNotify(void) {
+  // 直接跑裸二进制（README 里的 ../dist/droidtrans）时没有 bundle，
+  // 调 UNUserNotificationCenter 会抛 NSInternalInconsistencyException 把进程干掉。
+  return [[NSBundle mainBundle] bundleIdentifier] != nil;
+}
+
+
 @interface DTDragView : NSView
 @end
 @implementation DTDragView
@@ -83,6 +90,9 @@ static NSString *gURL;
   [fx addSubview:drag positioned:NSWindowAbove relativeTo:web];
 
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (!dtCanNotify()) {
+      return;
+    }
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
     [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
@@ -115,7 +125,7 @@ static NSString *gURL;
 - (BOOL)windowShouldClose:(NSWindow *)sender {
   [sender orderOut:nil];
   static BOOL told = NO;
-  if (!told) {
+  if (!told && dtCanNotify()) {
     told = YES;
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     UNMutableNotificationContent *content = [UNMutableNotificationContent new];
@@ -163,6 +173,9 @@ void DTNotify(const char *title, const char *body) {
   NSString *t = [NSString stringWithUTF8String:title ? title : ""];
   NSString *b = [NSString stringWithUTF8String:body ? body : ""];
   dispatch_async(dispatch_get_main_queue(), ^{
+    if (!dtCanNotify()) {
+      return;
+    }
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     UNMutableNotificationContent *content = [UNMutableNotificationContent new];
     content.title = t;

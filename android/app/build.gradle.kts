@@ -10,23 +10,27 @@ android {
         applicationId = "com.mk.androidtransfer"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // CI 打包时用 VERSION_CODE / VERSION_NAME 覆盖，否则每次发版都是同一个版本号，装不上去
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+        versionName = System.getenv("VERSION_NAME") ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // 只有环境变量里给了可用的 keystore 才建签名配置，
+    // 否则 release 构建走无签名产物，而不是拿一个不存在的文件去签名报错。
+    val releaseKeystore = System.getenv("RELEASE_KEYSTORE_FILE")
+        ?.let { rootProject.file(it) }
+        ?.takeIf { it.exists() }
+
     signingConfigs {
-        create("release") {
-            // 从环境变量读取签名配置，如果不存在则使用 debug 签名
-            storeFile = if (System.getenv("RELEASE_KEYSTORE_FILE") != null) {
-                rootProject.file(System.getenv("RELEASE_KEYSTORE_FILE"))
-            } else {
-                null
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
             }
-            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: "android"
-            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "androiddebugkey"
-            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "android"
         }
     }
 
@@ -37,7 +41,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {

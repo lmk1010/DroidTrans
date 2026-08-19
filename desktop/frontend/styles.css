@@ -118,7 +118,11 @@ nav button.active {
 }
 
 main { padding: 52px 40px 40px; overflow: auto; }
-.view { display: none; animation: rise 0.35s ease; }
+/* 默认状态必须是「可见」：入场动画只在切换时临时加一个 .enter。
+   之前动画写在 .view 上，WKWebView 里有一次没跑完就把整页停在 opacity:0，
+   界面全白，什么线索都没有。装饰性效果不该有让页面消失的可能。 */
+.view { display: none; }
+.view.enter { animation: rise 0.28s ease; }
 .view.active { display: block; }
 @keyframes rise {
   from { opacity: 0; transform: translateY(6px); }
@@ -140,33 +144,64 @@ main { padding: 52px 40px 40px; overflow: auto; }
   border: 0;
 }
 
-.tiles { display: flex; flex-direction: column; gap: 4px; margin: 28px 0 0; }
+.tiles { display: flex; flex-direction: column; gap: 2px; margin: 22px 0 0; }
 .tile {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   overflow: hidden;
   background: transparent;
   border-radius: 16px;
-  padding: 14px 10px;
+  padding: 12px 10px;
   text-align: left;
   color: inherit;
   transition: background 0.18s ease;
 }
 .tile:hover { background: var(--glass); }
 .tile-icon {
-  width: 52px;
-  height: 52px;
+  width: 46px;
+  height: 46px;
   flex-shrink: 0;
   color: var(--accent);
 }
 .tile-copy { min-width: 0; }
 .tile em { font-style: normal; color: var(--accent); font-size: 11px; letter-spacing: 0.18em; }
-.tile h2 { font-family: var(--font); margin: 4px 0 4px; font-size: 26px; }
+.tile h2 { font-family: var(--font); margin: 3px 0 3px; font-size: 22px; }
 .tile p { margin: 0; color: var(--muted); line-height: 1.5; font-size: 13px; }
 .tile p.on { color: var(--ok); }
 
 .actions { display: flex; gap: 8px; }
+
+/* 总览页的「最近图库」条：4 张封面，占住原本空着的下半屏 */
+.home-recent { margin: 26px 0 0; }
+.home-recent.hidden { display: none; }
+.sub-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 12px;
+}
+.sub-row h3 {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.linkish {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.linkish:hover { color: var(--accent); }
+.gallery.compact { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.gallery.compact .shot .cover, .gallery.compact .ph.gone { aspect-ratio: 4 / 3; }
+.gallery.compact .shot figcaption { padding: 8px 5px 2px; }
+.gallery.compact .shot small { font-size: 11px; }
 .primary {
   background: var(--accent);
   color: #fff;
@@ -190,7 +225,8 @@ main { padding: 52px 40px 40px; overflow: auto; }
   white-space: nowrap;
 }
 .ghost:hover { background: var(--glass-strong); }
-.ghost.danger { color: var(--danger); }
+.ghost.danger { color: var(--muted); }
+.ghost.danger:hover { color: var(--danger); background: rgba(255, 122, 122, 0.12); }
 .ghost.on {
   background: rgba(76, 141, 255, 0.22);
   color: var(--accent);
@@ -255,17 +291,123 @@ main { padding: 52px 40px 40px; overflow: auto; }
   background: var(--glass);
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
-  border-radius: 18px;
-  overflow: hidden;
+  border-radius: 16px;
   cursor: pointer;
   color: inherit;
-  padding: 0;
+  padding: 6px;
   text-align: left;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
-.album.on, .photo.on { box-shadow: 0 0 0 2px var(--accent), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.album img, .photo img { width: 100%; aspect-ratio: 1; object-fit: cover; background: rgba(0, 0, 0, 0.25); display: block; }
-.album figcaption, .photo figcaption { padding: 10px 12px 12px; }
+
+/* 缩略图统一做成卡片内嵌的圆角块：图片不再顶到卡片圆角上。
+   浅色截图、深色照片、方形图标进来长得都是一套框，不会有白角撞暗卡的观感。 */
+.thumb {
+  position: relative;
+  display: block;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #0e1014;
+}
+/* 轻微放大再裁：手机截图常带白底和圆角，边角那圈白直接被裁掉，
+   对真实照片来说这点裁切在缩略图尺寸下看不出来。 */
+.thumb img { transform: scale(1.05); }
+.thumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0) 34%, rgba(0, 0, 0, 0) 62%, rgba(0, 0, 0, 0.26) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+.album.on, .photo.on {
+  background: rgba(76, 141, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(76, 141, 255, 0.75);
+}
+.album.part { box-shadow: inset 0 0 0 1px rgba(76, 141, 255, 0.45); }
+/* 文件已不在磁盘上时的占位 */
+.ph.gone {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: inherit;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.16);
+}
+.ph.gone svg { width: 34px; height: 34px; }
+.gallery.compact .ph.gone { aspect-ratio: 4 / 3; }
+
+.album img, .photo img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: #0e1014;
+  display: block;
+}
+
+
+/* 勾选圈：常驻，让「点一下＝选中整册 / 这张」不用猜 */
+.pick {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: transparent;
+  background: rgba(12, 14, 18, 0.5);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  pointer-events: none;
+}
+.pick svg { width: 13px; height: 13px; display: block; }
+.album.on .pick, .photo.on .pick {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+/* 部分选中：圈里是一横，跟「整册全选」的对勾区分开 */
+.album.part .pick {
+  background: rgba(76, 141, 255, 0.28);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.album.part .pick::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* 进相册挑单张 / 看大图：悬停才出现，默认不占视觉 */
+/* 贴封面右上角：左上是勾选圈，两个操作各占一角，且不压住下面的文件名 */
+.peek {
+  position: absolute;
+  z-index: 1;
+  right: 8px;
+  top: 8px;
+  padding: 5px 10px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  color: #fff;
+  background: rgba(12, 14, 18, 0.68);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  cursor: pointer;
+  transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.album:hover .peek, .photo:hover .peek { opacity: 1; transform: none; }
+.peek:hover { background: var(--accent); }
+.album figcaption, .photo figcaption { padding: 9px 5px 3px; }
 .album strong, .photo strong { display: block; font-size: 13px; }
 .album small, .photo small { color: var(--muted); }
 .photo { position: relative; }
@@ -328,8 +470,11 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .listen-copy { min-width: 0; flex: 1; }
 .kicker { display: block; color: var(--muted); font-size: 11px; letter-spacing: 0.14em; margin-bottom: 6px; }
 .listen strong {
-  font-family: var(--font);
-  font-size: 22px;
+  font-family: var(--sans);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -430,8 +575,9 @@ main { padding: 52px 40px 40px; overflow: auto; }
   position: sticky;
   bottom: 8px;
   margin-top: 24px;
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px 12px;
   background: var(--glass-strong);
   backdrop-filter: var(--blur);
@@ -440,8 +586,10 @@ main { padding: 52px 40px 40px; overflow: auto; }
   padding: 14px 16px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
-.xfer-bar .bar { grid-column: 1 / -1; }
-.xfer-bar #xferText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xfer-bar .bar { flex: 0 0 100%; }
+.xfer-acts { display: flex; gap: 8px; flex-shrink: 0; }
+.xfer-acts .hidden { display: none !important; }
+.xfer-bar #xferText { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .bar { height: 3px; background: rgba(255, 255, 255, 0.08); border-radius: 99px; margin-top: 8px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.25s ease; }
 .hidden { display: none !important; }
@@ -516,9 +664,8 @@ main { padding: 52px 40px 40px; overflow: auto; }
   position: relative;
   min-width: 0;
   border: 0;
-  padding: 0;
-  overflow: hidden;
-  border-radius: 18px;
+  padding: 6px;
+  border-radius: 16px;
   background: var(--glass);
   color: inherit;
   text-align: left;
@@ -532,6 +679,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   object-fit: cover;
   display: block;
   background: rgba(0, 0, 0, 0.28);
+  border-radius: inherit;
 }
 .shot .cover.ph {
   display: grid;
@@ -539,13 +687,24 @@ main { padding: 52px 40px 40px; overflow: auto; }
   color: var(--accent);
 }
 .shot .cover.ph svg { width: 40px; height: 40px; }
-.shot figcaption { padding: 10px 12px 12px; }
+.shot figcaption { padding: 9px 5px 3px; }
 .shot strong { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shot small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.shot small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shot.gone-batch { opacity: 0.6; }
+.shot.gone-batch small { color: rgba(255, 255, 255, 0.35); }
 .shot .count {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(8px);
   padding: 4px 8px;
@@ -724,9 +883,27 @@ main { padding: 52px 40px 40px; overflow: auto; }
 }
 .modal-card .ghost { width: 100%; }
 
+/* 引导态：这一步只有一件事要做，页面就只留这张卡 —— 顶部禁用的按钮和
+   还没有东西可存的「保存到」行都收起来，避免用户在死控件上试错。 */
+#view-usb.active.guiding {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+  padding-bottom: 24px;
+}
+#view-usb.guiding .page-head,
+#view-usb.guiding .path-row { display: none; }
+
+/* 引导卡：一张有边界的面板，居中占据视线中心，不铺满整页 */
 .usb-guide {
-  margin: 10px 0 0;
-  max-width: 740px;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 22px 26px 24px;
+  border-radius: 20px;
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 60px rgba(0, 0, 0, 0.32);
 }
 .usb-guide.hidden { display: none !important; }
 .wiz-head {
@@ -795,7 +972,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
 }
 .wiz-track {
   height: 3px;
-  margin: 14px 0 18px;
+  margin: 14px 0 20px;
   border-radius: 99px;
   background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
@@ -808,51 +985,34 @@ main { padding: 52px 40px 40px; overflow: auto; }
   transition: width 0.45s ease;
 }
 .wiz-main {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  gap: 32px;
-  align-items: start;
-}
-.wiz-visual {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
 }
+.wiz-copy { display: flex; flex-direction: column; }
 .usb-guide strong {
   display: block;
   font-family: var(--font);
-  font-size: 26px;
-  line-height: 1.25;
-  text-align: left;
+  font-size: 21px;
+  line-height: 1.3;
+  text-align: center;
   margin: 0 0 14px;
 }
 .wiz-scene {
-  height: 132px;
-  margin: 0;
+  height: 104px;
+  margin: 0 0 14px;
   display: grid;
   place-items: center;
 }
 .scene-art {
   position: relative;
   width: 200px;
-  height: 132px;
+  height: 104px;
   display: grid;
   place-items: center;
 }
-.phone-svg { width: 78px; height: 120px; }
+.phone-svg { width: 68px; height: 104px; }
 .mac-svg { width: 72px; height: 52px; }
-.scene-badge {
-  position: absolute;
-  right: 18px;
-  bottom: 10px;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
-  z-index: 2;
-}
-.scene-badge svg { display: block; width: 28px; height: 28px; }
 .scene-pick { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .scene-app {
   width: 56px;
@@ -915,27 +1075,30 @@ main { padding: 52px 40px 40px; overflow: auto; }
   border-color: rgba(142, 240, 192, 0.35);
   animation: pop 0.45s ease;
 }
+/* 实时状态：放在按钮下面当脚注，不跟品牌名挤在同一行 */
 .wiz-live {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 7px;
+  margin: 14px 0 0;
   min-width: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.35;
-  text-align: left;
 }
 .wiz-live-icon {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   color: var(--accent);
   flex-shrink: 0;
 }
-.wiz-live-icon svg { display: block; width: 18px; height: 18px; }
+.wiz-live-icon svg { display: block; width: 15px; height: 15px; }
 .wiz-live.wait { color: #e8c36a; }
 .wiz-live.wait .wiz-live-icon { color: #e8c36a; }
 .wiz-flash {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
+  align-self: center;
   padding: 8px 12px;
   border-radius: 10px;
   background: rgba(76, 141, 255, 0.18);
@@ -944,30 +1107,36 @@ main { padding: 52px 40px 40px; overflow: auto; }
   text-align: left;
 }
 .wiz-flash.in { animation: rise 0.25s ease; }
+/* 步骤：一块面板里的编号列表。原来是每条一个灰色胶囊，
+   两条短句撑满整行，视觉上是两条大色块而不是一份说明。 */
 .wiz-steps {
   list-style: none;
-  margin: 0 0 16px;
-  padding: 0;
+  width: 100%;
+  max-width: 404px;
+  align-self: center;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 11px;
   text-align: left;
 }
 .wiz-steps.hidden { display: none; }
 .wiz-steps li {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
-  padding: 11px 13px;
-  border-radius: 14px;
-  background: var(--glass);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: 0;
 }
-.wiz-steps li.note { justify-content: flex-start; text-align: left; background: transparent; box-shadow: none; padding: 0 0 4px; }
+.wiz-steps.note-only { background: transparent; box-shadow: none; padding: 0; max-width: none; }
+.wiz-steps li.note { justify-content: center; text-align: center; }
 .wiz-steps li.note span { color: var(--muted); }
 .wiz-steps i {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: rgba(76, 141, 255, 0.2);
   color: var(--accent);
@@ -981,7 +1150,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
 }
 .wiz-steps span {
   color: var(--text);
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.45;
 }
 .brand-grid {
@@ -1018,9 +1187,11 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .wiz-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 18px;
 }
+.wiz-actions.hidden { display: none; }
 .usb-guide .primary { padding: 10px 16px; }
 .usb-guide .ghost {
   background: transparent;
@@ -1056,7 +1227,21 @@ main { padding: 52px 40px 40px; overflow: auto; }
   .tiles { grid-template-columns: 1fr; }
   .rail-foot { margin: 0 0 0 auto; }
   .inbox { left: 16px; right: 16px; width: auto; }
-  .wiz-main { grid-template-columns: 1fr; gap: 8px; }
-  .wiz-visual { align-items: flex-start; }
+  .usb-guide { padding: 18px 18px 20px; }
   .wiz-live { max-width: none; }
+}
+
+.fatal {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 90;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 122, 122, 0.14);
+  color: #ffb4b4;
+  font-size: 12.5px;
+  line-height: 1.45;
+  box-shadow: inset 0 0 0 1px rgba(255, 122, 122, 0.35);
 }

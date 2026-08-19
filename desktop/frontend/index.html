@@ -79,6 +79,13 @@
             </span>
           </button>
         </div>
+        <section id="homeRecent" class="home-recent hidden">
+          <div class="sub-row">
+            <h3 data-i18n="batches">最近图库</h3>
+            <button type="button" class="linkish" data-go="history" data-i18n="seeAll">全部</button>
+          </div>
+          <div id="homeGallery" class="gallery compact"></div>
+        </section>
       </section>
 
       <section id="view-usb" class="view">
@@ -101,17 +108,11 @@
         <div id="usbGuide" class="usb-guide hidden">
           <header class="wiz-head">
             <button type="button" id="wizBrand" class="wiz-brand" aria-label="品牌"></button>
-            <div id="wizLive" class="wiz-live">
-              <span id="wizLiveIcon" class="wiz-live-icon" aria-hidden="true"></span>
-              <span id="wizLiveText"></span>
-            </div>
             <span class="wiz-count" id="wizKicker"></span>
           </header>
           <div class="wiz-track" aria-hidden="true"><i id="wizFill"></i></div>
           <div class="wiz-main">
-            <div class="wiz-visual">
-              <div id="wizScene" class="wiz-scene" aria-hidden="true"></div>
-            </div>
+            <div id="wizScene" class="wiz-scene" aria-hidden="true"></div>
             <div class="wiz-copy">
               <div id="wizFlash" class="wiz-flash hidden"></div>
               <strong id="wizTitle"></strong>
@@ -121,6 +122,10 @@
                 <button type="button" id="wizPrimary" class="primary"></button>
                 <button type="button" id="wizSecondary" class="ghost hidden"></button>
               </div>
+              <p id="wizLive" class="wiz-live">
+                <span id="wizLiveIcon" class="wiz-live-icon" aria-hidden="true"></span>
+                <span id="wizLiveText"></span>
+              </p>
             </div>
           </div>
         </div>
@@ -135,8 +140,12 @@
         <div id="photoGrid" class="photos hidden"></div>
         <footer class="xfer-bar hidden" id="xferBar">
           <span id="xferText">准备传输</span>
-          <button type="button" id="xferSee" class="ghost hidden" data-i18n="seeGallery">查看</button>
-          <button type="button" id="xferImport" class="ghost hidden" data-i18n="toPhotos">导入照片</button>
+          <span class="xfer-acts">
+            <button type="button" id="xferPause" class="ghost hidden" data-i18n="pause">暂停</button>
+            <button type="button" id="xferStop" class="ghost danger hidden" data-i18n="stop">停止</button>
+            <button type="button" id="xferSee" class="ghost hidden" data-i18n="seeGallery">查看</button>
+            <button type="button" id="xferImport" class="ghost hidden" data-i18n="toPhotos">导入照片</button>
+          </span>
           <div class="bar"><i id="xferFill"></i></div>
         </footer>
       </section>
@@ -164,9 +173,11 @@
           <input id="wifiOut" type="text" spellcheck="false" />
           <button type="button" id="openOut" class="ghost" data-i18n="open">打开文件夹</button>
         </div>
-        <h3 class="sub" data-i18n="online">在线设备</h3>
+        <div class="sub-row">
+          <h3 data-i18n="online">在线设备</h3>
+          <button type="button" id="wifiRecent" class="linkish hidden"></button>
+        </div>
         <div id="onlineList" class="list"></div>
-        <p id="wifiRecent" class="jump hidden"></p>
       </section>
 
       <section id="view-apk" class="view">
