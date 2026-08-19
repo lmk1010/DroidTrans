@@ -74,7 +74,13 @@ type App struct {
 	connected bool
 	serials   []string
 	unauth    []string
+	offline   []string
 	model     string
+	brand     string
+	usbCode   string
+	usbErr    string
+	hasStor   bool
+	storAt    time.Time
 	devAt     time.Time
 
 	scanMu    sync.Mutex
@@ -503,6 +509,26 @@ func (a *App) monitorADB() {
 	}
 }
 
+func inferBrand(s string) string {
+	n := strings.ToLower(s)
+	switch {
+	case strings.Contains(n, "xiaomi"), strings.Contains(n, "redmi"), strings.Contains(n, "poco"):
+		return "xiaomi"
+	case strings.Contains(n, "huawei"), strings.Contains(n, "honor"):
+		return "huawei"
+	case strings.Contains(n, "oppo"), strings.Contains(n, "realme"), strings.Contains(n, "oneplus"):
+		return "oppo"
+	case strings.Contains(n, "vivo"), strings.Contains(n, "iqoo"):
+		return "vivo"
+	case strings.Contains(n, "samsung"):
+		return "samsung"
+	case strings.Contains(n, "google"), strings.Contains(n, "pixel"):
+		return "google"
+	default:
+		return "generic"
+	}
+}
+
 func (a *App) refreshDevices() {
 	a.devMu.Lock()
 	if !a.devAt.IsZero() && time.Since(a.devAt) < 800*time.Millisecond {
@@ -512,7 +538,32 @@ func (a *App) refreshDevices() {
 	a.devAt = time.Now()
 	a.devMu.Unlock()
 
-	ready, unauth, _ := a.ADB.Devices()
+	code, usbErr := "no_device", ""
+	bin := a.ADB.Bin()
+	if bin != "adb" {
+		if _, err := os.Stat(bin); err != nil {
+			if _, e2 := exec.LookPath("adb"); e2 != nil {
+				a.devMu.Lock()
+				a.usbCode, a.usbErr = "adb_missing", bin
+				a.connected = false
+				a.serials, a.unauth, a.offline = nil, nil, nil
+				a.devAt = time.Now()
+				a.devMu.Unlock()
+				return
+			}
+		}
+	}
+
+	ready, unauth, offline, err := a.ADB.Devices()
+	if err != nil {
+		a.devMu.Lock()
+		a.usbCode, a.usbErr = "adb_error", err.Error()
+		a.connected = false
+		a.serials, a.unauth, a.offline = nil, nil, nil
+		a.devAt = time.Now()
+		a.devMu.Unlock()
+		return
+	}
 	serials := make([]string, 0, len(ready))
 	for _, d := range ready {
 		serials = append(serials, d.Serial)
@@ -521,8 +572,13 @@ func (a *App) refreshDevices() {
 	for _, d := range unauth {
 		un = append(un, d.Serial)
 	}
+	off := make([]string, 0, len(offline))
+	for _, d := range offline {
+		off = append(off, d.Serial)
+	}
 
-	model := ""
+	model, brand := "", "generic"
+	hasStor := false
 	if len(serials) > 0 {
 		cur := a.ADB.Serial()
 		ok := false
@@ -535,16 +591,51 @@ func (a *App) refreshDevices() {
 		if !ok {
 			a.ADB.SetSerial(serials[0])
 		}
-		model = strings.TrimSpace(a.ADB.Prop("ro.product.brand") + " " + a.ADB.Prop("ro.product.model"))
+		b := strings.TrimSpace(a.ADB.Prop("ro.product.brand"))
+		m := strings.TrimSpace(a.ADB.Prop("ro.product.model"))
+		model = strings.TrimSpace(b + " " + m)
+		brand = inferBrand(b + " " + m)
+		a.devMu.Lock()
+		freshStor := a.storAt.IsZero() || time.Since(a.storAt) > 8*time.Second
+		a.devMu.Unlock()
+		if freshStor {
+			hasStor = a.ADB.DirExists("/sdcard") || a.ADB.DirExists("/storage/emulated/0")
+		} else {
+			a.devMu.Lock()
+			hasStor = a.hasStor
+			a.devMu.Unlock()
+		}
+		if hasStor {
+			code = "ready"
+		} else {
+			code = "no_storage"
+		}
 	} else {
 		a.ADB.SetSerial("")
+		switch {
+		case len(un) > 0:
+			code = "unauthorized"
+		case len(off) > 0:
+			code = "offline"
+		default:
+			code = "no_device"
+		}
 	}
 
 	a.devMu.Lock()
 	a.serials = serials
 	a.unauth = un
+	a.offline = off
 	a.connected = len(serials) > 0
 	a.model = model
+	if brand != "" {
+		a.brand = brand
+	}
+	a.usbCode, a.usbErr = code, usbErr
+	if len(serials) > 0 {
+		a.hasStor = hasStor
+		a.storAt = time.Now()
+	}
 	a.devAt = time.Now()
 	a.devMu.Unlock()
 }
@@ -559,6 +650,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/wifi/set_output_dir", a.wifiSetOut)
 	mux.HandleFunc("POST /api/wifi/open_folder", a.openFolder)
 	mux.HandleFunc("POST /api/wifi/open_photo_folder", a.openFolder)
+	mux.HandleFunc("POST /api/import_photos", a.importPhotos)
 	mux.HandleFunc("GET /api/wifi/devices", a.wifiDevices)
 	mux.HandleFunc("GET /api/wifi/device_batches/{id}", a.wifiBatches)
 	mux.HandleFunc("GET /api/wifi/batch_photos/{id}/{batch}", a.wifiBatchPhotos)
@@ -788,6 +880,31 @@ func (a *App) openFolder(w http.ResponseWriter, r *http.Request) {
 		cmd = exec.Command("xdg-open", path)
 	}
 	_ = cmd.Start()
+	writeJSON(w, 200, map[string]any{"success": true})
+}
+
+func (a *App) importPhotos(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	p, _ := body["folder_path"].(string)
+	if p == "" {
+		p, _ = body["path"].(string)
+	}
+	if p == "" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "缺少路径"})
+		return
+	}
+	if _, ok := a.safeLocal(p); !ok {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "路径不在输出目录内"})
+		return
+	}
+	if runtime.GOOS != "darwin" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "仅 macOS 支持导入照片.app"})
+		return
+	}
+	if err := exec.Command("open", "-a", "Photos", p).Start(); err != nil {
+		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
 	writeJSON(w, 200, map[string]any{"success": true})
 }
 

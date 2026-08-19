@@ -27,17 +27,18 @@ const I18N = {
     usbTile: '有线快传', wifiTile: '手机直传',
     scan: '扫描相册', scanning: '扫描中…', xfer: '开始传输', waiting: '等待设备', save: '保存到',
     selAll: '全选', selNone: '取消全选',
-    usbEmptyHint: '用线连上手机，在手机上允许 USB 调试。',
+    usbEmptyHint: '按左边步骤操作。插上线我会自己往下跳。',
     usbNoAlbum: '还没有相册', usbScanHint: '连上后会自动扫。选出要传的，再开始传输。',
     copy: '复制', copied: '已复制', open: '打开文件夹', openShort: '打开',
-    wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。没装 App 就扫下面的下载码。',
+    wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库',
     noPhone: '还没有手机连上来', noPhoneHint: '打开手机 App，搜到这台电脑即可',
     homeNextUsb: '手机已连上，去 USB 选相册。',
+    homeNextAllow: '点 USB，页面会停在「允许调试」这一步。',
     homeNextOnline: '手机已在线，打开图库看刚传过来的。',
     homeNextWifi: 'Wi-Fi 已就绪。手机打开卓传会自己连。',
-    homeNextIdle: '插上线，或让手机和电脑在同一 Wi-Fi。',
+    homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
     openThisPhone: '打开这台手机的图库',
     noBatch: '还没有收到文件', histTitle: '图库', clear: '清空',
     noHist: '图库还是空的', noHistHint: '从 USB 或 Wi-Fi 传过来，就会出现在这里。',
@@ -47,15 +48,23 @@ const I18N = {
     copyPath: '复制路径', delBatch: '删除这一批', copyAddr: '复制本机地址',
     goUsb: '打开 USB', goWifi: '打开 Wi-Fi', goHist: '打开图库',
     seeGallery: '查看', backAlbums: '← 返回相册',
+    toPhotos: '导入照片',
     copyName: '复制名称', copyFile: '复制文件名',
     etaLeft: '还剩',
     avgSpeed: '均速',
     chipToday: '今天', chipWeek: '近 7 天', chipCamera: '整个相机',
     xferN: '传输 {n} 张',
     recentNone: '这段时间相机里没有新照片',
+    apkBtn: '下载 App',
     apkKicker: '下载手机 App',
     apkTitle: '扫码安装卓传',
     apkHint: '没有 App 时扫这个。装好打开后，会自己找到这台电脑。',
+    copyLink: '复制下载链接',
+    close: '关闭',
+    getApp: '没装手机 App？点这里下载',
+    restartAdb: '重启 ADB',
+    pickBrand: '你的手机是',
+    guideWifiTitle: 'Wi-Fi 连不上时',
   },
   en: {
     navHome: 'Home', navHist: 'Gallery',
@@ -63,17 +72,18 @@ const I18N = {
     usbTile: 'USB transfer', wifiTile: 'Wi-Fi transfer',
     scan: 'Scan albums', scanning: 'Scanning…', xfer: 'Transfer', waiting: 'Waiting for device', save: 'Save to',
     selAll: 'Select all', selNone: 'Clear selection',
-    usbEmptyHint: 'Connect the phone and allow USB debugging on the device.',
+    usbEmptyHint: 'Follow the steps on the USB page. I’ll jump when the phone appears.',
     usbNoAlbum: 'No albums yet', usbScanHint: 'Albums scan automatically. Pick what to send, then transfer.',
     copy: 'Copy', copied: 'Copied', open: 'Open folder', openShort: 'Open',
-    wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself. No app yet? Scan the download code.',
+    wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery',
     noPhone: 'No phone yet', noPhoneHint: 'Open the app on your phone and find this computer',
     homeNextUsb: 'Phone connected. Open USB to pick albums.',
+    homeNextAllow: 'Open USB. The page will stop on Allow debugging.',
     homeNextOnline: 'Phone is online. Open the gallery for what just arrived.',
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
-    homeNextIdle: 'Plug in a cable, or put the phone on the same Wi-Fi.',
+    homeNextIdle: 'Open USB. The page only shows the step you are on.',
     openThisPhone: 'Open this phone’s gallery',
     noBatch: 'Nothing received yet', histTitle: 'Gallery', clear: 'Clear',
     noHist: 'Gallery is empty', noHistHint: 'Files you send over USB or Wi-Fi show up here.',
@@ -82,6 +92,7 @@ const I18N = {
     recentGallery: 'Recent', openGallery: 'Open gallery', reveal: 'Reveal in Finder',
     copyPath: 'Copy path', delBatch: 'Delete batch', copyAddr: 'Copy address',
     goUsb: 'Open USB', goWifi: 'Open Wi-Fi', goHist: 'Open gallery',
+    toPhotos: 'Add to Photos',
     seeGallery: 'View', backAlbums: '← Back to albums',
     copyName: 'Copy name', copyFile: 'Copy filename',
     etaLeft: 'left',
@@ -89,9 +100,16 @@ const I18N = {
     chipToday: 'Today', chipWeek: 'Last 7 days', chipCamera: 'Whole camera',
     xferN: 'Transfer {n}',
     recentNone: 'No new camera photos in that period',
+    apkBtn: 'Get app',
     apkKicker: 'Get the phone app',
     apkTitle: 'Scan to install DroidTrans',
     apkHint: 'Scan this if you don’t have the app yet. Open it and it will find this Mac.',
+    copyLink: 'Copy download link',
+    close: 'Close',
+    getApp: 'No phone app yet? Download it here',
+    restartAdb: 'Restart ADB',
+    pickBrand: 'Your phone',
+    guideWifiTitle: 'If Wi-Fi cannot find this Mac',
   },
 };
 
@@ -197,19 +215,562 @@ function emptyHTML(icon, title, hint) {
 }
 
 const I_PHONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg>';
+const I_USB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4.5v12"/><path d="M9.2 7.5h5.6"/><circle cx="12" cy="4.2" r="1.35" fill="currentColor" stroke="none"/></svg>';
+const I_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5L20 7"/></svg>';
 const I_DEVICE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="8" y="2.5" width="8" height="14" rx="1.6"/><path d="M10 18.5h4"/><path d="M7 21h10"/></svg>';
 const I_STACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/></svg>';
+const I_FILM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M8 5v14M16 5v14M3.5 9h17M3.5 15h17"/></svg>';
+
+const BRANDS = [
+  { id: 'xiaomi', zh: '小米 / Redmi', en: 'Xiaomi', color: '#FF6900' },
+  { id: 'huawei', zh: '华为 / 荣耀', en: 'Huawei', color: '#CF0A2C' },
+  { id: 'oppo', zh: 'OPPO / 一加 / realme', en: 'OPPO', color: '#006B54' },
+  { id: 'vivo', zh: 'vivo / iQOO', en: 'vivo', color: '#415FFF' },
+  { id: 'samsung', zh: '三星', en: 'Samsung', color: '#1428A0' },
+  { id: 'google', zh: 'Pixel', en: 'Pixel', color: '#4285F4' },
+  { id: 'generic', zh: '其他安卓', en: 'Other', color: '#3DDC84' },
+];
+
+const BRAND_LOGO = {
+  xiaomi: '<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#FF6900"/><path d="M8 10h4.2v12H8V10zm5.3 0H21c1.9 0 3.2 1.3 3.2 3.2v5.6c0 1.9-1.3 3.2-3.2 3.2h-7.5V10zm4.2 3.4v5.2H21c.5 0 .8-.3.8-.8v-3.6c0-.5-.3-.8-.8-.8h-3.5z" fill="#fff"/></svg>',
+  huawei: '<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#CF0A2C"/><path d="M16 7l2.4 5.2 5.6.6-4.2 3.8 1.2 5.5L16 19.6 11 22.1l1.2-5.5-4.2-3.8 5.6-.6L16 7z" fill="#fff"/></svg>',
+  oppo: '<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#006B54"/><rect x="7" y="12" width="18" height="8" rx="4" fill="none" stroke="#fff" stroke-width="2.2"/></svg>',
+  vivo: '<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#415FFF"/><path d="M8 11l8 11 8-11h-3.4L16 18.2 11.4 11H8z" fill="#fff"/></svg>',
+  samsung: '<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#1428A0"/><rect x="6.5" y="12" width="19" height="8" rx="4" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 16h8" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
+  google: '<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#fff"/><path d="M16.7 16.9v-2.7h7.3c.2.8.3 1.7.3 2.7 0 4.6-3.1 7.9-7.8 7.9A8 8 0 1 1 16.7 8c2.2 0 4 .8 5.4 2.1l-2.2 2.1c-.8-.7-1.9-1.2-3.2-1.2a4.9 4.9 0 1 0 0 9.8c2.5 0 3.7-1.4 4.1-2.2h-4.1v-2.8h.7z" fill="#4285F4"/></svg>',
+  generic: '<svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#3DDC84"/><path d="M11 9.5 9.4 7.2 10.6 6l2 2.4a8 8 0 0 1 6.8 0L21.4 6l1.2 1.2-1.6 2.3A7.5 7.5 0 0 1 23.5 16v5.2a2 2 0 0 1-2 2H20v3h-2.5v-3h-3v3H12v-3h-1.5a2 2 0 0 1-2-2V16c0-2.5.9-4.7 2.5-6.5zM12.8 13.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm6.4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z" fill="#053218"/></svg>',
+};
+
+const APP_LOGO = '<svg viewBox="0 0 1024 1024"><path d="M0 0m512 0l0 0q512 0 512 512l0 0q0 512-512 512l0 0q-512 0-512-512l0 0q0-512 512-512Z" fill="#4C8DFF"/><path d="M260.654545 620.897745a37.236364 37.236364 0 1 1-74.472727-1.340509l3.165091-175.476363a186.181818 186.181818 0 0 1 186.144582-182.830546H679.005091a37.236364 37.236364 0 1 1 0 74.472728H375.491491a111.709091 111.709091 0 0 0-111.709091 109.698327L260.654545 620.897745z" fill="#fff"/><path d="M697.455709 257.805964a27.927273 27.927273 0 1 1-33.214836 44.907054l-122.842764-90.875345a27.927273 27.927273 0 0 1 33.214836-44.907055l122.842764 90.875346z" fill="#fff"/><path d="M675.579345 277.355055a27.927273 27.927273 0 1 1 35.355928 43.250036l-142.391855 116.363636a27.927273 27.927273 0 0 1-35.337309-43.250036l142.373236-116.363636z" fill="#fff"/><path d="M800.581818 403.102255a37.236364 37.236364 0 1 1 74.472727 1.340509l-3.16509 175.476363a186.181818 186.181818 0 0 1-186.144582 182.830546H382.231273a37.236364 37.236364 0 1 1 0-74.472728h303.532218a111.709091 111.709091 0 0 0 111.709091-109.698327L800.581818 403.102255z" fill="#fff"/><path d="M363.780655 766.194036a27.927273 27.927273 0 1 1 33.214836-44.907054l122.842764 90.875345a27.927273 27.927273 0 0 1-33.214837 44.907055l-122.842763-90.875346z" fill="#fff"/><path d="M385.657018 746.644945a27.927273 27.927273 0 1 1-35.355927-43.250036l142.391854-116.363636a27.927273 27.927273 0 0 1 35.33731 43.250036l-142.373237 116.363636z" fill="#fff"/></svg>';
+
+function brandOf(id) {
+  return BRANDS.find((b) => b.id === id) || null;
+}
+
+function brandName(id) {
+  const b = brandOf(id);
+  if (!b) return '';
+  return state.lang === 'zh' ? b.zh : b.en;
+}
+
+function phoneFrame(inner) {
+  return `<svg class="phone-svg" viewBox="0 0 72 112" fill="none" aria-hidden="true">
+    <rect x="14" y="8" width="44" height="88" rx="10" fill="#16181f" stroke="rgba(255,255,255,0.22)" stroke-width="1.7"/>
+    <rect x="30" y="13" width="12" height="3" rx="1.5" fill="rgba(255,255,255,0.22)"/>
+    ${inner}
+    <rect x="32" y="86" width="8" height="3" rx="1.5" fill="rgba(255,255,255,0.16)"/>
+  </svg>`;
+}
+
+function sceneBadge(brand) {
+  if (!brand || !BRAND_LOGO[brand]) return '';
+  return `<span class="scene-badge">${BRAND_LOGO[brand]}</span>`;
+}
+
+function sceneHTML(scene, brand) {
+  const badge = sceneBadge(brand);
+  if (scene === 'brand') {
+    return `<div class="scene-art scene-pick">
+      <span class="scene-app">${APP_LOGO}</span>
+      <div class="scene-brands">${BRANDS.map((b) => `<span style="background:${b.color}"></span>`).join('')}</div>
+    </div>`;
+  }
+  if (scene === 'dev') {
+    return `<div class="scene-art">${phoneFrame(`
+      <g class="tap-ring" transform="translate(36 48)">
+        <circle r="16" stroke="rgba(76,141,255,0.28)" stroke-width="1.4"/>
+        <circle r="22" class="tap-pulse" stroke="rgba(76,141,255,0.45)" stroke-width="1.2"/>
+        <circle r="7" fill="rgba(76,141,255,0.18)" stroke="#4C8DFF" stroke-width="1.8"/>
+        <text y="4" text-anchor="middle" fill="#4C8DFF" font-size="9" font-weight="700" font-family="-apple-system,sans-serif">7</text>
+      </g>
+    `)}${badge}</div>`;
+  }
+  if (scene === 'debug') {
+    return `<div class="scene-art">${phoneFrame(`
+      <rect x="24" y="40" width="24" height="14" rx="7" fill="#4C8DFF"/>
+      <circle cx="41" cy="47" r="5.2" fill="#fff"/>
+      <path d="M26 64h20" stroke="rgba(255,255,255,0.18)" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M28 70h16" stroke="rgba(255,255,255,0.1)" stroke-width="2.2" stroke-linecap="round"/>
+    `)}${badge}</div>`;
+  }
+  if (scene === 'cable') {
+    return `<div class="scene-art scene-link">
+      <svg class="mac-svg" viewBox="0 0 56 40" fill="none"><rect x="4" y="4" width="48" height="28" rx="4" fill="#16181f" stroke="rgba(255,255,255,0.22)" stroke-width="1.6"/><rect x="10" y="10" width="36" height="16" rx="2" fill="rgba(76,141,255,0.18)"/><path d="M18 36h20" stroke="rgba(255,255,255,0.35)" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <span class="cable"><i></i></span>
+      ${phoneFrame('<rect x="24" y="36" width="24" height="28" rx="3" fill="rgba(76,141,255,0.16)"/>')}
+      ${badge}
+    </div>`;
+  }
+  if (scene === 'allow') {
+    return `<div class="scene-art">${phoneFrame(`
+      <rect x="22" y="32" width="28" height="36" rx="5" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.16)"/>
+      <rect x="26" y="50" width="20" height="8" rx="4" fill="#4C8DFF"/>
+      <path d="M28 40h16M28 45h10" stroke="rgba(255,255,255,0.35)" stroke-width="1.6" stroke-linecap="round"/>
+    `)}<span class="ring"></span><span class="ring delay"></span>${badge}</div>`;
+  }
+  if (scene === 'mtp') {
+    return `<div class="scene-art">${phoneFrame(`
+      <rect x="22" y="28" width="28" height="10" rx="2" fill="rgba(255,211,106,0.22)"/>
+      <rect x="26" y="48" width="20" height="16" rx="3" fill="none" stroke="#4C8DFF" stroke-width="1.8"/>
+      <path d="M32 56h8M36 52v8" stroke="#4C8DFF" stroke-width="1.8" stroke-linecap="round"/>
+    `)}${badge}</div>`;
+  }
+  if (scene === 'offline') {
+    return `<div class="scene-art scene-link">
+      <svg class="mac-svg" viewBox="0 0 56 40" fill="none"><rect x="4" y="4" width="48" height="28" rx="4" fill="#16181f" stroke="rgba(255,255,255,0.22)" stroke-width="1.6"/></svg>
+      <span class="cable broken"><i></i></span>
+      ${phoneFrame('')}
+      ${badge}
+    </div>`;
+  }
+  if (scene === 'done') {
+    return `<div class="scene-art scene-ok"><span class="ok-ring"></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12l5 5L20 7"/></svg>${badge}</div>`;
+  }
+  return `<div class="scene-art scene-wait"><span class="ring"></span><span class="ring delay"></span>${badge}</div>`;
+}
+
+function liveCopy(kind) {
+  const zh = state.lang === 'zh';
+  if (kind === 'done') return zh ? '已连上' : 'Connected';
+  if (kind === 'allow') return zh ? '等你在手机上点允许' : 'Waiting for Allow on the phone';
+  if (kind === 'mtp') return zh ? '改成传输文件即可' : 'Switch to File transfer';
+  if (kind === 'offline') return zh ? '线掉了，请再插一次' : 'Cable dropped, plug in again';
+  if (kind === 'brand') return zh ? '选好品牌后开始听线' : 'Pick a brand, then I’ll listen';
+  if (kind === 'adb') return zh ? 'USB 工具还没就绪' : 'USB tools not ready';
+  return zh ? '插上线会自己往下跳' : 'I’ll jump when you plug in';
+}
+
+let guideBrand = localStorage.getItem('droidtrans.brand') || '';
+let lastGuide = { dev: null, wifiN: 0 };
+let wizardOpen = false;
+let setupIdx = 0;
+let wizardTimer = 0;
+let wizardKind = '';
+let lastUsbCode = '';
+let wizardPaintKey = '';
+
+function isVideoPath(p) {
+  return /\.(mp4|mov|m4v|mkv|webm|avi|3gp)$/i.test(p || '');
+}
+
+function usbCodeOf(dev) {
+  if (dev?.usb_code) return dev.usb_code;
+  if (dev?.connected) return 'ready';
+  if (dev?.unauthorized_devices?.length) return 'unauthorized';
+  return 'no_device';
+}
+
+function setupSeq(brand) {
+  const zh = state.lang === 'zh';
+  const tap = {
+    xiaomi: zh
+      ? ['打开设置 → 我的设备 → 全部参数', '连点「MIUI / 澎湃版本」7 次，直到提示已成为开发者']
+      : ['Open Settings → My device → All specs', 'Tap MIUI / HyperOS version 7 times until it says you are a developer'],
+    huawei: zh
+      ? ['打开设置 → 关于手机', '连点「版本号」7 次，直到提示已成为开发者']
+      : ['Open Settings → About phone', 'Tap Build number 7 times until it says you are a developer'],
+    oppo: zh
+      ? ['打开设置 → 关于本机', '连点「版本号」7 次，直到提示已成为开发者']
+      : ['Open Settings → About phone', 'Tap Version 7 times until it says you are a developer'],
+    vivo: zh
+      ? ['打开设置 → 关于手机', '连点「软件版本号」7 次，直到提示已成为开发者']
+      : ['Open Settings → About phone', 'Tap Software version 7 times until it says you are a developer'],
+    samsung: zh
+      ? ['打开设置 → 关于手机 → 软件信息', '连点「编译编号」7 次，直到提示已成为开发者']
+      : ['Open Settings → About phone → Software information', 'Tap Build number 7 times until it says you are a developer'],
+    google: zh
+      ? ['打开设置 → 关于手机', '连点「编译编号」7 次，直到提示已成为开发者']
+      : ['Open Settings → About phone', 'Tap Build number 7 times until it says you are a developer'],
+    generic: zh
+      ? ['打开设置 → 关于手机', '连点「版本号」7 次，直到提示已成为开发者']
+      : ['Open Settings → About phone', 'Tap Build number 7 times until it says you are a developer'],
+  }[brand] || (zh
+    ? ['打开设置 → 关于手机', '连点「版本号」7 次，直到提示已成为开发者']
+    : ['Open Settings → About phone', 'Tap Build number 7 times']);
+  const debug = {
+    xiaomi: zh
+      ? ['返回 设置 → 更多设置 → 开发者选项', '打开「USB 调试」，以及「USB 调试（安全设置）」']
+      : ['Go to Settings → Additional settings → Developer options', 'Turn on USB debugging and USB debugging (Security settings)'],
+    huawei: zh
+      ? ['打开 设置 → 系统和更新 → 开发人员选项', '打开 USB 调试，并打开「仅充电时允许 ADB 调试」']
+      : ['Open Settings → System & updates → Developer options', 'Enable USB debugging and ADB in charge only mode'],
+    oppo: zh
+      ? ['打开 设置 → 系统和更新 → 开发者选项', '打开 USB 调试，并关掉「权限监控」']
+      : ['Open Settings → System → Developer options', 'Enable USB debugging and turn off permission monitoring'],
+    vivo: zh
+      ? ['打开开发者选项（设置或 i 管家里）', '打开 USB 调试']
+      : ['Open Developer options', 'Turn on USB debugging'],
+    samsung: zh
+      ? ['打开 设置 → 开发者选项', '打开 USB 调试']
+      : ['Open Settings → Developer options', 'Turn on USB debugging'],
+    google: zh
+      ? ['打开 设置 → 系统 → 开发者选项', '打开 USB 调试']
+      : ['Open Settings → System → Developer options', 'Turn on USB debugging'],
+    generic: zh
+      ? ['返回设置 → 系统 → 开发者选项', '打开 USB 调试']
+      : ['Go back to Settings → System → Developer options', 'Turn on USB debugging'],
+  }[brand] || (zh ? ['打开开发者选项', '打开 USB 调试'] : ['Open Developer options', 'Turn on USB debugging']);
+  return zh ? [
+    { title: '先告诉我手机品牌', scene: 'brand' },
+    { title: '去打开开发者模式', lines: tap, scene: 'dev' },
+    { title: '打开 USB 调试', lines: debug, scene: 'debug' },
+    { title: '用原装线插上这台 Mac', lines: ['插好后下拉通知栏，USB 用途改成「传输文件 / MTP」', '不要停在仅充电。插上我会自己接着检测。'], scene: 'cable' },
+  ] : [
+    { title: 'Pick your phone brand', scene: 'brand' },
+    { title: 'Turn on Developer options', lines: tap, scene: 'dev' },
+    { title: 'Turn on USB debugging', lines: debug, scene: 'debug' },
+    { title: 'Plug into this Mac', lines: ['Use the original cable. Set USB to File transfer, not Charge only.', 'I’ll detect the phone when it appears.'], scene: 'cable' },
+  ];
+}
+
+function wizardState(dev) {
+  const zh = state.lang === 'zh';
+  const code = usbCodeOf(dev);
+  const seq = setupSeq(guideBrand || 'generic');
+  const total = 5;
+  if (code === 'ready') {
+    const who = (dev?.model || '').trim();
+    return {
+      kind: 'done', scene: 'done', i: 4, n: total,
+      kicker: '5 / 5',
+      title: zh ? '好了，手机已经连上' : 'The phone is connected',
+      lines: who
+        ? [zh ? `现在是 ${who}` : `Detected ${who}`, zh ? '可以去选今天的照片或视频。' : 'You can pick today’s photos.']
+        : [zh ? '可以去选今天的照片或视频。' : 'You can pick today’s photos.'],
+      primary: zh ? '去选照片' : 'Pick photos',
+      secondary: '',
+    };
+  }
+  if (code === 'unauthorized') {
+    return {
+      kind: 'allow', scene: 'allow', i: 3, n: total,
+      kicker: '4 / 5',
+      title: zh ? '看手机，点允许' : 'Tap Allow on the phone',
+      lines: zh
+        ? ['线已经通了，手机会弹出「允许 USB 调试」', '点允许，并勾选始终允许这台电脑。我在这里等。']
+        : ['The cable is working. Tap Allow USB debugging.', 'Always allow this computer. I’ll wait here.'],
+      primary: zh ? '我点过了，再检测' : 'I allowed it, check again',
+      secondary: zh ? '没弹窗' : 'No prompt',
+    };
+  }
+  if (code === 'no_storage') {
+    return {
+      kind: 'mtp', scene: 'mtp', i: 3, n: total,
+      kicker: '4 / 5',
+      title: zh ? '改成传输文件' : 'Switch to File transfer',
+      lines: zh
+        ? ['下拉通知栏，USB 用途选「传输文件 / MTP」', '小米还要开「USB 调试（安全设置）」，华为打开「仅充电时允许 ADB」。']
+        : ['Set USB to File transfer / MTP in the notification shade.', 'Xiaomi also needs USB debugging (Security settings).'],
+      primary: zh ? '我改好了，再检测' : 'I switched it, check again',
+      secondary: '',
+    };
+  }
+  if (code === 'offline') {
+    return {
+      kind: 'offline', scene: 'offline', i: 3, n: total,
+      kicker: '4 / 5',
+      title: zh ? '重新插一下线' : 'Plug the cable in again',
+      lines: zh
+        ? ['换原装线，或换 Mac 上另一个口', '通知栏不要停在仅充电。']
+        : ['Try the original cable or another port.', 'Don’t leave USB on Charge only.'],
+      primary: zh ? '我插好了，再检测' : 'Reconnected, check again',
+      secondary: zh ? '重启 ADB' : 'Restart ADB',
+    };
+  }
+  if (code === 'adb_missing' || code === 'adb_error') {
+    return {
+      kind: 'adb', scene: 'adb', i: 0, n: total,
+      kicker: zh ? '电脑' : 'This Mac',
+      title: zh ? 'USB 工具还没就绪' : 'USB tools are not ready',
+      lines: zh
+        ? ['找不到 adb。点重启试试', '仍不行就关掉卓传再开一次。']
+        : ['adb was not found. Restart it.', 'Or quit DroidTrans and open it again.'],
+      primary: zh ? '重启 ADB' : 'Restart ADB',
+      secondary: '',
+    };
+  }
+  if (!guideBrand) {
+    return {
+      kind: 'brand', scene: 'brand', i: 0, n: total,
+      kicker: '1 / 5',
+      title: seq[0].title,
+      lines: zh ? ['选对了，后面每一步只说这一家的路径。'] : ['Pick the brand so the next step matches your phone.'],
+      primary: '',
+      secondary: '',
+      brands: true,
+    };
+  }
+  const steps = setupSeq(guideBrand).slice(1);
+  const i = Math.min(Math.max(setupIdx, 0), steps.length - 1);
+  const cur = steps[i];
+  return {
+    kind: 'setup', scene: cur.scene || 'dev', i: i + 1, n: total,
+    kicker: `${i + 2} / 5`,
+    title: cur.title,
+    lines: cur.lines || [],
+    primary: zh ? (i === steps.length - 1 ? '我插好了，开始检测' : '做好了，下一步') : (i === steps.length - 1 ? 'Plugged in, detect' : 'Done, next step'),
+    secondary: i > 0 ? (zh ? '上一步' : 'Back') : '',
+  };
+}
+
+function setText(el, text) {
+  if (!el || el.textContent === text) return;
+  el.textContent = text;
+}
+
+function setHTML(el, html) {
+  if (!el || el._html === html) return;
+  el._html = html;
+  el.innerHTML = html;
+}
+
+function paintWizard(force) {
+  if (!wizardOpen) return;
+  const st = wizardState(lastGuide.dev || {});
+  if (st.kind === 'done') {
+    hideGuidePanel();
+    return;
+  }
+  const live = liveCopy(st.kind);
+  const key = [st.kind, st.scene, st.i, guideBrand, st.title, live, st.primary, st.secondary, (st.lines || []).join('\n'), st.brands ? '1' : ''].join('|');
+  if (!force && key === wizardPaintKey) return;
+  wizardPaintKey = key;
+  const jumped = wizardKind && wizardKind !== st.kind;
+  wizardKind = st.kind;
+  const card = $('#usbGuide');
+  if (card) card.dataset.kind = st.kind;
+  setText($('#wizKicker'), st.kicker);
+  setText($('#wizTitle'), st.title);
+  const stepsEl = $('#wizSteps');
+  const lines = st.lines || [];
+  let stepsHTML = '';
+  if (lines.length && st.brands) {
+    stepsHTML = `<li class="note"><span>${esc(lines[0])}</span></li>`;
+  } else if (lines.length) {
+    stepsHTML = lines.map((line, i) => `<li><i>${i + 1}</i><span>${esc(line)}</span></li>`).join('');
+  }
+  if (stepsHTML) {
+    stepsEl.classList.remove('hidden');
+    setHTML(stepsEl, stepsHTML);
+  } else {
+    stepsEl.classList.add('hidden');
+    setHTML(stepsEl, '');
+  }
+  const fill = $('#wizFill');
+  if (fill) fill.style.width = `${Math.round(((st.i + 1) / st.n) * 100)}%`;
+  const brandEl = $('#wizBrand');
+  const b = brandOf(guideBrand);
+  const canSwap = st.kind === 'setup' || st.kind === 'allow' || st.kind === 'mtp' || st.kind === 'offline';
+  if (b) {
+    setHTML(brandEl, `<span class="brand-logo">${BRAND_LOGO[b.id]}</span><span class="wiz-brand-meta"><b>${esc(brandName(b.id))}</b><small>${canSwap ? (state.lang === 'zh' ? '更换品牌' : 'Change brand') : 'DroidTrans'}</small></span>`);
+    brandEl.classList.toggle('swap', canSwap);
+  } else {
+    setHTML(brandEl, `<span class="wiz-app-logo">${APP_LOGO}</span><span class="wiz-brand-meta"><b>DroidTrans</b><small>${state.lang === 'zh' ? 'USB 引导' : 'USB setup'}</small></span>`);
+    brandEl.classList.remove('swap');
+  }
+  const scene = $('#wizScene');
+  const sceneKey = `${st.scene || st.kind}:${guideBrand || ''}`;
+  if (scene && scene.dataset.key !== sceneKey) {
+    scene.dataset.key = sceneKey;
+    scene.innerHTML = sceneHTML(st.scene || st.kind, guideBrand);
+  }
+  const liveEl = $('#wizLive');
+  if (liveEl) liveEl.classList.toggle('wait', st.kind === 'allow' || st.kind === 'mtp' || st.kind === 'offline');
+  const icon = st.kind === 'allow' ? I_PHONE : I_USB;
+  setHTML($('#wizLiveIcon'), icon);
+  setText($('#wizLiveText'), live);
+  const brands = $('#wizBrands');
+  if (st.brands) {
+    brands.classList.remove('hidden');
+    setHTML(brands, BRANDS.map((item) => `<button type="button" class="brand-tile${item.id === guideBrand ? ' on' : ''}" data-brand="${item.id}"><span class="brand-logo">${BRAND_LOGO[item.id]}</span><span>${esc(state.lang === 'zh' ? item.zh : item.en)}</span></button>`).join(''));
+  } else {
+    brands.classList.add('hidden');
+    setHTML(brands, '');
+  }
+  const primary = $('#wizPrimary');
+  const secondary = $('#wizSecondary');
+  if (st.primary) {
+    primary.classList.remove('hidden');
+    setText(primary, st.primary);
+  } else {
+    primary.classList.add('hidden');
+  }
+  if (st.secondary) {
+    secondary.classList.remove('hidden');
+    setText(secondary, st.secondary);
+  } else {
+    secondary.classList.add('hidden');
+  }
+  const actions = $('#usbGuide .wiz-actions');
+  if (actions) actions.classList.toggle('hidden', !st.primary && !st.secondary);
+  if (jumped) flashDetect(live);
+}
+
+function flashDetect(msg) {
+  const el = $('#wizFlash');
+  if (!el || !msg) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  el.classList.remove('in');
+  void el.offsetWidth;
+  el.classList.add('in');
+  clearTimeout(el._hide);
+  el._hide = setTimeout(() => el.classList.add('hidden'), 1600);
+}
+
+async function probeUsb() {
+  if (state.view !== 'usb') return;
+  const dev = await api('/api/device_status');
+  lastGuide.dev = dev;
+  const code = usbCodeOf(dev);
+  if (dev?.brand && dev.brand !== 'generic' && !guideBrand) {
+    guideBrand = dev.brand;
+    localStorage.setItem('droidtrans.brand', guideBrand);
+  }
+  const jumped = lastUsbCode && lastUsbCode !== code;
+  lastUsbCode = code;
+  if (code === 'ready') {
+    if (wizardOpen) {
+      hideGuidePanel();
+      await refreshUsb();
+    }
+    return;
+  }
+  if (jumped && wizardOpen) {
+    const zh = state.lang === 'zh';
+    const note = {
+      unauthorized: zh ? '检测到手机，等你点允许' : 'Phone detected, tap Allow',
+      no_storage: zh ? '连上了，还要改成传输文件' : 'Connected, switch to File transfer',
+      offline: zh ? '线又掉了' : 'The cable dropped',
+    }[code];
+    if (note) flashDetect(note);
+  }
+  if (!wizardOpen) startGuide();
+  else paintWizard();
+}
+
+function hideGuidePanel() {
+  wizardOpen = false;
+  wizardPaintKey = '';
+  wizardKind = '';
+  const panel = $('#usbGuide');
+  if (panel) panel.classList.add('hidden');
+}
+
+function armUsbWatch() {
+  if (wizardTimer) return;
+  wizardTimer = setInterval(probeUsb, 2500);
+}
+
+function disarmUsbWatch() {
+  clearInterval(wizardTimer);
+  wizardTimer = 0;
+  hideGuidePanel();
+}
+
+function startGuide() {
+  const panel = $('#usbGuide');
+  if (panel) panel.classList.remove('hidden');
+  if (!wizardOpen) {
+    lastUsbCode = lastUsbCode || '';
+    if (lastGuide.dev?.brand && lastGuide.dev.brand !== 'generic' && !localStorage.getItem('droidtrans.brand')) {
+      guideBrand = lastGuide.dev.brand;
+    }
+    if (usbCodeOf(lastGuide.dev) === 'no_device' && !guideBrand) setupIdx = 0;
+  }
+  wizardOpen = true;
+  armUsbWatch();
+  paintWizard();
+}
+
+function goUsb() {
+  show('usb');
+}
+
+async function wizardPrimary() {
+  const kind = wizardKind;
+  if (kind === 'done') {
+    hideGuidePanel();
+    refreshUsb();
+    return;
+  }
+  if (kind === 'setup') {
+    const steps = setupSeq(guideBrand).slice(1);
+    if (setupIdx < steps.length - 1) setupIdx += 1;
+    paintWizard();
+    await probeUsb();
+    return;
+  }
+  if (kind === 'adb') {
+    await api('/api/adb_restart', { method: 'POST', body: '{}' });
+  }
+  await probeUsb();
+}
+
+async function wizardSecondary() {
+  if (wizardKind === 'setup') {
+    if (setupIdx > 0) {
+      setupIdx = Math.max(0, setupIdx - 1);
+      paintWizard();
+      return;
+    }
+    guideBrand = '';
+    localStorage.removeItem('droidtrans.brand');
+    setupIdx = 0;
+    paintWizard();
+    return;
+  }
+  if (wizardKind === 'offline' || wizardKind === 'adb') {
+    await api('/api/adb_restart', { method: 'POST', body: '{}' });
+    await probeUsb();
+    return;
+  }
+  if (wizardKind === 'allow') {
+    setupIdx = setupSeq(guideBrand).slice(1).length - 1;
+    paintWizard();
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const brandChip = e.target.closest('#wizBrand.swap');
+  if (brandChip) {
+    guideBrand = '';
+    localStorage.removeItem('droidtrans.brand');
+    setupIdx = 0;
+    paintWizard();
+    return;
+  }
+  const brandBtn = e.target.closest('#wizBrands [data-brand]');
+  if (brandBtn) {
+    guideBrand = brandBtn.dataset.brand;
+    localStorage.setItem('droidtrans.brand', guideBrand);
+    setupIdx = 0;
+    paintWizard();
+    return;
+  }
+  const act = e.target.closest('[data-act]');
+  if (!act) return;
+  if (act.dataset.act === 'apk') show('apk');
+  if (act.dataset.act === 'wizard') show('usb');
+  if (act.dataset.act === 'usb') show('usb');
+  if (act.dataset.act === 'wifi') show('wifi');
+});
 
 function show(view) {
   state.view = view;
   $$('.view').forEach((el) => el.classList.toggle('active', el.id === 'view-' + view));
   $$('nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  if (view !== 'usb') disarmUsbWatch();
   if (view === 'usb') refreshUsb();
   if (view === 'wifi') refreshWifi();
   if (view === 'history') refreshHistory();
+  if (view === 'apk') refreshApk();
 }
 
-$$('nav button').forEach((b) => b.addEventListener('click', () => show(b.dataset.view)));
+$$('nav button').forEach((b) => b.addEventListener('click', () => {
+  if (!b.dataset.view) return;
+  show(b.dataset.view);
+}));
 $$('[data-go]').forEach((b) => b.addEventListener('click', () => show(b.dataset.go)));
 
 async function refreshNames() {
@@ -234,9 +795,10 @@ async function refreshHome() {
     $('#homeUsb').textContent = who;
     $('#homeUsb').classList.add('on');
   } else {
-    const usb = dev.unauthorized_devices?.length ? t('unauth') : t('offline');
+    const code = usbCodeOf(dev);
+    const usb = code === 'unauthorized' ? t('unauth') : t('offline');
     $('#adbHint').textContent = usb;
-    $('#adbHint').title = adb;
+    $('#adbHint').title = adb + (dev.usb_code ? ' · ' + dev.usb_code : '');
     $('#homeUsb').textContent = usb;
     $('#homeUsb').classList.remove('on');
   }
@@ -254,12 +816,15 @@ async function refreshHome() {
   });
   const next = $('#homeNext');
   if (next) {
-    if (dev.connected) next.textContent = t('homeNextUsb');
+    const code = usbCodeOf(dev);
+    if (code === 'unauthorized') next.textContent = t('homeNextAllow');
+    else if (dev.connected) next.textContent = t('homeNextUsb');
     else if (n) next.textContent = t('homeNextOnline');
     else if (wifi.ip) next.textContent = t('homeNextWifi');
     else next.textContent = t('homeNextIdle');
   }
   maybeAutoScan(dev);
+  lastGuide = { dev, wifiN: n };
 }
 
 async function refreshUsb() {
@@ -270,6 +835,20 @@ async function refreshUsb() {
     : (dev.unauthorized_devices?.length ? t('unauth') : t('waiting'));
   $('#scanBtn').disabled = !dev.connected || usbScanning;
   const result = await api('/api/scan_result');
+  lastGuide.dev = dev;
+  const ready = usbCodeOf(dev) === 'ready';
+  if (state.view === 'usb') armUsbWatch();
+  if (state.view === 'usb' && !ready) {
+    startGuide();
+    $('#albumGrid').classList.add('hidden');
+    $('#photoGrid').classList.add('hidden');
+    $('#photoBack').classList.add('hidden');
+    $('#usbChips').classList.add('hidden');
+    $('#usbEmpty').classList.add('hidden');
+    return;
+  }
+  hideGuidePanel();
+  $('#albumGrid').classList.remove('hidden');
   renderAlbums(result.albums);
   setUsbEmpty(dev, result.albums);
   maybeAutoScan(dev);
@@ -284,10 +863,10 @@ function setUsbEmpty(dev, albums) {
   }
   el.classList.remove('hidden');
   if (!dev.connected) {
-    el.innerHTML = emptyHTML(I_PHONE, t('waiting'), t('usbEmptyHint'));
-  } else {
-    el.innerHTML = emptyHTML(I_STACK, t('usbNoAlbum'), t('usbScanHint'));
+    el.classList.add('hidden');
+    return;
   }
+  el.innerHTML = emptyHTML(I_STACK, t('usbNoAlbum'), t('usbScanHint'));
 }
 
 function updateSelAll() {
@@ -423,7 +1002,10 @@ async function openAlbum(path) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'photo' + (state.selectedPhotos.has(p.path) ? ' on' : '');
-    b.innerHTML = `<img alt="" src="/api/thumb?path=${encodeURIComponent(p.path)}" /><figcaption><strong>${esc(p.name)}</strong></figcaption>`;
+    const vid = p.video || isVideoPath(p.path || p.name);
+    b.innerHTML = vid
+      ? `<span class="vid" aria-hidden="true">${I_FILM}</span><figcaption><strong>${esc(p.name)}</strong></figcaption>`
+      : `<img alt="" src="/api/thumb?path=${encodeURIComponent(p.path)}" /><figcaption><strong>${esc(p.name)}</strong></figcaption>`;
     b.addEventListener('click', () => {
       if (state.selectedPhotos.has(p.path)) state.selectedPhotos.delete(p.path);
       else state.selectedPhotos.add(p.path);
@@ -549,6 +1131,7 @@ async function pollXfer() {
   $('#xferFill').style.width = pct + '%';
   if (st.is_running) {
     $('#xferSee').classList.add('hidden');
+    $('#xferImport')?.classList.add('hidden');
     const pace = paceLine(st);
     const file = st.current_file || '';
     $('#xferText').textContent = `${st.current || 0}/${st.total || 0}${file ? '  ' + file : ''}${pace ? '  ·  ' + pace : ''}`;
@@ -568,6 +1151,7 @@ async function pollXfer() {
   if (avg) bits.push(`${t('avgSpeed')} ${avg}`);
   $('#xferText').textContent = bits.join('  ·  ');
   $('#xferSee').classList.toggle('hidden', n === 0);
+  $('#xferImport')?.classList.toggle('hidden', n === 0);
   lastXfer = { device: st.device_id || '', batch: st.batch_id || '', folder: st.output_dir || '' };
 }
 
@@ -577,6 +1161,12 @@ $('#xferSee').addEventListener('click', () => {
     openViewer(lastXfer.device, lastXfer.batch, lastXfer.folder);
   }
 });
+$('#xferImport')?.addEventListener('click', () => importToPhotos(lastXfer.folder));
+
+function importToPhotos(path) {
+  if (!path) return;
+  api('/api/import_photos', { method: 'POST', body: JSON.stringify({ folder_path: path }) });
+}
 
 function fileURL(p) {
   return `/api/thumb?path=${encodeURIComponent(p)}`;
@@ -629,6 +1219,7 @@ function renderGallery(target, batches, limit) {
       () => [
         { label: t('openGallery'), act: () => openViewer(btn.dataset.device, btn.dataset.batch, btn.dataset.folder) },
         { label: t('open'), act: () => openFolder(btn.dataset.folder) },
+        { label: t('toPhotos'), act: () => importToPhotos(btn.dataset.folder) },
         { label: t('reveal'), act: () => reveal(btn.dataset.folder) },
         { label: t('copyPath'), act: () => copyText(btn.dataset.folder) },
         { label: t('copyName'), act: () => copyText(btn.dataset.name) },
@@ -826,6 +1417,7 @@ async function openDeviceGallery(deviceId) {
 
 let lastQR = '';
 let lastApkQR = '';
+let apkUrl = '';
 function renderQR(url) {
   const box = $('#wifiQR');
   if (!box || typeof QRCode === 'undefined') return;
@@ -895,7 +1487,7 @@ async function refreshWifi() {
   }
   setWifiURL(state.wifiPick);
   renderWifiAlts(urls, state.wifiPick);
-  renderApkQR(info.apk_url || '');
+  if (info.apk_url) apkUrl = info.apk_url;
   if (state.wifiPick && !$('#wifiOut').value) {
     const h = await api('/api/health');
     setOut(h.root || '', false);
@@ -944,6 +1536,53 @@ $('#copyUrl').addEventListener('click', copyURL);
 $('#wifiURL').addEventListener('click', copyURL);
 $('#wifiRecent').addEventListener('click', () => show('history'));
 
+async function refreshApk() {
+  const url = await ensureApkUrl();
+  const link = $('#apkLink');
+  if (link) {
+    link.textContent = url;
+    link.title = url;
+  }
+  renderApkQR(url);
+}
+
+function flashCopy(btn) {
+  if (!btn) return;
+  btn.classList.add('ok');
+  const copy = btn.querySelector('.i-copy');
+  const check = btn.querySelector('.i-check');
+  if (copy) copy.classList.add('hidden');
+  if (check) check.classList.remove('hidden');
+  btn.title = t('copied');
+  setTimeout(() => {
+    btn.classList.remove('ok');
+    if (copy) copy.classList.remove('hidden');
+    if (check) check.classList.add('hidden');
+    btn.title = t('copy');
+  }, 1400);
+}
+
+async function copyApk() {
+  const url = await ensureApkUrl();
+  try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+  flashCopy($('#apkCopy'));
+}
+
+async function ensureApkUrl() {
+  if (apkUrl) return apkUrl;
+  try {
+    const info = await api('/api/wifi/info');
+    if (info.apk_url) apkUrl = info.apk_url;
+  } catch { /* ignore */ }
+  if (!apkUrl) apkUrl = 'https://dl.neox-dev.com/droidtrans/latest.apk';
+  return apkUrl;
+}
+
+$('#apkCopy').addEventListener('click', copyApk);
+$('#apkLink').addEventListener('click', copyApk);
+$('#wizPrimary').addEventListener('click', wizardPrimary);
+$('#wizSecondary').addEventListener('click', wizardSecondary);
+
 $('#openOut').addEventListener('click', () => openFolder($('#wifiOut').value));
 $('#openUsbOut').addEventListener('click', () => openFolder($('#usbOut').value));
 
@@ -966,10 +1605,12 @@ $('#langBtn').addEventListener('click', () => {
   state.lang = state.lang === 'zh' ? 'en' : 'zh';
   localStorage.setItem('droidtrans.lang', state.lang);
   applyLang();
+  if (wizardOpen) paintWizard(true);
   refreshHome();
   if (state.view === 'wifi') refreshWifi();
   if (state.view === 'history') refreshHistory();
   if (state.view === 'usb') refreshUsb();
+  if (state.view === 'apk') refreshApk();
 });
 
 applyLang();

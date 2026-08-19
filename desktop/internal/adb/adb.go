@@ -195,10 +195,10 @@ func (c *Client) RunRaw(timeout time.Duration, args ...string) (string, string, 
 	return stdout.String(), stderr.String(), err
 }
 
-func (c *Client) Devices() (ready []Device, unauthorized []Device, err error) {
+func (c *Client) Devices() (ready []Device, unauthorized []Device, offline []Device, err error) {
 	out, stderr, e := c.RunRaw(8*time.Second, "devices")
 	if e != nil {
-		return nil, nil, fmt.Errorf("%v: %s", e, stderr)
+		return nil, nil, nil, fmt.Errorf("%v: %s", e, stderr)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	for i, line := range lines {
@@ -219,9 +219,11 @@ func (c *Client) Devices() (ready []Device, unauthorized []Device, err error) {
 			ready = append(ready, d)
 		case "unauthorized":
 			unauthorized = append(unauthorized, d)
+		case "offline":
+			offline = append(offline, d)
 		}
 	}
-	return ready, unauthorized, nil
+	return ready, unauthorized, offline, nil
 }
 
 func (c *Client) Shell(timeout time.Duration, script string) (string, error) {
@@ -250,12 +252,12 @@ func (c *Client) FileSize(remote string) int64 {
 }
 
 func PullTimeout(size int64) time.Duration {
-	sec := size/1024/1024 + 45
-	if sec < 120 {
-		sec = 120
+	sec := size/1024/1024 + 120
+	if sec < 180 {
+		sec = 180
 	}
-	if sec > 30*60 {
-		sec = 30 * 60
+	if sec > 4*60*60 {
+		sec = 4 * 60 * 60
 	}
 	return time.Duration(sec) * time.Second
 }
@@ -271,6 +273,43 @@ func (c *Client) PullProgress(remote, local string, timeout time.Duration, repor
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
+	const block = int64(1024 * 1024)
+	var have int64
+	if st, err := os.Stat(local); err == nil {
+		have = st.Size()
+		if report != nil {
+			report(have)
+		}
+	}
+	if have == 0 {
+		done := make(chan error, 1)
+		go func() {
+			_, stderr, err := c.run(timeout, "pull", remote, local)
+			if err != nil {
+				done <- fmt.Errorf("%v: %s", err, stderr)
+				return
+			}
+			done <- nil
+		}()
+		return c.waitPull(local, done, report)
+	}
+	want := c.FileSize(remote)
+	if want > 0 && have == want {
+		return nil
+	}
+	if have > 0 && (want > 0 && have > want || have%block != 0) {
+		_ = os.Remove(local)
+		have = 0
+	}
+	if have >= block && want > have {
+		if err := c.resumePull(remote, local, have, timeout, report); err == nil {
+			if st, e := os.Stat(local); e == nil && (want == 0 || st.Size() == want) {
+				return nil
+			}
+		}
+		_ = os.Remove(local)
+		have = 0
+	}
 	done := make(chan error, 1)
 	go func() {
 		_, stderr, err := c.run(timeout, "pull", remote, local)
@@ -280,7 +319,34 @@ func (c *Client) PullProgress(remote, local string, timeout time.Duration, repor
 		}
 		done <- nil
 	}()
-	tick := time.NewTicker(250 * time.Millisecond)
+	return c.waitPull(local, done, report)
+}
+
+func (c *Client) resumePull(remote, local string, have int64, timeout time.Duration, report func(int64)) error {
+	skip := have / (1024 * 1024)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	script := fmt.Sprintf("dd if=%s bs=1048576 skip=%d 2>/dev/null", shellQuote(remote), skip)
+	args := append(c.prefix(), "exec-out", "sh", "-c", script)
+	cmd := exec.CommandContext(ctx, c.Bin(), args...)
+	cmd.Env = c.env()
+	f, err := os.OpenFile(local, os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	cmd.Stdout = f
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Run()
+	}()
+	return c.waitPull(local, done, report)
+}
+
+func (c *Client) waitPull(local string, done <-chan error, report func(int64)) error {
+	tick := time.NewTicker(400 * time.Millisecond)
 	defer tick.Stop()
 	for {
 		select {

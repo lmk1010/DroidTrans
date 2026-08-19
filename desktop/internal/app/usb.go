@@ -67,18 +67,20 @@ func (a *App) deviceStatus(w http.ResponseWriter, r *http.Request) {
 	defer a.devMu.Unlock()
 	writeJSON(w, 200, map[string]any{
 		"success": true, "connected": a.connected, "devices": a.serials,
-		"unauthorized_devices": a.unauth, "selected": a.ADB.Serial(), "model": a.model,
+		"unauthorized_devices": a.unauth, "offline_devices": a.offline,
+		"selected": a.ADB.Serial(), "model": a.model, "brand": a.brand,
+		"usb_code": a.usbCode, "usb_error": a.usbErr, "storage": a.hasStor,
 		"adb": a.ADB.Bin(),
 	})
 }
 
 func (a *App) listDevices(w http.ResponseWriter, r *http.Request) {
-	ready, unauth, err := a.ADB.Devices()
+	ready, unauth, offline, err := a.ADB.Devices()
 	if err != nil {
 		writeJSON(w, 200, map[string]any{"success": false, "error": err.Error(), "devices": []any{}})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"success": true, "devices": ready, "unauthorized": unauth})
+	writeJSON(w, 200, map[string]any{"success": true, "devices": ready, "unauthorized": unauth, "offline": offline})
 }
 
 func (a *App) selectDevice(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +130,7 @@ func (a *App) scanAlbums(id int) {
 		}
 		a.scanMu.Unlock()
 	}()
-	ready, _, err := a.ADB.Devices()
+	ready, _, _, err := a.ADB.Devices()
 	if err != nil || len(ready) == 0 {
 		a.scanMu.Lock()
 		a.scanErr = "设备未连接，请检查 USB 调试"
@@ -214,32 +216,44 @@ func (a *App) discoverAlbums(storage string) []string {
 	return out
 }
 
+func isVideo(p string) bool {
+	ext := strings.ToLower(path.Ext(p))
+	switch ext {
+	case ".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".3gp":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *App) albumPreview(dir string) (cover string, count int) {
-	txt, err := a.ADB.Shell(8*time.Second, "ls -1pt "+adb.ShellQuote(dir)+" 2>/dev/null")
+	q := adb.ShellQuote(dir)
+	txt, err := a.ADB.Shell(14*time.Second, "echo COUNT:$(find "+q+" -maxdepth 1 -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.heic' -o -iname '*.heif' -o -iname '*.gif' -o -iname '*.mp4' -o -iname '*.mov' -o -iname '*.m4v' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.3gp' \\) 2>/dev/null | wc -l); ls -1pt "+q+" 2>/dev/null | head -40")
 	if err != nil {
 		return "", 0
 	}
-	for _, name := range strings.Split(txt, "\n") {
-		name = strings.TrimSpace(name)
-		if name == "" || strings.HasSuffix(name, "/") {
+	for _, line := range strings.Split(txt, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "COUNT:") {
+			n, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "COUNT:")))
+			count = n
 			continue
 		}
-		p := strings.TrimRight(dir, "/") + "/" + name
-		if !isMedia(p) {
+		if line == "" || strings.HasSuffix(line, "/") || cover != "" {
 			continue
 		}
-		count++
-		if cover == "" && imageExt[strings.ToLower(path.Ext(p))] {
+		p := strings.TrimRight(dir, "/") + "/" + line
+		if imageExt[strings.ToLower(path.Ext(p))] {
 			cover = p
 		}
 	}
 	if cover == "" {
-		for _, name := range strings.Split(txt, "\n") {
-			name = strings.TrimSpace(name)
-			if name == "" || strings.HasSuffix(name, "/") {
+		for _, line := range strings.Split(txt, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "COUNT:") || strings.HasSuffix(line, "/") {
 				continue
 			}
-			p := strings.TrimRight(dir, "/") + "/" + name
+			p := strings.TrimRight(dir, "/") + "/" + line
 			if isMedia(p) {
 				cover = p
 				break
@@ -296,7 +310,7 @@ func (a *App) albumPhotos(w http.ResponseWriter, r *http.Request) {
 		if !isMedia(p) {
 			continue
 		}
-		media = append(media, map[string]any{"path": p, "name": name, "size": 0, "size_mb": 0})
+		media = append(media, map[string]any{"path": p, "name": name, "size": 0, "size_mb": 0, "video": isVideo(p)})
 	}
 	end := offset + limit
 	if end > len(media) {
@@ -388,6 +402,10 @@ func (a *App) thumb(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing path", 400)
 		return
 	}
+	if isVideo(remote) {
+		http.Error(w, "video", 404)
+		return
+	}
 	if abs, ok := a.safeLocal(remote); ok {
 		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
 			http.ServeFile(w, r, abs)
@@ -403,7 +421,12 @@ func (a *App) thumb(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, local)
 		return
 	}
-	data, err := a.ADB.ExecOut(20*time.Second, "cat", remote)
+	size := a.ADB.FileSize(remote)
+	if size > 2*1024*1024 {
+		http.Error(w, "too large", 404)
+		return
+	}
+	data, err := a.ADB.ExecOut(12*time.Second, "cat", remote)
 	if err != nil || len(data) == 0 {
 		http.Error(w, "thumb failed", 404)
 		return
@@ -581,8 +604,9 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 			a.OnNotify(title, body)
 		}
 	}()
-	workers := 8
+	workers := 6
 	jobs := make(chan string)
+	largeCh := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
@@ -631,7 +655,6 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 						finish(st.Size(), nil)
 						continue
 					}
-					_ = os.Remove(local)
 				}
 				if size > 0 {
 					if src := a.Store.ExistingPath(name, size); src != "" && src != local {
@@ -651,9 +674,14 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 					a.xferFile = name
 					a.xferMu.Unlock()
 				}
+				if size >= 32<<20 {
+					largeCh <- struct{}{}
+				}
 				err := a.ADB.PullProgress(remote, local, adb.PullTimeout(size), report)
+				if size >= 32<<20 {
+					<-largeCh
+				}
 				if err != nil {
-					_ = os.Remove(local)
 					finish(0, err)
 					continue
 				}
@@ -662,7 +690,6 @@ func (a *App) runTransfer(photos []string, output, deviceID, batchID string) {
 					got = st.Size()
 				}
 				if size > 0 && got != size {
-					_ = os.Remove(local)
 					finish(0, fmt.Errorf("size mismatch: got %d want %d", got, size))
 					continue
 				}

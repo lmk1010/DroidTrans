@@ -32,7 +32,7 @@ import okio.BufferedSink;
  */
 public class FastTransferClient {
     private static final String TAG = "FastTransferClient";
-    private static final int CHUNK = 256 * 1024;
+    private static final int CHUNK = 1024 * 1024;
 
     public interface ProgressListener {
         boolean isCancelled();

@@ -44,6 +44,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.6 1.6"/></svg>
           <span data-i18n="navHist">图库</span>
         </button>
+        <button type="button" data-view="apk">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M12 11v5"/><path d="M9.5 14.5 12 17l2.5-2.5"/></svg>
+          <span data-i18n="apkBtn">下载 App</span>
+        </button>
       </nav>
       <div class="rail-foot">
         <button type="button" id="langBtn" class="lang-btn">EN</button>
@@ -94,6 +98,32 @@
           <input id="usbOut" type="text" spellcheck="false" />
           <button type="button" id="openUsbOut" class="ghost" data-i18n="open">打开文件夹</button>
         </div>
+        <div id="usbGuide" class="usb-guide hidden">
+          <header class="wiz-head">
+            <button type="button" id="wizBrand" class="wiz-brand" aria-label="品牌"></button>
+            <div id="wizLive" class="wiz-live">
+              <span id="wizLiveIcon" class="wiz-live-icon" aria-hidden="true"></span>
+              <span id="wizLiveText"></span>
+            </div>
+            <span class="wiz-count" id="wizKicker"></span>
+          </header>
+          <div class="wiz-track" aria-hidden="true"><i id="wizFill"></i></div>
+          <div class="wiz-main">
+            <div class="wiz-visual">
+              <div id="wizScene" class="wiz-scene" aria-hidden="true"></div>
+            </div>
+            <div class="wiz-copy">
+              <div id="wizFlash" class="wiz-flash hidden"></div>
+              <strong id="wizTitle"></strong>
+              <ol id="wizSteps" class="wiz-steps"></ol>
+              <div id="wizBrands" class="brand-grid hidden"></div>
+              <div class="wiz-actions">
+                <button type="button" id="wizPrimary" class="primary"></button>
+                <button type="button" id="wizSecondary" class="ghost hidden"></button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div id="usbChips" class="chips hidden">
           <button type="button" id="chipToday" class="ghost" data-range="today" data-i18n="chipToday">今天</button>
           <button type="button" id="chipWeek" class="ghost" data-range="week" data-i18n="chipWeek">近 7 天</button>
@@ -106,6 +136,7 @@
         <footer class="xfer-bar hidden" id="xferBar">
           <span id="xferText">准备传输</span>
           <button type="button" id="xferSee" class="ghost hidden" data-i18n="seeGallery">查看</button>
+          <button type="button" id="xferImport" class="ghost hidden" data-i18n="toPhotos">导入照片</button>
           <div class="bar"><i id="xferFill"></i></div>
         </footer>
       </section>
@@ -113,7 +144,7 @@
       <section id="view-wifi" class="view">
         <header class="page-head">
           <h1 data-i18n="wifiTitle">Wi-Fi 接收</h1>
-          <p data-i18n="wifiSub">手机打开卓传会自己连上。没装 App 就扫下面的下载码。</p>
+          <p data-i18n="wifiSub">手机打开卓传会自己连上。</p>
         </header>
         <div class="listen">
           <div id="wifiQR" class="qr" aria-hidden="true"></div>
@@ -128,14 +159,6 @@
             <svg class="i-check hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
           </button>
         </div>
-        <div class="listen apk-row">
-          <div id="apkQR" class="qr" aria-hidden="true"></div>
-          <div class="listen-copy">
-            <span class="kicker" data-i18n="apkKicker">下载手机 App</span>
-            <strong data-i18n="apkTitle">扫码安装卓传</strong>
-            <em data-i18n="apkHint">没有 App 时扫这个。装好打开后，会自己找到这台电脑。</em>
-          </div>
-        </div>
         <div class="path-row glass">
           <label data-i18n="save">保存到</label>
           <input id="wifiOut" type="text" spellcheck="false" />
@@ -144,6 +167,25 @@
         <h3 class="sub" data-i18n="online">在线设备</h3>
         <div id="onlineList" class="list"></div>
         <p id="wifiRecent" class="jump hidden"></p>
+      </section>
+
+      <section id="view-apk" class="view">
+        <header class="page-head">
+          <h1 data-i18n="apkBtn">下载 App</h1>
+          <p data-i18n="apkHint">没有 App 时扫这个。装好打开后，会自己找到这台电脑。</p>
+        </header>
+        <div class="listen">
+          <div id="apkQR" class="qr" aria-hidden="true"></div>
+          <div class="listen-copy">
+            <span class="kicker" data-i18n="apkKicker">下载手机 App</span>
+            <strong id="apkLink" title="">—</strong>
+            <em data-i18n="apkTitle">扫码安装卓传</em>
+          </div>
+          <button type="button" id="apkCopy" class="icon-btn" data-i18n-title="copy" title="复制" aria-label="复制">
+            <svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
+            <svg class="i-check hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
+          </button>
+        </div>
       </section>
 
       <section id="view-history" class="view">

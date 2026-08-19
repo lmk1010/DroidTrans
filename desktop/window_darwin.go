@@ -29,8 +29,9 @@ static NSString *gURL;
 - (BOOL)isOpaque { return NO; }
 @end
 
-@interface DTApp : NSObject <NSApplicationDelegate, UNUserNotificationCenterDelegate>
+@interface DTApp : NSObject <NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate>
 @property(strong) NSWindow *window;
+@property(strong) NSStatusItem *statusItem;
 @end
 
 @implementation DTApp
@@ -50,6 +51,7 @@ static NSString *gURL;
   self.window.backgroundColor = [NSColor clearColor];
   self.window.movableByWindowBackground = YES;
   self.window.minSize = NSMakeSize(880, 600);
+  self.window.delegate = self;
   [self.window center];
 
   NSVisualEffectView *fx = [[NSVisualEffectView alloc] initWithFrame:self.window.contentView.bounds];
@@ -61,6 +63,7 @@ static NSString *gURL;
 
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
+  [self setupStatusItem];
 
   WKWebViewConfiguration *cfg = [WKWebViewConfiguration new];
   WKWebView *web = [[WKWebView alloc] initWithFrame:fx.bounds configuration:cfg];
@@ -86,14 +89,49 @@ static NSString *gURL;
                           completionHandler:^(BOOL granted, NSError *error) {}];
   });
 }
+- (void)setupStatusItem {
+  self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
+  NSImage *img = [[NSApp applicationIconImage] copy];
+  img.size = NSMakeSize(18, 18);
+  self.statusItem.button.image = img;
+  self.statusItem.button.toolTip = @"DroidTrans";
+  NSMenu *menu = [NSMenu new];
+  NSMenuItem *open = [[NSMenuItem alloc] initWithTitle:@"打开窗口" action:@selector(showMainWindow) keyEquivalent:@""];
+  open.target = self;
+  [menu addItem:open];
+  [menu addItem:[NSMenuItem separatorItem]];
+  NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"退出卓传" action:@selector(quitApp) keyEquivalent:@"q"];
+  quit.target = self;
+  [menu addItem:quit];
+  self.statusItem.menu = menu;
+}
+- (void)showMainWindow {
+  [self.window makeKeyAndOrderFront:nil];
+  [NSApp activateIgnoringOtherApps:YES];
+}
+- (void)quitApp {
+  [NSApp terminate:nil];
+}
+- (BOOL)windowShouldClose:(NSWindow *)sender {
+  [sender orderOut:nil];
+  static BOOL told = NO;
+  if (!told) {
+    told = YES;
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+    content.title = @"DroidTrans 仍在接收";
+    content.body = @"窗口关了也会继续收文件。点菜单栏图标可再打开，退出请选「退出卓传」。";
+    content.sound = [UNNotificationSound defaultSound];
+    UNNotificationRequest *req = [UNNotificationRequest requestWithIdentifier:@"dt-bg" content:content trigger:nil];
+    [center addNotificationRequest:req withCompletionHandler:nil];
+  }
+  return NO;
+}
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app {
-  return YES;
+  return NO;
 }
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
-  if (self.window) {
-    [self.window makeKeyAndOrderFront:nil];
-  }
-  [NSApp activateIgnoringOtherApps:YES];
+  [self showMainWindow];
   return YES;
 }
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center

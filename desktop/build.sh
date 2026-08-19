@@ -77,8 +77,8 @@ PY
   <key>CFBundleName</key><string>DroidTrans</string>
   <key>CFBundleDisplayName</key><string>DroidTrans</string>
   <key>CFBundleIdentifier</key><string>com.mk.droidtrans</string>
-  <key>CFBundleVersion</key><string>1.0.2</string>
-  <key>CFBundleShortVersionString</key><string>1.0.2</string>
+  <key>CFBundleVersion</key><string>1.0.0</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
   <key>CFBundleExecutable</key><string>droidtrans</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -103,7 +103,7 @@ PLIST
 若提示已损坏，终端执行：
 xattr -cr /Applications/DroidTrans.app
 EOF
-  DMG="$OUT/DroidTrans-1.0.2-macos-arm64.dmg"
+  DMG="$OUT/DroidTrans-1.0.0-macos-arm64.dmg"
   rm -f "$DMG"
   hdiutil create -volname DroidTrans -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
   echo "dmg $DMG ($(du -h "$DMG" | awk '{print $1}'))"

@@ -17,7 +17,7 @@ import (
 const (
 	TCPPort = 9501
 	FTPPort = 9502
-	Chunk   = 256 * 1024
+	Chunk   = 1024 * 1024
 )
 
 var magic = []byte("ATF1")
