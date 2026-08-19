@@ -172,6 +172,34 @@ main { padding: 52px 40px 40px; overflow: auto; }
 
 .actions { display: flex; gap: 8px; }
 
+/* 第一次用：下半屏原本全空，放一个扫码装 App 的入口；
+   有传输记录之后自动让位给「最近图库」。 */
+.home-start {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 26px 0 0;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  max-width: 560px;
+}
+.home-start.hidden { display: none; }
+.home-start strong {
+  display: block;
+  font-family: var(--font);
+  font-size: 19px;
+  margin: 2px 0 6px;
+}
+.home-start em {
+  display: block;
+  font-style: normal;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* 总览页的「最近图库」条：4 张封面，占住原本空着的下半屏 */
 .home-recent { margin: 26px 0 0; }
 .home-recent.hidden { display: none; }
@@ -569,7 +597,24 @@ main { padding: 52px 40px 40px; overflow: auto; }
   gap: 8px;
   margin-top: 12px;
 }
-.empty-go { align-items: flex-start; padding: 24px 8px; }
+/* 空态挂在 .gallery 这个网格里，不横跨整行就会被塞进一个 180px 的格子，
+   文案被挤成两三行。 */
+.gallery > .empty-go { grid-column: 1 / -1; }
+
+/* 空态：居中一块，别缩在左上角像个错误提示 */
+.empty-go {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 64px 8px;
+  color: var(--muted);
+}
+.empty-go svg { width: 34px; height: 34px; opacity: 0.5; margin-bottom: 6px; }
+.empty-go > div > div { font-size: 15px; color: var(--text); }
+.empty-go small { font-size: 12.5px; }
+.empty-go .empty-acts { justify-content: center; }
 
 .xfer-bar {
   position: sticky;
@@ -1096,6 +1141,20 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .wiz-live-icon svg { display: block; width: 15px; height: 15px; }
 .wiz-live.wait { color: #e8c36a; }
 .wiz-live.wait .wiz-live-icon { color: #e8c36a; }
+/* USB 走不通时的退路：Wi-Fi 一样能传，别让人卡在开发者模式上 */
+.wiz-escape {
+  align-self: center;
+  margin-top: 10px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.wiz-escape:hover { color: var(--accent); background: var(--glass); }
+
 .wiz-flash {
   margin: 0 0 12px;
   align-self: center;
@@ -1217,8 +1276,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   from { transform: scale(0.7); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
-#usbEmpty { flex-direction: column; align-items: flex-start; }
-#usbEmpty > .primary { margin-top: 4px; }
+#usbEmpty > .primary { margin-top: 10px; }
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }

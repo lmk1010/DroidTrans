@@ -764,7 +764,7 @@ func (a *App) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/usb" || r.URL.Path == "/wifi" || r.URL.Path == "/history" {
+		if r.URL.Path == "/" || r.URL.Path == "/usb" || r.URL.Path == "/wifi" || r.URL.Path == "/history" || r.URL.Path == "/apk" {
 			http.ServeFileFS(w, r, a.Frontend, "index.html")
 			return
 		}

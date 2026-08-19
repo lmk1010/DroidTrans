@@ -63,7 +63,8 @@ func main() {
 	}()
 	go application.StartBackground()
 
-	fmt.Printf("DroidTrans  http://127.0.0.1:%d\n", app.HTTPPort)
+	// 打实际监听地址，而不是写死的默认端口：加了 -addr 之后这行会误导人
+	fmt.Printf("DroidTrans  http://%s\n", ln.Addr().String())
 	fmt.Printf("输出目录      %s\n", application.OutputDir)
 	fmt.Printf("ADB          %s\n", application.ADB.Bin())
 

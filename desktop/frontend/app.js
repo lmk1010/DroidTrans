@@ -53,6 +53,8 @@ const I18N = {
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
+    firstRun: '第一次用', firstRunTitle: '手机扫码装卓传',
+    firstRunHint: '装好打开就能连。也可以插数据线走 USB。',
     noPhone: '还没有手机连上来', noPhoneHint: '打开手机 App，搜到这台电脑即可',
     homeNextUsb: '手机已连上，去 USB 选相册。',
     homeNextAllow: '点 USB，页面会停在「允许调试」这一步。',
@@ -74,6 +76,7 @@ const I18N = {
     avgSpeed: '均速',
     chipToday: '今天', chipWeek: '近 7 天', chipCamera: '整个相机',
     pause: '暂停', resume: '继续', stop: '停止', paused: '已暂停', stopping: '正在停止…',
+    wizWifi: '搞不定？改用 Wi-Fi 传',
     xferN: '传输 {n} 张',
     recentNone: '这段时间相机里没有新照片',
     apkBtn: '下载 App',
@@ -99,6 +102,8 @@ const I18N = {
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
+    firstRun: 'First time', firstRunTitle: 'Scan to install the phone app',
+    firstRunHint: 'Open it and it finds this computer. USB works too.',
     noPhone: 'No phone yet', noPhoneHint: 'Open the app on your phone and find this computer',
     homeNextUsb: 'Phone connected. Open USB to pick albums.',
     homeNextAllow: 'Open USB. The page will stop on Allow debugging.',
@@ -120,6 +125,7 @@ const I18N = {
     avgSpeed: 'avg',
     chipToday: 'Today', chipWeek: 'Last 7 days', chipCamera: 'Whole camera',
     pause: 'Pause', resume: 'Resume', stop: 'Stop', paused: 'Paused', stopping: 'Stopping…',
+    wizWifi: 'Stuck? Send over Wi-Fi instead',
     xferN: 'Transfer {n}',
     recentNone: 'No new camera photos in that period',
     apkBtn: 'Get app',
@@ -247,8 +253,10 @@ function paceLine(st) {
   return parts.join('  ·  ');
 }
 
+// 全站空态统一走这一个样式：居中、图标在上、一行说明。
+// 之前有的居中、有的缩在左上角，像是出错了而不是「还没有内容」。
 function emptyHTML(icon, title, hint) {
-  return `<div class="empty">${icon}<div><div>${esc(title)}</div>${hint ? `<small>${esc(hint)}</small>` : ''}</div></div>`;
+  return `<div class="empty empty-go">${icon}<div><div>${esc(title)}</div>${hint ? `<small>${esc(hint)}</small>` : ''}</div></div>`;
 }
 
 const I_PHONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg>';
@@ -791,6 +799,12 @@ document.addEventListener('click', (e) => {
 
 function show(view) {
   state.view = view;
+  // 后端本来就把 /usb /wifi /history 当页面提供，地址栏跟着走，
+  // 直接打开这些路径时才不会莫名其妙回到总览。
+  const path = view === 'home' ? '/' : '/' + view;
+  if (location.pathname !== path) {
+    try { history.replaceState(null, '', path); } catch (_) { /* file:// 下忽略 */ }
+  }
   $$('.view').forEach((el) => {
     const on = el.id === 'view-' + view;
     el.classList.toggle('active', on);
@@ -878,11 +892,18 @@ async function renderHomeRecent() {
   if (!box) return;
   const gal = await api('/api/gallery');
   const items = (gal.batches || []).slice(0, 4);
+  const start = $('#homeStart');
   if (!items.length) {
     box.classList.add('hidden');
     homeRecentKey = '';
+    // 还没有任何记录：把下半屏让给「怎么开始」
+    if (start) {
+      start.classList.remove('hidden');
+      ensureApkUrl().then((url) => renderHomeQR(url));
+    }
     return;
   }
+  if (start) start.classList.add('hidden');
   box.classList.remove('hidden');
   const key = items.map((b) => `${b.device_id}/${b.batch_id}/${b.photo_count}/${b.cover || ''}`).join('|');
   if (key === homeRecentKey) return;   // 每 4 秒刷新一次，内容没变就别重画，避免缩略图闪
@@ -1241,6 +1262,8 @@ $('#xferStop')?.addEventListener('click', async () => {
   pollXfer();
 });
 
+$('#wizWifi')?.addEventListener('click', () => show('wifi'));
+
 $('#chipToday')?.addEventListener('click', () => applyRecent('today'));
 $('#chipWeek')?.addEventListener('click', () => applyRecent('week'));
 $('#chipCamera')?.addEventListener('click', () => selectCameraAlbums());
@@ -1335,6 +1358,9 @@ async function forgetBatch(device, batch) {
 function renderGallery(target, batches, limit) {
   const el = $(target);
   const items = (batches || []).slice(0, limit || 48);
+  if (target === '#histList') {
+    $('#clearHist')?.classList.toggle('hidden', items.length === 0);
+  }
   if (!items.length) {
     el.innerHTML = `<div class="empty empty-go">${I_STACK}<div>
       <div>${esc(t('noHist'))}</div>
@@ -1602,6 +1628,23 @@ function renderQR(url) {
   });
 }
 
+let lastHomeQR = '';
+function renderHomeQR(url) {
+  const box = $('#homeQR');
+  if (!box || typeof QRCode === 'undefined' || !url) return;
+  if (url === lastHomeQR && box.childElementCount) return;
+  lastHomeQR = url;
+  box.innerHTML = '';
+  new QRCode(box, {
+    text: url,
+    width: 132,
+    height: 132,
+    colorDark: '#f4f5f7',
+    colorLight: '#121317',
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+}
+
 function renderApkQR(url) {
   const box = $('#apkQR');
   if (!box || typeof QRCode === 'undefined' || !url) return;
@@ -1779,6 +1822,8 @@ $('#langBtn').addEventListener('click', () => {
 });
 
 applyLang();
+const bootView = { '/usb': 'usb', '/wifi': 'wifi', '/history': 'history', '/apk': 'apk' }[location.pathname];
+if (bootView) show(bootView);
 refreshHome();
 refreshNames();
 setInterval(refreshHome, 4000);
