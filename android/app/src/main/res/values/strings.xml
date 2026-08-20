@@ -298,15 +298,15 @@
     <string name="selecting_channel">正在选择最快通道…</string>
     <string name="channel_label">通道: %s</string>
     <string name="uploading_progress">正在上传 %1$d 个，已完成 %2$d / %3$d</string>
-    <string name="all_upload_complete">全部上传完成！</string>
-    <string name="all_photos_uploaded">所有照片上传成功</string>
+    <string name="all_upload_complete">全部发送完成</string>
+    <string name="all_photos_uploaded">全部发送完成</string>
     <string name="notify_channel">传输完成</string>
     <string name="notify_channel_desc">照片传到电脑后提醒</string>
     <string name="notify_transfer_done">传到电脑了</string>
     <string name="notify_transfer_partial">传到电脑了（成功 %1$d，失败 %2$d）</string>
     <string name="notify_transfer_body">%d 张</string>
     <string name="notify_transfer_body_size">%1$d 张 · %2$s</string>
-    <string name="partial_upload">部分上传完成（成功 %1$d 个，失败 %2$d 个）</string>
+    <string name="partial_upload">发送完成：成功 %1$d 个，失败 %2$d 个</string>
     <string name="upload_done_with_failures">上传完成，失败 %d 个文件</string>
     <string name="record_saved">上传记录已保存</string>
     <string name="save_record_failed">保存记录失败: %s</string>
@@ -391,4 +391,7 @@
     <string name="receive_state_failed">失败</string>
     <string name="card_receive_title">电脑发来的</string>
     <string name="card_receive_subtitle">收电脑上放好的文件</string>
+    <string name="pick_any_file">发其他文件</string>
+    <string name="pick_any_none">没有选到文件</string>
+    <string name="pick_any_count">已选 %1$d 个文件</string>
 </resources>

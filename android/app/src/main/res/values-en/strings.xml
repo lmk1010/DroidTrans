@@ -286,8 +286,8 @@
     <string name="selecting_channel">Selecting the fastest channel…</string>
     <string name="channel_label">Channel: %s</string>
     <string name="uploading_progress">Uploading %1$d, %2$d / %3$d done</string>
-    <string name="all_upload_complete">All uploads complete!</string>
-    <string name="all_photos_uploaded">All photos uploaded</string>
+    <string name="all_upload_complete">All files sent</string>
+    <string name="all_photos_uploaded">All files sent</string>
     <string name="notify_channel">Transfers</string>
     <string name="notify_channel_desc">Notify when photos arrive on the computer</string>
     <string name="notify_transfer_done">Sent to computer</string>
@@ -377,4 +377,7 @@
     <string name="receive_state_failed">failed</string>
     <string name="card_receive_title">From computer</string>
     <string name="card_receive_subtitle">Pick up files waiting on your computer</string>
+    <string name="pick_any_file">Send other files</string>
+    <string name="pick_any_none">No files selected</string>
+    <string name="pick_any_count">%1$d files selected</string>
 </resources>

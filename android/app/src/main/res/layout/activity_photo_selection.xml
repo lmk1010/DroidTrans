@@ -74,6 +74,17 @@
             app:chipStrokeWidth="0dp"
             tools:text="已选 5" />
 
+        <!-- 发任意文件：相册以外的东西（文档、压缩包、安装包…）走系统文件选择器 -->
+        <ImageButton
+            android:id="@+id/btnPickAnyFile"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_file_any"
+            android:tint="@color/text_high_emphasis"
+            android:contentDescription="@string/pick_any_file" />
+
         <!-- 视图切换按钮 -->
         <ImageButton
             android:id="@+id/btnViewMode"

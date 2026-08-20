@@ -84,6 +84,12 @@ public class PhotoSelectionActivity extends AppCompatActivity {
     private MaterialButton btnSort;
     private MaterialButton btnFilterUploaded;
     private MaterialButton btnMore;
+    private android.widget.ImageButton btnPickAnyFile;
+
+    /** 系统文件选择器：相册以外的文件也能发（文档、压缩包、安装包…）。 */
+    private final androidx.activity.result.ActivityResultLauncher<String[]> anyFilePicker =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+                    this::onAnyFilesPicked);
     private RecyclerView recyclerViewPhotos;
     private RecyclerView recyclerViewAlbums;  // 相册列表
     private FrameLayout loadingContainer;
@@ -170,6 +176,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         btnSort = findViewById(R.id.btnSort);
         btnFilterUploaded = findViewById(R.id.btnFilterUploaded);
         btnMore = findViewById(R.id.btnMore);
+        btnPickAnyFile = findViewById(R.id.btnPickAnyFile);
         recyclerViewPhotos = findViewById(R.id.recyclerViewPhotos);
         recyclerViewAlbums = findViewById(R.id.recyclerViewAlbums);
         loadingContainer = findViewById(R.id.loadingContainer);
@@ -252,6 +259,10 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         // 复用上面已有的点击逻辑，避免两套实现走散。
         if (btnMore != null) {
             btnMore.setOnClickListener(this::showMoreMenu);
+        }
+
+        if (btnPickAnyFile != null) {
+            btnPickAnyFile.setOnClickListener(v -> anyFilePicker.launch(new String[]{"*/*"}));
         }
 
         // 上传照片
@@ -708,6 +719,40 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         // 这里再弹一次「确定吗」只是多一步点击。
         startUpload(photosToUpload);
         exitAlbumSelectionMode();
+    }
+
+    /** 文件选择器回调：把 SAF 的 URI 包成上传项，直接进传输页。 */
+    private void onAnyFilesPicked(java.util.List<android.net.Uri> uris) {
+        if (uris == null || uris.isEmpty()) {
+            Toast.makeText(this, R.string.pick_any_none, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ArrayList<PhotoInfo> picked = new ArrayList<>();
+        for (android.net.Uri uri : uris) {
+            String name = null;
+            long size = 0;
+            try (android.database.Cursor c = getContentResolver().query(uri, null, null, null, null)) {
+                if (c != null && c.moveToFirst()) {
+                    int ni = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    int si = c.getColumnIndex(android.provider.OpenableColumns.SIZE);
+                    if (ni >= 0) name = c.getString(ni);
+                    if (si >= 0 && !c.isNull(si)) size = c.getLong(si);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "读不到文件信息 " + uri, e);
+            }
+            if (name == null || name.isEmpty()) {
+                name = uri.getLastPathSegment() == null ? "file" : uri.getLastPathSegment();
+            }
+            long now = System.currentTimeMillis();
+            PhotoInfo info = new PhotoInfo(null, name, size, now / 1000,
+                    new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                            .format(new java.util.Date(now)),
+                    uri.toString());
+            picked.add(info);
+        }
+        Toast.makeText(this, getString(R.string.pick_any_count, picked.size()), Toast.LENGTH_SHORT).show();
+        startUpload(picked);
     }
 
     private void showMoreMenu(View anchor) {

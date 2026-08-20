@@ -224,3 +224,117 @@ func TestInboxElapsedStopsAtLastFile(t *testing.T) {
 		t.Errorf("均速 = %.2f MB/s，耗时算错会把它压下去", speed)
 	}
 }
+
+func TestOutboxAddFileAndFolder(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("world!"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	o := NewOutbox()
+	n, err := o.Add(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("展开目录得到 %d 个文件，想要 2", n)
+	}
+
+	base := filepath.Base(dir)
+	rels := map[string]bool{}
+	for _, it := range o.List() {
+		rels[it.Rel] = true
+	}
+	if !rels[base+"/a.txt"] || !rels[base+"/sub/b.txt"] {
+		t.Errorf("相对路径没保住目录结构: %v", rels)
+	}
+
+	count, size := o.Stats()
+	if count != 2 || size != 11 {
+		t.Errorf("count=%d size=%d，想要 2 / 11", count, size)
+	}
+}
+
+func TestOutboxDedupAndRemove(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "x.bin")
+	if err := os.WriteFile(p, []byte("123"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := NewOutbox()
+	_, _ = o.Add(p)
+	_, _ = o.Add(p) // 同一个文件加两次只算一条
+	if c, _ := o.Stats(); c != 1 {
+		t.Fatalf("重复添加变成了 %d 条", c)
+	}
+	id := o.List()[0].ID
+	o.Remove(id)
+	if c, _ := o.Stats(); c != 0 {
+		t.Errorf("删除没生效")
+	}
+}
+
+func TestOutboxFileServesAndMarksTaken(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "hello.txt")
+	if err := os.WriteFile(p, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := newTestApp(t)
+	a.Out = NewOutbox()
+	if _, err := a.Out.Add(p); err != nil {
+		t.Fatal(err)
+	}
+	id := a.Out.List()[0].ID
+
+	r := httptest.NewRequest("GET", "/api/outbox/file/"+id, nil)
+	r.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	a.outboxFile(w, r)
+
+	if w.Code != 200 {
+		t.Fatalf("状态码 %d", w.Code)
+	}
+	if w.Body.String() != "payload" {
+		t.Errorf("内容不对: %q", w.Body.String())
+	}
+	if it, _ := a.Out.Get(id); it.Taken != 1 {
+		t.Errorf("没标记成已取走")
+	}
+}
+
+func TestOutboxListFlagsMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "gone.txt")
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := newTestApp(t)
+	a.Out = NewOutbox()
+	_, _ = a.Out.Add(p)
+	// 登记之后文件被删掉/移走：清单里要标出来，而不是等手机取的时候才失败
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	a.outboxList(w, httptest.NewRequest("GET", "/api/outbox", nil))
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := out["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("清单里有 %d 条", len(items))
+	}
+	first, _ := items[0].(map[string]any)
+	if size, _ := first["size"].(float64); size >= 0 {
+		t.Errorf("文件已不在，size 应当标成 -1，实际 %v", size)
+	}
+}
