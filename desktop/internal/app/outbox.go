@@ -29,6 +29,7 @@ type OutItem struct {
 	Path    string `json:"path"`
 	Size    int64  `json:"size"`
 	Rel     string `json:"rel"` // 文件夹内的相对路径，手机端照此重建目录
+	Text    string `json:"text,omitempty"`
 	AddedAt string `json:"added_at"`
 	Taken   int    `json:"taken"` // 被领取过几次
 	order   int
@@ -150,6 +151,57 @@ func (o *Outbox) Stats() (count int, size int64) {
 	return count, size
 }
 
+// AddText 把一段文字/链接当成一条待取内容。
+//
+// 日常最高频的其实是「把这段话/这个链接甩到另一台设备上」，
+// 为它单独存一个临时文件，手机取走后当文本显示。
+func (o *Outbox) AddText(dir, text string) (*OutItem, error) {
+	text = strings.TrimRight(text, "\n")
+	if strings.TrimSpace(text) == "" {
+		return nil, fmt.Errorf("空内容")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	name := textFileName(text)
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		return nil, err
+	}
+	o.add(path, int64(len(text)), name)
+	o.mu.Lock()
+	it := o.items[outID(path)]
+	if it != nil {
+		it.Text = text
+	}
+	clone := *it
+	o.mu.Unlock()
+	return &clone, nil
+}
+
+// textFileName 用内容开头做文件名，手机上一眼能认出是哪条。
+func textFileName(text string) string {
+	head := strings.TrimSpace(text)
+	if i := strings.IndexAny(head, "\r\n"); i >= 0 {
+		head = head[:i]
+	}
+	head = strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`/\:*?"<>|`, r) {
+			return '_'
+		}
+		return r
+	}, head)
+	runes := []rune(head)
+	if len(runes) > 24 {
+		runes = runes[:24]
+	}
+	head = strings.TrimSpace(string(runes))
+	if head == "" {
+		head = "文本"
+	}
+	return head + ".txt"
+}
+
 // ---- HTTP ----
 
 func (a *App) outboxList(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +257,20 @@ func (a *App) outboxPick(w http.ResponseWriter, r *http.Request) {
 	}
 	a.OnPickFiles()
 	writeJSON(w, 200, map[string]any{"success": true})
+}
+
+// outboxText 从桌面界面塞一段文字/链接进待取队列。
+func (a *App) outboxText(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	text, _ := body["text"].(string)
+	dir := filepath.Join(a.OutputDir, "outbox-text")
+	it, err := a.Out.AddText(dir, text)
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	count, size := a.Out.Stats()
+	writeJSON(w, 200, map[string]any{"success": true, "item": it, "count": count, "total_size": size})
 }
 
 func (a *App) outboxRemove(w http.ResponseWriter, r *http.Request) {

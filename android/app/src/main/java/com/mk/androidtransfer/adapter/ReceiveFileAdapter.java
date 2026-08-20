@@ -17,10 +17,21 @@ import java.util.List;
 /** 电脑发来的文件清单。 */
 public class ReceiveFileAdapter extends RecyclerView.Adapter<ReceiveFileAdapter.VH> {
 
+    /** 点一条文字时回调。 */
+    public interface OnTextTap {
+        void onTap(ReceiveItem item);
+    }
+
     private final List<ReceiveItem> items;
+    private final OnTextTap onTextTap;
 
     public ReceiveFileAdapter(List<ReceiveItem> items) {
+        this(items, null);
+    }
+
+    public ReceiveFileAdapter(List<ReceiveItem> items, OnTextTap onTextTap) {
         this.items = items;
+        this.onTextTap = onTextTap;
     }
 
     @NonNull
@@ -33,8 +44,19 @@ public class ReceiveFileAdapter extends RecyclerView.Adapter<ReceiveFileAdapter.
     @Override
     public void onBindViewHolder(@NonNull VH holder, int position) {
         ReceiveItem item = items.get(position);
-        holder.name.setText(item.rel == null || item.rel.isEmpty() ? item.name : item.rel);
-        holder.size.setText(item.size < 0 ? "" : TransferFormat.bytes(item.size));
+        if (item.isText()) {
+            holder.name.setText(item.text);
+            holder.size.setText(R.string.receive_kind_text);
+            holder.itemView.setOnClickListener(v -> {
+                if (onTextTap != null) {
+                    onTextTap.onTap(item);
+                }
+            });
+        } else {
+            holder.name.setText(item.rel == null || item.rel.isEmpty() ? item.name : item.rel);
+            holder.size.setText(item.size < 0 ? "" : TransferFormat.bytes(item.size));
+            holder.itemView.setOnClickListener(null);
+        }
 
         int stateRes;
         int colorRes;
@@ -44,7 +66,7 @@ public class ReceiveFileAdapter extends RecyclerView.Adapter<ReceiveFileAdapter.
                 colorRes = R.color.primary;
                 break;
             case DONE:
-                stateRes = R.string.receive_state_done;
+                stateRes = item.isText() ? R.string.receive_state_copied : R.string.receive_state_done;
                 colorRes = R.color.success;
                 break;
             case FAILED:
@@ -52,7 +74,7 @@ public class ReceiveFileAdapter extends RecyclerView.Adapter<ReceiveFileAdapter.
                 colorRes = R.color.error;
                 break;
             default:
-                stateRes = R.string.receive_state_pending;
+                stateRes = item.isText() ? R.string.receive_state_tap_copy : R.string.receive_state_pending;
                 colorRes = R.color.text_medium_emphasis;
                 break;
         }

@@ -748,12 +748,14 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/upload/update", a.uploadUpdate)
 	mux.HandleFunc("POST /api/upload/cancel/{id}", a.uploadCancel)
 	mux.HandleFunc("GET /api/inbox", a.inboxStatus)
+	mux.HandleFunc("POST /api/inbox/text", a.inboxText)
 	mux.HandleFunc("POST /api/pair", a.pairHandler)
 	mux.HandleFunc("GET /api/pair/info", a.pairInfo)
 	mux.HandleFunc("POST /api/pair/set", a.pairSet)
 	mux.HandleFunc("GET /api/outbox", a.outboxList)
 	mux.HandleFunc("POST /api/outbox/add", a.outboxAdd)
 	mux.HandleFunc("POST /api/outbox/pick", a.outboxPick)
+	mux.HandleFunc("POST /api/outbox/text", a.outboxText)
 	mux.HandleFunc("POST /api/outbox/remove", a.outboxRemove)
 	mux.HandleFunc("POST /api/outbox/remove/{id}", a.outboxRemove)
 	mux.HandleFunc("GET /api/outbox/file/{id}", a.outboxFile)
@@ -1614,6 +1616,74 @@ func (a *App) parseDestLocked(dest string) (deviceID, batchID string) {
 		batchID = s.BatchID
 	}
 	return deviceID, batchID
+}
+
+// inboxText 收手机分享过来的一段文字/链接。
+//
+// 存一份到当天的批次目录里，同时直接放进电脑剪贴板——
+// 从手机甩个链接过来，多半就是想在电脑上马上打开。
+func (a *App) inboxText(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	text, _ := body["text"].(string)
+	if strings.TrimSpace(text) == "" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "空内容"})
+		return
+	}
+	deviceID, _ := body["device_id"].(string)
+	if deviceID == "" {
+		deviceID = "unknown"
+	}
+	deviceName, _ := body["device_name"].(string)
+	a.touchDevice(deviceID, deviceName)
+
+	a.mu.Lock()
+	base := a.wifiOut
+	a.mu.Unlock()
+	batchID := time.Now().Format("20060102_150405")
+	dir := filepath.Join(base, deviceID, batchID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	name := textFileName(text)
+	dest := filepath.Join(dir, name)
+	if err := os.WriteFile(dest, []byte(text), 0o644); err != nil {
+		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	a.recordFile(deviceID, batchID, name, int64(len(text)), dest)
+	copied := toClipboard(text)
+	if a.OnNotify != nil {
+		head := text
+		if len([]rune(head)) > 40 {
+			head = string([]rune(head)[:40]) + "…"
+		}
+		a.OnNotify("手机发来一段文字", head)
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "path": dest, "clipboard": copied})
+}
+
+// toClipboard 把文字放进电脑剪贴板。
+func toClipboard(text string) bool {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	case "windows":
+		cmd = exec.Command("clip")
+	default:
+		cmd = exec.Command("xclip", "-selection", "clipboard")
+	}
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return false
+	}
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+	_, _ = io.WriteString(in, text)
+	_ = in.Close()
+	return cmd.Wait() == nil
 }
 
 func (a *App) inboxStatus(w http.ResponseWriter, r *http.Request) {

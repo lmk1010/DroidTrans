@@ -402,4 +402,13 @@
     <string name="pair_message">在电脑的 Wi-Fi 页上能看到六位配对码。扫电脑上的二维码可以免输。</string>
     <string name="pair_ok">配对成功</string>
     <string name="pair_failed">配对码不对，或连不上电脑</string>
+    <string name="receive_kind_text">文字</string>
+    <string name="receive_copied">已复制到剪贴板</string>
+    <string name="receive_state_copied">已复制</string>
+    <string name="receive_state_tap_copy">点一下复制</string>
+    <string name="share_no_server">先在卓传里连一次电脑</string>
+    <string name="share_nothing">没有可发送的内容</string>
+    <string name="share_sending_text">正在发给 %1$s…</string>
+    <string name="share_text_ok">已发到电脑，并放进了电脑剪贴板</string>
+    <string name="share_failed">发送失败，检查是否和电脑在同一网络</string>
 </resources>

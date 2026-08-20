@@ -58,6 +58,7 @@ const I18N = {
     pairOffHint: '任何在同一网络里的设备都能连这台电脑。',
     pairPeers: '已配对 {n} 台',
     sendTitle: '发到手机', sendPick: '选择文件…', clearAll: '全部清空',
+    sendTextPh: '粘一段文字或链接，回车发过去', sendTextGo: '加入', kindText: '文字',
     sendEmpty: '把文件拖到窗口里', sendEmptyHint: '也可以点「选择文件…」。手机打开卓传就能取走。',
     waitingPhone: '等手机来取', tookN: '已取走',
     fileGone: '文件已不在',
@@ -117,6 +118,7 @@ const I18N = {
     pairOffHint: 'Any device on this network can reach this computer.',
     pairPeers: '{n} paired',
     sendTitle: 'Send to phone', sendPick: 'Choose files…', clearAll: 'Clear all',
+    sendTextPh: 'Paste text or a link, press Enter', sendTextGo: 'Add', kindText: 'text',
     sendEmpty: 'Drop files onto this window', sendEmptyHint: 'Or use “Choose files…”. Your phone picks them up.',
     waitingPhone: 'Waiting for the phone', tookN: 'picked up',
     fileGone: 'file is gone',
@@ -166,6 +168,7 @@ const t = (k) => I18N[state.lang][k] || I18N.zh[k] || k;
 function applyLang() {
   document.documentElement.lang = state.lang === 'zh' ? 'zh-CN' : 'en';
   $$('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  $$('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   $$('[data-i18n-title]').forEach((el) => {
     const label = t(el.dataset.i18nTitle);
     el.title = label;
@@ -1709,8 +1712,10 @@ async function refreshOutbox(force) {
       ? `<span class="meta gone">${esc(t('fileGone'))}</span>`
       : `<span class="meta">${esc(fmtBytes(it.size) || '')}</span>`;
     const took = it.taken > 0 ? `<span class="took">${esc(t('tookN'))}</span>` : '';
-    return `<div class="out-row" title="${esc(it.path)}">
-      <span class="name">${esc(it.rel || it.name)}</span>
+    const kind = it.text ? `<span class="kind">${esc(t('kindText'))}</span>` : '';
+    return `<div class="out-row" title="${esc(it.text || it.path)}">
+      ${kind}
+      <span class="name">${esc(it.text || it.rel || it.name)}</span>
       ${took}
       ${meta}
       <button type="button" class="out-x" data-id="${esc(it.id)}" aria-label="remove">✕</button>
@@ -1728,6 +1733,22 @@ $('#outPick')?.addEventListener('click', async () => {
   await api('/api/outbox/pick', { method: 'POST', body: '{}' });
   // 面板是原生模态，关掉之后再刷新几次，等用户选完
   [600, 1500, 3000, 6000].forEach((ms) => setTimeout(() => refreshOutbox(true), ms));
+});
+
+async function sendText() {
+  const input = $('#outText');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  const res = await api('/api/outbox/text', { method: 'POST', body: JSON.stringify({ text }) });
+  if (res && res.success) {
+    input.value = '';
+    refreshOutbox(true);
+  }
+}
+
+$('#outTextGo')?.addEventListener('click', sendText);
+$('#outText')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendText();
 });
 
 $('#outClear')?.addEventListener('click', async () => {

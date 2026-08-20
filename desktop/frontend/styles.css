@@ -1434,3 +1434,34 @@ main { padding: 52px 40px 40px; overflow: auto; }
   line-height: 1.45;
 }
 .pair-acts { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* 发文字/链接 */
+.send-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 12px;
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.send-text input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-size: 13.5px;
+  padding: 8px 0;
+}
+.send-text input::placeholder { color: var(--muted); }
+.out-row .kind {
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(76, 141, 255, 0.16);
+  padding: 2px 7px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}

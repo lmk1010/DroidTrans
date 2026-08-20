@@ -151,6 +151,12 @@ public class UploadProgressActivity extends AppCompatActivity {
 
         // 获取传递的数据
         serverUrl = getIntent().getStringExtra("server_url");
+        // 从分享菜单进来时是全新进程，静态令牌还是空的，
+        // TCP 会退回没有令牌的旧协议被服务端拒掉。每次进来都按电脑取一次。
+        if (serverUrl != null) {
+            String tok = com.mk.androidtransfer.network.Pairing.token(this, serverUrl);
+            com.mk.androidtransfer.network.RetrofitClient.setToken(tok == null ? "" : tok);
+        }
         serverName = getIntent().getStringExtra("server_name");
         ArrayList<PhotoInfo> selectedPhotos = getIntent().getParcelableArrayListExtra("selected_photos");
 

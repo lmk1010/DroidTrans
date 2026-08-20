@@ -388,4 +388,13 @@
     <string name="pair_message">The six-digit code is on the computer’s Wi-Fi page. Scanning its QR code skips this.</string>
     <string name="pair_ok">Paired</string>
     <string name="pair_failed">Wrong code, or the computer is unreachable</string>
+    <string name="receive_kind_text">text</string>
+    <string name="receive_copied">Copied</string>
+    <string name="receive_state_copied">copied</string>
+    <string name="receive_state_tap_copy">tap to copy</string>
+    <string name="share_no_server">Connect to a computer in DroidTrans first</string>
+    <string name="share_nothing">Nothing to send</string>
+    <string name="share_sending_text">Sending to %1$s…</string>
+    <string name="share_text_ok">Sent — also on the computer’s clipboard</string>
+    <string name="share_failed">Send failed — same network as the computer?</string>
 </resources>

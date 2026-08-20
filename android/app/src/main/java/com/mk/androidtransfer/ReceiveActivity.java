@@ -121,7 +121,20 @@ public class ReceiveActivity extends AppCompatActivity {
 
         RecyclerView list = findViewById(R.id.recyclerReceive);
         list.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new ReceiveFileAdapter(items);
+        // 文字/链接点一下就进剪贴板，不用先存成文件再打开
+        adapter = new ReceiveFileAdapter(items, item -> {
+            if (!item.isText()) {
+                return;
+            }
+            android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("DroidTrans", item.text));
+                item.state = ReceiveItem.State.DONE;
+                adapter.notifyDataSetChanged();
+                Toast.makeText(this, R.string.receive_copied, Toast.LENGTH_SHORT).show();
+            }
+        });
         list.setAdapter(adapter);
 
         findViewById(R.id.btnReceiveBack).setOnClickListener(v -> finish());
@@ -160,7 +173,8 @@ public class ReceiveActivity extends AppCompatActivity {
                                 it.get("id").getAsString(),
                                 it.get("name").getAsString(),
                                 it.has("rel") ? it.get("rel").getAsString() : it.get("name").getAsString(),
-                                it.get("size").getAsLong()));
+                                it.get("size").getAsLong(),
+                                it.has("text") && !it.get("text").isJsonNull() ? it.get("text").getAsString() : null));
                     }
                 } else {
                     err = getString(R.string.receive_list_failed);
@@ -216,7 +230,12 @@ public class ReceiveActivity extends AppCompatActivity {
                     item.state = ReceiveItem.State.DOWNLOADING;
                     adapter.notifyItemChanged(index);
                 });
-                boolean ok = downloadOne(item);
+                boolean ok;
+                if (item.isText()) {
+                    ok = saveText(item);
+                } else {
+                    ok = downloadOne(item);
+                }
                 if (ok) {
                     done++;
                 } else {
@@ -247,6 +266,18 @@ public class ReceiveActivity extends AppCompatActivity {
                 UploadService.finish(this, msg);
             });
         }).start();
+    }
+
+    /** 文字条目：直接进剪贴板，同时也存一份 txt 备查。 */
+    private boolean saveText(ReceiveItem item) {
+        ui.post(() -> {
+            android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("DroidTrans", item.text));
+            }
+        });
+        return downloadOne(item);
     }
 
     /** 下载一个文件，按相对路径落到 Download/DroidTrans/ 下。 */
