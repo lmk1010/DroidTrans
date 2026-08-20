@@ -77,6 +77,7 @@ const I18N = {
     chipToday: '今天', chipWeek: '近 7 天', chipCamera: '整个相机',
     pause: '暂停', resume: '继续', stop: '停止', paused: '已暂停', stopping: '正在停止…',
     wizWifi: '搞不定？改用 Wi-Fi 传',
+    retryFailed: '重试失败的', deviceLost: '手机断开了',
     xferN: '传输 {n} 张',
     recentNone: '这段时间相机里没有新照片',
     apkBtn: '下载 App',
@@ -126,6 +127,7 @@ const I18N = {
     chipToday: 'Today', chipWeek: 'Last 7 days', chipCamera: 'Whole camera',
     pause: 'Pause', resume: 'Resume', stop: 'Stop', paused: 'Paused', stopping: 'Stopping…',
     wizWifi: 'Stuck? Send over Wi-Fi instead',
+    retryFailed: 'Retry failed', deviceLost: 'Phone disconnected',
     xferN: 'Transfer {n}',
     recentNone: 'No new camera photos in that period',
     apkBtn: 'Get app',
@@ -712,6 +714,11 @@ function startGuide() {
   const panel = $('#usbGuide');
   if (panel) panel.classList.remove('hidden');
   $('#view-usb')?.classList.add('guiding');
+  // 引导起来时把相册区一并收掉：设备中途掉线时 probeUsb 会直接叫起引导，
+  // 之前留下的相册网格和「还没有相册」空态会跟引导卡叠在一页上。
+  ['#albumGrid', '#photoGrid', '#photoBack', '#usbChips', '#usbEmpty'].forEach((sel) => {
+    $(sel)?.classList.add('hidden');
+  });
   if (!wizardOpen) {
     lastUsbCode = lastUsbCode || '';
     if (lastGuide.dev?.brand && lastGuide.dev.brand !== 'generic' && !localStorage.getItem('droidtrans.brand')) {
@@ -912,6 +919,9 @@ async function renderHomeRecent() {
 }
 
 async function refreshUsb() {
+  // 传输条以前只有「本次在界面上点过开始」才出现：切到图库再回来、
+  // 或者传输中途设备掉线回到引导，结果就看不见了。只要有状态就显示。
+  syncXferBar();
   const dev = await api('/api/device_status');
   state.usbConnected = !!dev.connected;
   $('#usbDevice').textContent = dev.connected
@@ -1262,6 +1272,22 @@ $('#xferStop')?.addEventListener('click', async () => {
   pollXfer();
 });
 
+let lastFailed = [];
+
+$('#xferRetry')?.addEventListener('click', async () => {
+  if (!lastFailed.length) return;
+  const photos = lastFailed.slice();
+  $('#xferRetry').classList.add('hidden');
+  const res = await api('/api/transfer', {
+    method: 'POST',
+    body: JSON.stringify({ photos, output_dir: state.usbOut || undefined }),
+  });
+  if (res && res.success) {
+    $('#xferBar').classList.remove('hidden');
+    pollXfer();
+  }
+});
+
 $('#wizWifi')?.addEventListener('click', () => show('wifi'));
 
 $('#chipToday')?.addEventListener('click', () => applyRecent('today'));
@@ -1285,6 +1311,17 @@ $('#xferBtn').addEventListener('click', async () => {
   $('#xferSee').classList.add('hidden');
   pollXfer();
 });
+
+let xferBarSynced = false;
+
+async function syncXferBar() {
+  if (xferBarSynced) return;
+  const st = await api('/api/transfer_status');
+  if (!st || !st.total) return;
+  xferBarSynced = true;
+  $('#xferBar').classList.remove('hidden');
+  pollXfer();
+}
 
 async function pollXfer() {
   const st = await api('/api/transfer_status');
@@ -1312,7 +1349,8 @@ async function pollXfer() {
   const bits = [];
   const zh = state.lang === 'zh';
   // 停止过就别说「完成」——那是两回事
-  if (st.stopped) bits.push(zh ? `已停止 · 存下 ${n} 张` : `Stopped · ${n} saved`);
+  if (st.device_lost) bits.push(`${t('deviceLost')} · ${zh ? `存下 ${n} 张` : `${n} saved`}`);
+  else if (st.stopped) bits.push(zh ? `已停止 · 存下 ${n} 张` : `Stopped · ${n} saved`);
   else bits.push(zh ? `完成 ${n} 张` : `Done ${n}`);
   if (fail) bits.push(zh ? `失败 ${fail}` : `failed ${fail}`);
   const size = fmtBytes(st.bytes_done);
@@ -1324,6 +1362,9 @@ async function pollXfer() {
   $('#xferText').textContent = bits.join('  ·  ');
   $('#xferSee').classList.toggle('hidden', n === 0);
   $('#xferImport')?.classList.toggle('hidden', n === 0);
+  // 失败的可以一键重来：插回线再点一下，不用重新挑一遍照片
+  lastFailed = (st.failed || []).map((f) => f.path).filter(Boolean);
+  $('#xferRetry')?.classList.toggle('hidden', lastFailed.length === 0);
   lastXfer = { device: st.device_id || '', batch: st.batch_id || '', folder: st.output_dir || '' };
 }
 

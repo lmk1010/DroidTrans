@@ -937,6 +937,8 @@ main { padding: 52px 40px 40px; overflow: auto; }
   min-height: 100%;
   padding-bottom: 24px;
 }
+/* 引导态下仍可能有上一轮的传输结果（比如中途掉线），让它贴住底部 */
+#view-usb.guiding .xfer-bar { margin-top: auto; }
 #view-usb.guiding .page-head,
 #view-usb.guiding .path-row { display: none; }
 

@@ -546,6 +546,8 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	a.xferDone = 0
 	a.xferOK = 0
 	a.xferStopped = false
+	a.xferLost = false
+	a.xferLastAt = time.Time{}
 	a.xferFailed = nil
 	a.xferBytes = 0
 	a.xferTotalB = 0
@@ -664,6 +666,9 @@ func (a *App) runTransfer(ctx context.Context, photos []string, output, deviceID
 		}
 		a.xferFile = "完成"
 		elapsed := int(time.Since(a.xferStart).Seconds())
+		if a.xferLastAt.After(a.xferStart) {
+			elapsed = int(a.xferLastAt.Sub(a.xferStart).Seconds())
+		}
 		done := a.xferOK
 		bytes := a.xferBytes
 		failedN := len(a.xferFailed)
@@ -733,6 +738,7 @@ func (a *App) runTransfer(ctx context.Context, photos []string, output, deviceID
 					a.xferMu.Lock()
 					delete(a.xferLive, remote)
 					a.xferDone++
+					a.xferLastAt = time.Now()
 					a.xferFile = name
 					if err != nil {
 						a.xferFailed = append(a.xferFailed, map[string]any{"path": remote, "error": err.Error()})
@@ -781,6 +787,16 @@ func (a *App) runTransfer(ctx context.Context, photos []string, output, deviceID
 				err := a.ADB.PullProgressCtx(ctx, remote, local, adb.PullTimeout(size), report)
 				if size >= 32<<20 {
 					<-largeCh
+				}
+				if err != nil && deviceGone(err) {
+					// 线掉了/手机关机：剩下的文件再试也是一样的错，
+					// 一个个撞过去只是把失败清单刷满、白等一堆超时。
+					a.xferMu.Lock()
+					a.xferLost = true
+					a.xferMu.Unlock()
+					finish(0, err)
+					a.abortTransfer()
+					return
 				}
 				if err != nil {
 					// 用户点了停止导致的中断不是「失败」，不进失败清单也不计数
@@ -831,6 +847,31 @@ func (a *App) runTransfer(ctx context.Context, photos []string, output, deviceID
 	<-workersDone
 }
 
+// deviceGone 判断错误是不是「手机不在了」。
+func deviceGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"device offline", "device not found", "no devices", "device unauthorized", "closed"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// abortTransfer 立刻中止整轮传输（设备掉线时用），不改 stopped 标记。
+func (a *App) abortTransfer() {
+	a.xferMu.Lock()
+	a.xferStop = true
+	cancel := a.xferCancel
+	a.xferMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
 	a.xferMu.Lock()
 	defer a.xferMu.Unlock()
@@ -845,6 +886,14 @@ func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
 		inst := a.xferWin.sample(bytesDone)
 		speed, eta, elapsed = transferPace(bytesDone, a.xferTotalB, done, total, a.xferStart, inst)
 	}
+	if !a.xferRunning && !a.xferStart.IsZero() && a.xferLastAt.After(a.xferStart) {
+		// 结束之后别再走秒表：暂停、掉线之后干等的时间不算传输耗时
+		eta = 0
+		elapsed = a.xferLastAt.Sub(a.xferStart).Seconds()
+		if elapsed > 0.05 {
+			speed = float64(bytesDone) / 1024 / 1024 / elapsed
+		}
+	}
 	pct := 0
 	if a.xferTotalB > 0 {
 		pct = int(bytesDone * 100 / a.xferTotalB)
@@ -857,8 +906,9 @@ func (a *App) transferStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"is_running": a.xferRunning, "paused": a.xferPaused, "total": total, "current": done,
 		"completed_count": ok, "failed": a.xferFailed, "current_file": a.xferFile,
-		"stopped":    a.xferStopped,
-		"bytes_done": bytesDone, "bytes_total": a.xferTotalB, "speed_mbps": speed,
+		"stopped":     a.xferStopped,
+		"device_lost": a.xferLost,
+		"bytes_done":  bytesDone, "bytes_total": a.xferTotalB, "speed_mbps": speed,
 		"eta_sec": eta, "elapsed_sec": elapsed, "percent_completed": pct, "output_dir": a.xferOut,
 		"device_id": a.xferDevice, "batch_id": a.xferBatch,
 	})

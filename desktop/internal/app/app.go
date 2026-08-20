@@ -114,6 +114,8 @@ type App struct {
 	xferCancel  context.CancelFunc
 	xferOK      int
 	xferStopped bool
+	xferLost    bool
+	xferLastAt  time.Time
 
 	posterMu sync.Mutex
 }
