@@ -11,3 +11,8 @@ func runNativeWindow(url string) {
 func requestAttention() {}
 
 func notifyUser(title, body string) {}
+
+// 非 macOS 暂无原生拖拽/选择面板，界面上用不到就不显示入口
+func pickFiles() {}
+
+func setFilesPickedHandler(fn func([]string)) {}

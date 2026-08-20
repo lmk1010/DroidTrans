@@ -58,6 +58,7 @@ type Album struct {
 type App struct {
 	ADB       *adb.Client
 	Fast      *fast.Server
+	Out       *Outbox
 	Store     *store.Store
 	OutputDir string
 	ThumbDir  string
@@ -72,6 +73,7 @@ type App struct {
 	inbox       inboxState
 	OnAttention func()
 	OnNotify    func(title, body string)
+	OnPickFiles func()
 	mdnsStop    func()
 
 	devMu     sync.Mutex
@@ -308,6 +310,7 @@ func New() (*App, error) {
 		return nil, err
 	}
 	a := &App{
+		Out:          NewOutbox(),
 		ADB:          adb.New(),
 		Fast:         fast.New(out, ""),
 		Store:        st,
@@ -732,6 +735,12 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/upload/update", a.uploadUpdate)
 	mux.HandleFunc("POST /api/upload/cancel/{id}", a.uploadCancel)
 	mux.HandleFunc("GET /api/inbox", a.inboxStatus)
+	mux.HandleFunc("GET /api/outbox", a.outboxList)
+	mux.HandleFunc("POST /api/outbox/add", a.outboxAdd)
+	mux.HandleFunc("POST /api/outbox/pick", a.outboxPick)
+	mux.HandleFunc("POST /api/outbox/remove", a.outboxRemove)
+	mux.HandleFunc("POST /api/outbox/remove/{id}", a.outboxRemove)
+	mux.HandleFunc("GET /api/outbox/file/{id}", a.outboxFile)
 
 	mux.HandleFunc("GET /api/device_status", a.deviceStatus)
 	mux.HandleFunc("GET /api/check_device", a.deviceStatus)
@@ -859,6 +868,10 @@ func safeUnder(base, rel string) (string, bool) {
 	return abs, true
 }
 
+func pathEscape(s string) string {
+	return url.PathEscape(s)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -875,7 +888,7 @@ func readJSON(r *http.Request) map[string]any {
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "app": "droidtrans", "engine": "go", "root": a.OutputDir})
+	writeJSON(w, 200, map[string]any{"ok": true, "app": "droidtrans", "engine": "go", "root": a.OutputDir, "name": computerName()})
 }
 
 func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
@@ -901,6 +914,8 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 		urls = append(urls, fmt.Sprintf("http://%s:%d", x, HTTPPort))
 	}
 	info := map[string]any{
+		// 带上电脑名：手机那边只在第一次连接时存了名字，之后一直显示旧的
+		"name":    computerName(),
 		"success": true, "ip": ip, "ips": ips, "port": HTTPPort,
 		"url":               fmt.Sprintf("http://%s:%d", ip, HTTPPort),
 		"urls":              urls,

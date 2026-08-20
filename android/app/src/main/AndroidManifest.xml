@@ -90,6 +90,12 @@
             android:theme="@style/Theme.AndroidTransfer" />
 
         <activity
+            android:name=".ReceiveActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.AndroidTransfer" />
+
+        <activity
             android:name=".UploadHistoryActivity"
             android:exported="false"
             android:launchMode="singleTop"

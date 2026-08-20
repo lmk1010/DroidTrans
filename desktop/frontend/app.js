@@ -53,6 +53,11 @@ const I18N = {
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
+    sendTitle: '发到手机', sendPick: '选择文件…', clearAll: '全部清空',
+    sendEmpty: '把文件拖到窗口里', sendEmptyHint: '也可以点「选择文件…」。手机打开卓传就能取走。',
+    waitingPhone: '等手机来取', tookN: '已取走',
+    fileGone: '文件已不在',
+    dropNow: '松手就加入发送清单',
     firstRun: '第一次用', firstRunTitle: '手机扫码装卓传',
     firstRunHint: '装好打开就能连。也可以插数据线走 USB。',
     noPhone: '还没有手机连上来', noPhoneHint: '打开手机 App，搜到这台电脑即可',
@@ -103,6 +108,11 @@ const I18N = {
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
+    sendTitle: 'Send to phone', sendPick: 'Choose files…', clearAll: 'Clear all',
+    sendEmpty: 'Drop files onto this window', sendEmptyHint: 'Or use “Choose files…”. Your phone picks them up.',
+    waitingPhone: 'Waiting for the phone', tookN: 'picked up',
+    fileGone: 'file is gone',
+    dropNow: 'Release to add to the send list',
     firstRun: 'First time', firstRunTitle: 'Scan to install the phone app',
     firstRunHint: 'Open it and it finds this computer. USB works too.',
     noPhone: 'No phone yet', noPhoneHint: 'Open the app on your phone and find this computer',
@@ -266,6 +276,7 @@ const I_USB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 const I_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l5 5L20 7"/></svg>';
 const I_DEVICE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="8" y="2.5" width="8" height="14" rx="1.6"/><path d="M10 18.5h4"/><path d="M7 21h10"/></svg>';
 const I_STACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/></svg>';
+const I_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px;flex-shrink:0"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>';
 const I_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const I_FILM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M8 5v14M16 5v14M3.5 9h17M3.5 15h17"/></svg>';
 
@@ -1635,6 +1646,56 @@ document.addEventListener('keydown', (e) => {
   $('#viewer').classList.add('hidden');
 });
 
+let outboxKey = null;   // null 表示还没画过；空清单的 key 是 ''，用 '' 当初值会把首次渲染挡掉
+
+async function refreshOutbox(force) {
+  const box = $('#outbox');
+  if (!box) return;
+  const data = await api('/api/outbox');
+  const items = data.items || [];
+  const key = items.map((i) => `${i.id}:${i.size}:${i.taken}`).join('|');
+  if (!force && key === outboxKey) return;
+  outboxKey = key;
+  $('#outClear')?.classList.toggle('hidden', items.length === 0);
+  if (!items.length) {
+    box.innerHTML = `<div class="out-empty">${I_UP}<div>
+      <strong>${esc(t('sendEmpty'))}</strong>
+      <small>${esc(t('sendEmptyHint'))}</small>
+    </div></div>`;
+    return;
+  }
+  box.innerHTML = items.map((it) => {
+    const gone = it.size < 0;
+    const meta = gone
+      ? `<span class="meta gone">${esc(t('fileGone'))}</span>`
+      : `<span class="meta">${esc(fmtBytes(it.size) || '')}</span>`;
+    const took = it.taken > 0 ? `<span class="took">${esc(t('tookN'))}</span>` : '';
+    return `<div class="out-row" title="${esc(it.path)}">
+      <span class="name">${esc(it.rel || it.name)}</span>
+      ${took}
+      ${meta}
+      <button type="button" class="out-x" data-id="${esc(it.id)}" aria-label="remove">✕</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('.out-x').forEach((b) => {
+    b.addEventListener('click', async () => {
+      await api(`/api/outbox/remove/${encodeURIComponent(b.dataset.id)}`, { method: 'POST', body: '{}' });
+      refreshOutbox(true);
+    });
+  });
+}
+
+$('#outPick')?.addEventListener('click', async () => {
+  await api('/api/outbox/pick', { method: 'POST', body: '{}' });
+  // 面板是原生模态，关掉之后再刷新几次，等用户选完
+  [600, 1500, 3000, 6000].forEach((ms) => setTimeout(() => refreshOutbox(true), ms));
+});
+
+$('#outClear')?.addEventListener('click', async () => {
+  await api('/api/outbox/remove', { method: 'POST', body: '{}' });
+  refreshOutbox(true);
+});
+
 function renderOnline(online) {
   const el = $('#onlineList');
   if (!online.length) {
@@ -1758,6 +1819,7 @@ async function refreshWifi() {
     setOut(h.root || '', false);
   }
   renderOnline(info.connected_devices || []);
+  refreshOutbox();
   const n = (gal.batches || []).length;
   const jump = $('#wifiRecent');
   if (n) {

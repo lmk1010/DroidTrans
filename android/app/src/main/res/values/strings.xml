@@ -372,4 +372,23 @@
     <string name="notif_upload_progress">%1$d / %2$d  ·  %3$s</string>
     <string name="more">更多</string>
     <string name="send_to_server">传给 %1$s</string>
+
+    <string name="receive_title">电脑发来的</string>
+    <string name="receive_from">来自 %1$s</string>
+    <string name="receive_no_server">还没连过电脑，先去 Wi-Fi 那边连一次</string>
+    <string name="receive_empty">电脑上还没有待发的文件</string>
+    <string name="receive_empty_hint">在电脑上把文件拖进卓传窗口，这里就会出现</string>
+    <string name="receive_get_all">全部接收</string>
+    <string name="receive_pending">%1$d 个文件 · 共 %2$s</string>
+    <string name="receive_progress">已收 %1$d / %2$d</string>
+    <string name="receive_done">已收下 %1$d 个，存在 下载/DroidTrans</string>
+    <string name="receive_done_partial">收下 %1$d 个，失败 %2$d 个</string>
+    <string name="receive_list_failed">电脑没给出清单</string>
+    <string name="receive_offline">连不上电脑，检查是否在同一网络</string>
+    <string name="receive_state_pending">待收</string>
+    <string name="receive_state_downloading">接收中</string>
+    <string name="receive_state_done">已收</string>
+    <string name="receive_state_failed">失败</string>
+    <string name="card_receive_title">电脑发来的</string>
+    <string name="card_receive_subtitle">收电脑上放好的文件</string>
 </resources>

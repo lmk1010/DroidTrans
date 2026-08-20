@@ -358,4 +358,23 @@
     <string name="notif_upload_progress">%1$d / %2$d  ·  %3$s</string>
     <string name="more">More</string>
     <string name="send_to_server">To %1$s</string>
+
+    <string name="receive_title">From this computer</string>
+    <string name="receive_from">From %1$s</string>
+    <string name="receive_no_server">Connect to a computer on the Wi-Fi screen first</string>
+    <string name="receive_empty">Nothing waiting on the computer</string>
+    <string name="receive_empty_hint">Drop files onto the DroidTrans window and they show up here</string>
+    <string name="receive_get_all">Get all</string>
+    <string name="receive_pending">%1$d files · %2$s</string>
+    <string name="receive_progress">%1$d / %2$d received</string>
+    <string name="receive_done">Got %1$d files — Download/DroidTrans</string>
+    <string name="receive_done_partial">Got %1$d, %2$d failed</string>
+    <string name="receive_list_failed">The computer returned no list</string>
+    <string name="receive_offline">Cannot reach the computer — same network?</string>
+    <string name="receive_state_pending">waiting</string>
+    <string name="receive_state_downloading">receiving</string>
+    <string name="receive_state_done">done</string>
+    <string name="receive_state_failed">failed</string>
+    <string name="card_receive_title">From computer</string>
+    <string name="card_receive_subtitle">Pick up files waiting on your computer</string>
 </resources>

@@ -43,6 +43,15 @@ func main() {
 	application.Frontend = sub
 	application.OnAttention = requestAttention
 	application.OnNotify = notifyUser
+	application.OnPickFiles = pickFiles
+	// 窗口上拖进来的文件 / 选择面板选中的文件，直接进「发到手机」队列
+	setFilesPickedHandler(func(paths []string) {
+		for _, p := range paths {
+			if _, err := application.Out.Add(p); err != nil {
+				fmt.Fprintln(os.Stderr, "outbox:", err)
+			}
+		}
+	})
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {

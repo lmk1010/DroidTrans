@@ -22,6 +22,8 @@ public class DashboardActivity extends AppCompatActivity {
     private View cardUsb;
     private View cardWifi;
     private View cardPhoneToPhone;
+    private View cardReceive;
+    private android.widget.TextView tvReceiveCardStatus;
     private DataTransferAnimationView dataTransferAnimation;
     private TextView tvUsbStatus;
     private TextView tvWifiStatus;
@@ -44,6 +46,8 @@ public class DashboardActivity extends AppCompatActivity {
         cardUsb = findViewById(R.id.cardUsb);
         cardWifi = findViewById(R.id.cardWifi);
         cardPhoneToPhone = findViewById(R.id.cardPhoneToPhone);
+        cardReceive = findViewById(R.id.cardReceive);
+        tvReceiveCardStatus = findViewById(R.id.tvReceiveCardStatus);
         dataTransferAnimation = findViewById(R.id.dataTransferAnimation);
         tvUsbStatus = findViewById(R.id.tvUsbStatus);
         tvWifiStatus = findViewById(R.id.tvWifiStatus);
@@ -67,6 +71,10 @@ public class DashboardActivity extends AppCompatActivity {
         });
 
         // 手机互传：进入手机互传选择页面
+        if (cardReceive != null) {
+            cardReceive.setOnClickListener(v -> ReceiveActivity.open(this));
+        }
+
         cardPhoneToPhone.setOnClickListener(v -> {
             v.setEnabled(false); // 防止重复点击
             startActivitySafely(PhoneTransferActivity.class, v);

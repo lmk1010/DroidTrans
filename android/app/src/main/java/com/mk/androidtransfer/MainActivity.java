@@ -435,13 +435,32 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /** 探测到的电脑名；电脑改过名字后，手机这边不该一直显示旧的。 */
+    private volatile String probedName = "";
+
     private boolean probeServer(String ip, int port) {
         Request request = new Request.Builder()
                 .url("http://" + ip + ":" + port + "/api/wifi/info")
                 .get()
                 .build();
+        probedName = "";
         try (okhttp3.Response response = SCAN_CLIENT.newCall(request).execute()) {
-            return response.isSuccessful();
+            if (!response.isSuccessful()) {
+                return false;
+            }
+            okhttp3.ResponseBody body = response.body();
+            if (body != null) {
+                try {
+                    com.google.gson.JsonObject obj = com.google.gson.JsonParser
+                            .parseString(body.string()).getAsJsonObject();
+                    if (obj.has("name") && !obj.get("name").isJsonNull()) {
+                        probedName = obj.get("name").getAsString();
+                    }
+                } catch (Exception ignored) {
+                    // 名字拿不到不影响连接
+                }
+            }
+            return true;
         } catch (Exception e) {
             return false;
         }
@@ -709,7 +728,12 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
                     if (ok) {
-                        String name = prefs.getString(KEY_LAST_NAME, lastIp);
+                        String name = probedName != null && !probedName.isEmpty()
+                                ? probedName
+                                : prefs.getString(KEY_LAST_NAME, lastIp);
+                        if (probedName != null && !probedName.isEmpty()) {
+                            prefs.edit().putString(KEY_LAST_NAME, probedName).apply();
+                        }
                         ServerInfo server = new ServerInfo(name, lastIp, lastPort);
                         radarScanView.addServerDot(server);
                         if (!discoveredServers.contains(server)) {
