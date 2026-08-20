@@ -114,6 +114,8 @@ type App struct {
 	xferCancel  context.CancelFunc
 	xferOK      int
 	xferStopped bool
+
+	posterMu sync.Mutex
 }
 
 type inboxFile struct {
@@ -1752,15 +1754,23 @@ func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 		folder := filepath.Join(base, b.DeviceID, b.BatchID)
 		files := a.batchFiles(b.DeviceID, b.BatchID, folder)
 		cover := ""
+		firstMedia := ""
 		previews := []map[string]any{}
 		for _, f := range files {
 			p, _ := f["path"].(string)
 			if cover == "" && isImage(p) {
 				cover = p
 			}
+			if firstMedia == "" && p != "" {
+				firstMedia = p
+			}
 			if len(previews) < 4 {
 				previews = append(previews, f)
 			}
+		}
+		if cover == "" {
+			// 整批都是视频时也该有封面：本地视频能出 QuickLook 帧
+			cover = firstMedia
 		}
 		name := names[b.DeviceID]
 		if name == "" {

@@ -1494,17 +1494,27 @@ async function openViewer(device, batch, folder) {
   $('#viewerTitle').textContent = `${deviceLabel(device)} · ${formatBatch(batch)}`;
   viewerPhotos = data.photos || [];
   if (data.folder) viewerFolder = data.folder;
-  $('#viewerGrid').innerHTML = viewerPhotos.map((p, i) => `
-    <button type="button" data-i="${i}" data-path="${esc(p.path)}" data-name="${esc(p.name)}">
-      <img alt="${esc(p.name)}" src="${fileURL(p.path)}" />
-    </button>`).join('') || emptyHTML(I_STACK, t('noHist'));
+  $('#viewerGrid').innerHTML = viewerPhotos.map((p, i) => {
+    const vid = isVideoPath(p.path || p.name);
+    const media = vid
+      ? `<img alt="${esc(p.name)}" src="/api/thumb?path=${encodeURIComponent(p.path)}" />
+         <span class="film" aria-hidden="true">${I_FILM}</span>`
+      : `<img alt="${esc(p.name)}" src="${fileURL(p.path)}" />`;
+    return `<button type="button" data-i="${i}" data-path="${esc(p.path)}" data-name="${esc(p.name)}"${vid ? ' data-video="1"' : ''}>
+      ${media}
+    </button>`;
+  }).join('') || emptyHTML(I_STACK, t('noHist'));
   bindImg($('#viewerGrid'));
   $('#viewerGrid').querySelectorAll('button[data-path]').forEach((btn) => {
+    // 视频交给系统播放器：塞进 <img> 的大图查看器只会显示一个裂图
+    const openIt = () => (btn.dataset.video
+      ? openFolder(btn.dataset.path)
+      : showLightbox(Number(btn.dataset.i)));
     bindOpenAndMenu(
       btn,
-      () => showLightbox(Number(btn.dataset.i)),
+      openIt,
       () => [
-        { label: state.lang === 'zh' ? '查看大图' : 'View', act: () => showLightbox(Number(btn.dataset.i)) },
+        { label: btn.dataset.video ? (state.lang === 'zh' ? '播放' : 'Play') : (state.lang === 'zh' ? '查看大图' : 'View'), act: openIt },
         { label: t('reveal'), act: () => reveal(btn.dataset.path) },
         { label: t('open'), act: () => openFolder(btn.dataset.path.replace(/[/\\][^/\\]+$/, '')) },
         { label: t('copyPath'), act: () => copyText(btn.dataset.path) },
@@ -1523,6 +1533,10 @@ $('#lightbox').addEventListener('click', (e) => {
   if (e.target === $('#lightbox')) $('#lightbox').classList.add('hidden');
 });
 $('#lightboxImg').addEventListener('click', (e) => e.stopPropagation());
+$('#lbClose')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  $('#lightbox').classList.add('hidden');
+});
 $('#lbPrev').addEventListener('click', (e) => { e.stopPropagation(); showLightbox(viewerIndex - 1); });
 $('#lbNext').addEventListener('click', (e) => { e.stopPropagation(); showLightbox(viewerIndex + 1); });
 

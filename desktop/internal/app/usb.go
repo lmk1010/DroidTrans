@@ -2,11 +2,15 @@ package app
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -403,15 +407,26 @@ func (a *App) thumb(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing path", 400)
 		return
 	}
-	if isVideo(remote) {
-		http.Error(w, "video", 404)
-		return
-	}
 	if abs, ok := a.safeLocal(remote); ok {
 		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+			if isVideo(abs) {
+				// 本地视频用系统的 QuickLook 出一帧封面，不额外依赖 ffmpeg。
+				// 之前视频一律 404，图库里就是一排空白格。
+				if poster, err := a.videoPoster(abs); err == nil {
+					http.ServeFile(w, r, poster)
+					return
+				}
+				http.Error(w, "no poster", 404)
+				return
+			}
 			http.ServeFile(w, r, abs)
 			return
 		}
+	}
+	if isVideo(remote) {
+		// 手机上的视频要抽帧得先整份拉下来，代价太大，前端会显示胶片占位
+		http.Error(w, "video", 404)
+		return
 	}
 	// 缓存键带上文件大小：手机上同名文件换了内容时，不能再给旧缩略图
 	size := a.ADB.FileSize(remote)
@@ -437,6 +452,57 @@ func (a *App) thumb(w http.ResponseWriter, r *http.Request) {
 	_ = os.WriteFile(local, data, 0o644)
 	w.Header().Set("Content-Type", "image/jpeg")
 	_, _ = w.Write(data)
+}
+
+// videoPoster 用 qlmanage 给本地视频生成一张封面并缓存。
+func (a *App) videoPoster(path string) (string, error) {
+	if runtime.GOOS != "darwin" {
+		return "", fmt.Errorf("unsupported")
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha1.Sum([]byte(fmt.Sprintf("%s|%d|%d", path, st.Size(), st.ModTime().UnixNano())))
+	dir := filepath.Join(a.ThumbDir, "video")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	out := filepath.Join(dir, hex.EncodeToString(sum[:])+".png")
+	if fi, err := os.Stat(out); err == nil && fi.Size() > 0 {
+		return out, nil
+	}
+
+	a.posterMu.Lock()
+	defer a.posterMu.Unlock()
+	if fi, err := os.Stat(out); err == nil && fi.Size() > 0 {
+		return out, nil
+	}
+	tmp, err := os.MkdirTemp("", "dtposter")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, "qlmanage", "-t", "-s", "512", "-o", tmp, path).Run(); err != nil {
+		return "", err
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".png") {
+			continue
+		}
+		if err := linkOrCopy(filepath.Join(tmp, e.Name()), out); err != nil {
+			return "", err
+		}
+		return out, nil
+	}
+	return "", fmt.Errorf("no poster generated")
 }
 
 func remoteToLocal(remote, output string) string {
