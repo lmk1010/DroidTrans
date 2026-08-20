@@ -382,6 +382,25 @@ func LanIP() string {
 	return conn.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
+// hotspotNet 判断这个地址是不是「手机开的热点」分出来的。
+//
+// 没有路由器时，手机开热点、电脑连上去一样能传，而且往往比公共 Wi-Fi 更快更稳。
+// 这类网段要排在最前面显示，否则界面上给的是另一张网卡的地址，手机根本连不上。
+//
+//	192.168.43.x  Android 热点
+//	192.168.49.x  Wi-Fi Direct
+//	172.20.10.x   iPhone 个人热点
+func hotspotNet(ip string) bool {
+	switch {
+	case strings.HasPrefix(ip, "192.168.43."),
+		strings.HasPrefix(ip, "192.168.49."),
+		strings.HasPrefix(ip, "172.20.10."):
+		return true
+	default:
+		return false
+	}
+}
+
 func ifaceRank(name string) int {
 	n := strings.ToLower(name)
 	switch {
@@ -441,7 +460,14 @@ func LanIPs() []string {
 			items = append(items, item{rank: ifaceRank(iface.Name), ip: ip4.String()})
 		}
 	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].rank < items[j].rank })
+	sort.SliceStable(items, func(i, j int) bool {
+		// 手机热点网段优先：这时候电脑多半就是连着手机的热点在传
+		hi, hj := hotspotNet(items[i].ip), hotspotNet(items[j].ip)
+		if hi != hj {
+			return hi
+		}
+		return items[i].rank < items[j].rank
+	})
 	seen := map[string]bool{}
 	var out []string
 	for _, it := range items {
@@ -934,8 +960,13 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 		ips = []string{ip}
 	}
 	urls := make([]string, 0, len(ips))
+	hotspots := make([]string, 0, 1)
 	for _, x := range ips {
-		urls = append(urls, fmt.Sprintf("http://%s:%d", x, HTTPPort))
+		u := fmt.Sprintf("http://%s:%d", x, HTTPPort)
+		urls = append(urls, u)
+		if hotspotNet(x) {
+			hotspots = append(hotspots, u)
+		}
 	}
 	pairRequired := false
 	if a.Pair != nil {
@@ -949,6 +980,8 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 		"url":               fmt.Sprintf("http://%s:%d", ip, HTTPPort),
 		"urls":              urls,
 		"apk_url":           APKDownloadURL,
+		"hotspot_urls":      hotspots,
+		"on_hotspot":        len(hotspots) > 0,
 		"connected_devices": list, "device_count": len(list),
 	}
 	caps := a.Fast.Caps(ip, HTTPPort)

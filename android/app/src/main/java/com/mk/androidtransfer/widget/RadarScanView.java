@@ -257,6 +257,16 @@ public class RadarScanView extends View {
             labelY = dotY + 45f;
         }
 
+        // 靠边的设备名以前会被画到屏幕外（只剩半个名字），这里把标签收回可视范围内
+        float margin = 12f;
+        float half = labelWidth / 2f;
+        if (labelX - half < margin) {
+            labelX = margin + half;
+        }
+        if (labelX + half > getWidth() - margin) {
+            labelX = getWidth() - margin - half;
+        }
+
         float t = dot.labelScale;
         float easedScale = t * t * ((1.70158f + 1f) * t - 1.70158f) + 1f;
         if (easedScale < 0) easedScale = 0;
@@ -314,10 +324,22 @@ public class RadarScanView extends View {
     }
 
     private String displayNameOf(ServerDot dot) {
-        if (dot.serverName != null && dot.serverName.startsWith(serverNamePrefix)) {
-            return dot.serverName.replace(serverNamePrefix + " ", serverShortPrefix);
+        String name = dot.serverName;
+        if (name != null && name.startsWith(serverNamePrefix)) {
+            name = name.replace(serverNamePrefix + " ", serverShortPrefix);
         }
-        return dot.serverName;
+        if (name == null) {
+            return "";
+        }
+        // 名字太长时截断：雷达最多也就放得下这么宽，硬画只会糊成一片
+        float max = getWidth() * 0.62f;
+        if (max > 0 && serverLabelPaint.measureText(name) > max) {
+            while (name.length() > 4 && serverLabelPaint.measureText(name + "…") > max) {
+                name = name.substring(0, name.length() - 1);
+            }
+            name = name + "…";
+        }
+        return name;
     }
 
     public void setOnServerDotClickListener(OnServerDotClickListener listener) {

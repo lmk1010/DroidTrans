@@ -397,4 +397,13 @@
     <string name="share_sending_text">Sending to %1$s…</string>
     <string name="share_text_ok">Sent — also on the computer’s clipboard</string>
     <string name="share_failed">Send failed — same network as the computer?</string>
+    <string name="hotspot_btn">Hotspot mode</string>
+    <string name="hotspot_title">Works without a router</string>
+    <string name="hotspot_steps">1. Turn on the phone hotspot
+2. Join that hotspot from the computer
+3. Come back and tap “Rescan”
+
+This path skips the router — usually faster and steadier than public Wi-Fi.</string>
+    <string name="hotspot_open">Open hotspot settings</string>
+    <string name="hotspot_no_settings">Could not open hotspot settings — please turn it on manually</string>
 </resources>

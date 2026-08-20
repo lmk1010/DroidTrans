@@ -177,6 +177,12 @@ public class MainActivity extends AppCompatActivity {
      * 设置监听器
      */
     private void setupListeners() {
+        // 没有路由器时的路子：手机开热点，电脑连上来
+        android.view.View btnHotspot = findViewById(R.id.btnHotspot);
+        if (btnHotspot != null) {
+            btnHotspot.setOnClickListener(v -> showHotspotGuide());
+        }
+
         // 扫码连接：直接扫电脑上的二维码，省掉手打 IP
         android.view.View btnScan = findViewById(R.id.btnScanQr);
         if (btnScan != null) {
@@ -219,6 +225,34 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, R.string.scan_need_camera, Toast.LENGTH_LONG).show();
                 }
             });
+
+    /** 热点直连引导：说清三步，并直接送到系统的热点设置。 */
+    private void showHotspotGuide() {
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.hotspot_title)
+                .setMessage(R.string.hotspot_steps)
+                .setPositiveButton(R.string.hotspot_open, (d, w) -> openHotspotSettings())
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void openHotspotSettings() {
+        // 热点设置页没有正式的公开 Action，先试通用的那个类名，不行就退回无线设置
+        Intent tether = new Intent(Intent.ACTION_MAIN, null);
+        tether.setClassName("com.android.settings", "com.android.settings.TetherSettings");
+        tether.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(tether);
+            return;
+        } catch (Exception ignored) {
+            // 换一种
+        }
+        try {
+            startActivity(new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS));
+        } catch (Exception e) {
+            Toast.makeText(this, R.string.hotspot_no_settings, Toast.LENGTH_LONG).show();
+        }
+    }
 
     private void launchScanner() {
         if (checkSelfPermission(android.Manifest.permission.CAMERA)

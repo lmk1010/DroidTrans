@@ -417,3 +417,18 @@ func TestAllowRequestRules(t *testing.T) {
 		t.Error("关掉配对后应当一律放行")
 	}
 }
+
+func TestHotspotNetRecognised(t *testing.T) {
+	yes := []string{"192.168.43.17", "192.168.49.2", "172.20.10.5"}
+	for _, ip := range yes {
+		if !hotspotNet(ip) {
+			t.Errorf("%s 应当被认作手机热点网段", ip)
+		}
+	}
+	no := []string{"192.168.1.7", "10.0.0.3", "172.21.10.5", "192.168.430.1"}
+	for _, ip := range no {
+		if hotspotNet(ip) {
+			t.Errorf("%s 不该被认作热点网段", ip)
+		}
+	}
+}

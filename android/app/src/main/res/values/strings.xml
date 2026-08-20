@@ -411,4 +411,13 @@
     <string name="share_sending_text">正在发给 %1$s…</string>
     <string name="share_text_ok">已发到电脑，并放进了电脑剪贴板</string>
     <string name="share_failed">发送失败，检查是否和电脑在同一网络</string>
+    <string name="hotspot_btn">开热点直连</string>
+    <string name="hotspot_title">没有路由器也能传</string>
+    <string name="hotspot_steps">1. 打开手机的个人热点
+2. 电脑连上这个热点的 Wi-Fi
+3. 回到这里点「刷新扫描」
+
+这条路不经过路由器，通常比公共 Wi-Fi 更快更稳。</string>
+    <string name="hotspot_open">去开热点</string>
+    <string name="hotspot_no_settings">打不开热点设置，请手动到系统设置里开</string>
 </resources>

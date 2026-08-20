@@ -1465,3 +1465,5 @@ main { padding: 52px 40px 40px; overflow: auto; }
   border-radius: 99px;
   flex-shrink: 0;
 }
+
+.listen-copy em.on-hotspot { color: var(--ok); }

@@ -53,6 +53,8 @@ const I18N = {
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
+    hotspotOn: '正连着手机热点 · 不用路由器也能传',
+    hotspotHint: '没有路由器？手机开个热点，电脑连上来一样传。',
     pairKicker: '配对码', pairNew: '换一个', pairOff: '关掉配对', pairOn: '开启配对',
     pairHint: '手机扫上面的二维码就自动配对；也可以手输这六位。',
     pairOffHint: '任何在同一网络里的设备都能连这台电脑。',
@@ -113,6 +115,8 @@ const I18N = {
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
+    hotspotOn: 'On the phone’s hotspot — no router needed',
+    hotspotHint: 'No router? Turn on the phone’s hotspot and join it from this computer.',
     pairKicker: 'Pairing code', pairNew: 'New code', pairOff: 'Turn off pairing', pairOn: 'Require pairing',
     pairHint: 'Scanning the code above pairs automatically; or type these six digits.',
     pairOffHint: 'Any device on this network can reach this computer.',
@@ -1884,6 +1888,12 @@ async function refreshWifi() {
   if (state.wifiPick && !$('#wifiOut').value) {
     const h = await api('/api/health');
     setOut(h.root || '', false);
+  }
+  // 连着手机热点时明说：这条路不需要路由器
+  const hint = $('#wifiHint');
+  if (hint) {
+    hint.textContent = info.on_hotspot ? t('hotspotOn') : t('hotspotHint');
+    hint.classList.toggle('on-hotspot', !!info.on_hotspot);
   }
   renderOnline(info.connected_devices || []);
   refreshOutbox();
