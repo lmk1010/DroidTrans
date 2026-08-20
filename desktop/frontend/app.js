@@ -53,6 +53,10 @@ const I18N = {
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
+    pairKicker: '配对码', pairNew: '换一个', pairOff: '关掉配对', pairOn: '开启配对',
+    pairHint: '手机扫上面的二维码就自动配对；也可以手输这六位。',
+    pairOffHint: '任何在同一网络里的设备都能连这台电脑。',
+    pairPeers: '已配对 {n} 台',
     sendTitle: '发到手机', sendPick: '选择文件…', clearAll: '全部清空',
     sendEmpty: '把文件拖到窗口里', sendEmptyHint: '也可以点「选择文件…」。手机打开卓传就能取走。',
     waitingPhone: '等手机来取', tookN: '已取走',
@@ -108,6 +112,10 @@ const I18N = {
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
+    pairKicker: 'Pairing code', pairNew: 'New code', pairOff: 'Turn off pairing', pairOn: 'Require pairing',
+    pairHint: 'Scanning the code above pairs automatically; or type these six digits.',
+    pairOffHint: 'Any device on this network can reach this computer.',
+    pairPeers: '{n} paired',
     sendTitle: 'Send to phone', sendPick: 'Choose files…', clearAll: 'Clear all',
     sendEmpty: 'Drop files onto this window', sendEmptyHint: 'Or use “Choose files…”. Your phone picks them up.',
     waitingPhone: 'Waiting for the phone', tookN: 'picked up',
@@ -1646,6 +1654,37 @@ document.addEventListener('keydown', (e) => {
   $('#viewer').classList.add('hidden');
 });
 
+let pairInfo = { required: true, code: '' };
+
+async function refreshPair() {
+  const box = $('#pairBox');
+  if (!box) return;
+  const info = await api('/api/pair/info');
+  if (!info || info.success !== true) return;
+  pairInfo = { required: !!info.required, code: info.code || '' };
+  box.classList.remove('hidden');
+  $('#pairCode').textContent = pairInfo.required ? (pairInfo.code || '——') : '—';
+  $('#pairNew').classList.toggle('hidden', !pairInfo.required);
+  $('#pairOff').textContent = pairInfo.required ? t('pairOff') : t('pairOn');
+  const peers = info.peers || [];
+  const hint = pairInfo.required ? t('pairHint') : t('pairOffHint');
+  $('#pairPeers').textContent = peers.length
+    ? `${hint}  ·  ${t('pairPeers').replace('{n}', String(peers.length))}`
+    : hint;
+  // 二维码带上配对码，扫一下就连上了，不用手输
+  setWifiURL(lastWifiURL);
+}
+
+$('#pairNew')?.addEventListener('click', async () => {
+  await api('/api/pair/set', { method: 'POST', body: JSON.stringify({ new_code: true }) });
+  refreshPair();
+});
+
+$('#pairOff')?.addEventListener('click', async () => {
+  await api('/api/pair/set', { method: 'POST', body: JSON.stringify({ required: !pairInfo.required }) });
+  refreshPair();
+});
+
 let outboxKey = null;   // null 表示还没画过；空清单的 key 是 ''，用 '' 当初值会把首次渲染挡掉
 
 async function refreshOutbox(force) {
@@ -1777,11 +1816,18 @@ function renderApkQR(url) {
   });
 }
 
+let lastWifiURL = '';
+
 function setWifiURL(url) {
+  lastWifiURL = url || lastWifiURL;
   state.wifiPick = url || '';
   $('#wifiURL').textContent = url || '—';
   $('#wifiURL').title = url || '';
-  renderQR(url || '');
+  // 二维码里带上配对码：手机扫一下直接配对连上，省掉手输六位
+  const target = url && pairInfo.required && pairInfo.code
+    ? `${url}/?c=${encodeURIComponent(pairInfo.code)}`
+    : url;
+  renderQR(target || '');
 }
 
 function renderWifiAlts(urls, current) {
@@ -1820,6 +1866,7 @@ async function refreshWifi() {
   }
   renderOnline(info.connected_devices || []);
   refreshOutbox();
+  refreshPair();
   const n = (gal.batches || []).length;
   const jump = $('#wifiRecent');
   if (n) {

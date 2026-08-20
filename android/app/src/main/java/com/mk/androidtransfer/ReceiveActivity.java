@@ -67,6 +67,16 @@ public class ReceiveActivity extends AppCompatActivity {
     private final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.MINUTES)
+            .addInterceptor(chain -> {
+                // 取电脑上的文件同样要过配对
+                String tok = currentToken();
+                if (tok == null || tok.isEmpty()) {
+                    return chain.proceed(chain.request());
+                }
+                return chain.proceed(chain.request().newBuilder()
+                        .header(com.mk.androidtransfer.network.Pairing.header(), tok)
+                        .build());
+            })
             .build();
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final List<ReceiveItem> items = new ArrayList<>();
@@ -81,6 +91,11 @@ public class ReceiveActivity extends AppCompatActivity {
 
     private String baseUrl;
     private String serverName;
+
+    /** 当前电脑的配对令牌；字段初始化时不能直接引用后面声明的 baseUrl。 */
+    private String currentToken() {
+        return com.mk.androidtransfer.network.Pairing.token(this, baseUrl == null ? "" : baseUrl);
+    }
 
     public static void open(Context ctx) {
         ctx.startActivity(new Intent(ctx, ReceiveActivity.class));

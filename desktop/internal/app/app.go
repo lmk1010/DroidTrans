@@ -59,6 +59,7 @@ type App struct {
 	ADB       *adb.Client
 	Fast      *fast.Server
 	Out       *Outbox
+	Pair      *Pairing
 	Store     *store.Store
 	OutputDir string
 	ThumbDir  string
@@ -323,6 +324,7 @@ func New() (*App, error) {
 		scanStage:    "idle",
 		settingsPath: filepath.Join(out, "settings.json"),
 	}
+	a.Pair = LoadPairing(filepath.Join(out, "pairing.json"))
 	if saved := loadSettings(a.settingsPath); saved.OutputDir != "" {
 		if err := os.MkdirAll(saved.OutputDir, 0o755); err == nil {
 			a.OutputDir = saved.OutputDir
@@ -469,6 +471,17 @@ func (a *App) Shutdown() {
 
 func (a *App) StartBackground() {
 	a.Store.PruneEmptyBatches()
+	// 高速通道（TCP/FTP）也走同一套配对令牌
+	a.Fast.SetAuth(func(token string) bool {
+		if a.Pair == nil {
+			return true
+		}
+		required, _, _ := a.Pair.Snapshot()
+		if !required {
+			return true
+		}
+		return a.Pair.Valid(token)
+	})
 	a.Fast.SetLANIP(LanIP())
 	a.Fast.SetOutputDir(a.OutputDir)
 	a.Fast.SetOnReceived(func(name string, size int64, dest string) {
@@ -735,6 +748,9 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/upload/update", a.uploadUpdate)
 	mux.HandleFunc("POST /api/upload/cancel/{id}", a.uploadCancel)
 	mux.HandleFunc("GET /api/inbox", a.inboxStatus)
+	mux.HandleFunc("POST /api/pair", a.pairHandler)
+	mux.HandleFunc("GET /api/pair/info", a.pairInfo)
+	mux.HandleFunc("POST /api/pair/set", a.pairSet)
 	mux.HandleFunc("GET /api/outbox", a.outboxList)
 	mux.HandleFunc("POST /api/outbox/add", a.outboxAdd)
 	mux.HandleFunc("POST /api/outbox/pick", a.outboxPick)
@@ -783,7 +799,7 @@ func (a *App) Handler() http.Handler {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
-	return withGuard(mux)
+	return a.withGuard(mux)
 }
 
 // withGuard 只放行本机界面与局域网里的手机：
@@ -791,7 +807,7 @@ func (a *App) Handler() http.Handler {
 //   - 带 Origin 的请求（浏览器发起）只认 localhost / 纯 IP 的来源，
 //     普通网站的 Origin 是域名，会被挡在 CSRF 之外。
 //   - 手机 App 是原生请求，没有 Origin，直接放行。
-func withGuard(next http.Handler) http.Handler {
+func (a *App) withGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowedHost(r.Host) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
@@ -810,6 +826,12 @@ func withGuard(next http.Handler) http.Handler {
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
+			return
+		}
+		if !a.allowRequest(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"success": false, "error": "需要先配对", "pairing_required": true,
+			})
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -913,10 +935,15 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 	for _, x := range ips {
 		urls = append(urls, fmt.Sprintf("http://%s:%d", x, HTTPPort))
 	}
+	pairRequired := false
+	if a.Pair != nil {
+		pairRequired, _, _ = a.Pair.Snapshot()
+	}
 	info := map[string]any{
 		// 带上电脑名：手机那边只在第一次连接时存了名字，之后一直显示旧的
-		"name":    computerName(),
-		"success": true, "ip": ip, "ips": ips, "port": HTTPPort,
+		"name":             computerName(),
+		"pairing_required": pairRequired,
+		"success":          true, "ip": ip, "ips": ips, "port": HTTPPort,
 		"url":               fmt.Sprintf("http://%s:%d", ip, HTTPPort),
 		"urls":              urls,
 		"apk_url":           APKDownloadURL,

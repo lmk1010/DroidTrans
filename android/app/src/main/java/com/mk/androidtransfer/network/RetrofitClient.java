@@ -11,6 +11,17 @@ import retrofit2.converter.gson.GsonConverterFactory;
  * Retrofit客户端单例
  */
 public class RetrofitClient {
+    /** 当前电脑的配对令牌，由 setToken 设置；请求统一带上。 */
+    private static volatile String token = "";
+
+    public static void setToken(String value) {
+        token = value == null ? "" : value;
+    }
+
+    public static String getToken() {
+        return token;
+    }
+
     private static RetrofitClient instance;
     private ApiService apiService;
     private OkHttpClient okHttpClient;
@@ -34,6 +45,15 @@ public class RetrofitClient {
         loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BASIC);
 
         OkHttpClient okHttpClient = new OkHttpClient.Builder()
+                .addInterceptor(chain -> {
+                    String t = token;
+                    if (t.isEmpty()) {
+                        return chain.proceed(chain.request());
+                    }
+                    return chain.proceed(chain.request().newBuilder()
+                            .header(com.mk.androidtransfer.network.Pairing.header(), t)
+                            .build());
+                })
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(5, TimeUnit.MINUTES)
                 .writeTimeout(10, TimeUnit.MINUTES)

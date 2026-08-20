@@ -183,6 +183,18 @@
           <input id="wifiOut" type="text" spellcheck="false" />
           <button type="button" id="openOut" class="ghost" data-i18n="open">打开文件夹</button>
         </div>
+        <div id="pairBox" class="pair-box hidden">
+          <div class="pair-left">
+            <span class="kicker" data-i18n="pairKicker">配对码</span>
+            <strong id="pairCode">——</strong>
+            <em id="pairPeers" data-i18n="pairHint">手机扫上面的二维码就自动配对；也可以手输这六位。</em>
+          </div>
+          <div class="pair-acts">
+            <button type="button" id="pairNew" class="ghost" data-i18n="pairNew">换一个</button>
+            <button type="button" id="pairOff" class="ghost" data-i18n="pairOff">关掉配对</button>
+          </div>
+        </div>
+
         <div class="sub-row">
           <h3 data-i18n="sendTitle">发到手机</h3>
           <div class="sub-acts">

@@ -394,4 +394,12 @@
     <string name="pick_any_file">发其他文件</string>
     <string name="pick_any_none">没有选到文件</string>
     <string name="pick_any_count">已选 %1$d 个文件</string>
+    <string name="scan_qr">扫码连接</string>
+    <string name="scan_prompt">对准电脑上的二维码</string>
+    <string name="scan_bad">这个码不是卓传的地址</string>
+    <string name="scan_need_camera">需要相机权限才能扫码</string>
+    <string name="pair_title">需要配对</string>
+    <string name="pair_message">在电脑的 Wi-Fi 页上能看到六位配对码。扫电脑上的二维码可以免输。</string>
+    <string name="pair_ok">配对成功</string>
+    <string name="pair_failed">配对码不对，或连不上电脑</string>
 </resources>

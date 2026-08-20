@@ -33,6 +33,25 @@ type Server struct {
 	onProgress ProgressHandler
 	tcpUp      bool
 	ftpUp      bool
+	auth       func(token string) bool
+}
+
+// SetAuth 设置令牌校验。返回 nil 表示不需要配对。
+func (s *Server) SetAuth(fn func(token string) bool) {
+	s.mu.Lock()
+	s.auth = fn
+	s.mu.Unlock()
+}
+
+// checkToken 需要配对时校验令牌；不需要配对时一律放行。
+func (s *Server) checkToken(token string) bool {
+	s.mu.RLock()
+	fn := s.auth
+	s.mu.RUnlock()
+	if fn == nil {
+		return true
+	}
+	return fn(token)
 }
 
 func (s *Server) setUp(tcp, up bool) {
@@ -177,9 +196,14 @@ func (s *Server) handleTCP(conn net.Conn) {
 	if tc, ok := conn.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
 	}
-	name, size, err := readATF1(conn)
+	name, size, token, err := readHeader(conn)
 	if err != nil {
 		_, _ = conn.Write([]byte("ERR " + err.Error() + "\n"))
+		return
+	}
+	if !s.checkToken(token) {
+		// 高速通道也要认令牌，否则配对形同虚设
+		_, _ = conn.Write([]byte("ERR pairing required\n"))
 		return
 	}
 	dest, err := SafeJoin(s.OutputDir(), name)
@@ -197,30 +221,51 @@ func (s *Server) handleTCP(conn net.Conn) {
 	_, _ = conn.Write([]byte("OK\n"))
 }
 
-func readATF1(r io.Reader) (string, int64, error) {
+// readHeader 读传输头。
+//
+//	ATF1: magic | nameLen | name | size            （旧版，无令牌）
+//	ATF2: magic | tokenLen | token | nameLen | name | size
+//
+// 加 ATF2 是因为原来的 TCP 通道谁都能连、直接往电脑上写文件。
+func readHeader(r io.Reader) (name string, size int64, token string, err error) {
 	head := make([]byte, 4)
-	if _, err := io.ReadFull(r, head); err != nil {
-		return "", 0, err
+	if _, err = io.ReadFull(r, head); err != nil {
+		return "", 0, "", err
 	}
-	if string(head) != "ATF1" {
-		return "", 0, fmt.Errorf("bad magic")
+	magic := string(head)
+	if magic != "ATF1" && magic != "ATF2" {
+		return "", 0, "", fmt.Errorf("bad magic")
 	}
-	var nameLen uint32
-	if err := binary.Read(r, binary.BigEndian, &nameLen); err != nil {
-		return "", 0, err
+	if magic == "ATF2" {
+		token, err = readStr(r, 512)
+		if err != nil {
+			return "", 0, "", err
+		}
 	}
-	if nameLen > 4096 {
-		return "", 0, fmt.Errorf("name too long")
+	name, err = readStr(r, 4096)
+	if err != nil {
+		return "", 0, "", err
 	}
-	nameBuf := make([]byte, nameLen)
-	if _, err := io.ReadFull(r, nameBuf); err != nil {
-		return "", 0, err
+	var raw uint64
+	if err = binary.Read(r, binary.BigEndian, &raw); err != nil {
+		return "", 0, "", err
 	}
-	var size uint64
-	if err := binary.Read(r, binary.BigEndian, &size); err != nil {
-		return "", 0, err
+	return name, int64(raw), token, nil
+}
+
+func readStr(r io.Reader, max uint32) (string, error) {
+	var n uint32
+	if err := binary.Read(r, binary.BigEndian, &n); err != nil {
+		return "", err
 	}
-	return string(nameBuf), int64(size), nil
+	if n > max {
+		return "", fmt.Errorf("field too long")
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return "", err
+	}
+	return string(buf), nil
 }
 
 type countWriter struct {
@@ -295,6 +340,7 @@ func (s *Server) handleFTP(conn net.Conn) {
 		}
 	}()
 	filename := "unnamed.bin"
+	pass := ""
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
@@ -304,7 +350,15 @@ func (s *Server) handleFTP(conn net.Conn) {
 		cmd, arg, _ := strings.Cut(line, " ")
 		cmd = strings.ToUpper(cmd)
 		switch cmd {
-		case "USER", "PASS":
+		case "USER":
+			ftpSend(conn, "331 Need password")
+		case "PASS":
+			// 配对令牌就当密码用，标准 FTP 客户端也能接
+			pass = strings.TrimSpace(arg)
+			if !s.checkToken(pass) {
+				ftpSend(conn, "530 pairing required")
+				continue
+			}
 			ftpSend(conn, "230 OK")
 		case "TYPE":
 			ftpSend(conn, "200 Type set")
@@ -335,6 +389,10 @@ func (s *Server) handleFTP(conn net.Conn) {
 			p1, p2 := port/256, port%256
 			ftpSend(conn, fmt.Sprintf("227 Entering Passive Mode (%s,%d,%d)", strings.ReplaceAll(ip, ".", ","), p1, p2))
 		case "STOR":
+			if !s.checkToken(pass) {
+				ftpSend(conn, "530 pairing required")
+				continue
+			}
 			if strings.TrimSpace(arg) != "" {
 				filename = strings.TrimSpace(arg)
 			}

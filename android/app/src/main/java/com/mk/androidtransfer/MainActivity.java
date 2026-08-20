@@ -177,6 +177,12 @@ public class MainActivity extends AppCompatActivity {
      * 设置监听器
      */
     private void setupListeners() {
+        // 扫码连接：直接扫电脑上的二维码，省掉手打 IP
+        android.view.View btnScan = findViewById(R.id.btnScanQr);
+        if (btnScan != null) {
+            btnScan.setOnClickListener(v -> launchScanner());
+        }
+
         // 手动输入按钮
         if (btnManualInput != null) {
             btnManualInput.setOnClickListener(v -> showManualInputDialog());
@@ -195,6 +201,127 @@ public class MainActivity extends AppCompatActivity {
                 startNetworkScan();
             });
         }
+    }
+
+    private final androidx.activity.result.ActivityResultLauncher<com.journeyapps.barcodescanner.ScanOptions> qrScanner =
+            registerForActivityResult(new com.journeyapps.barcodescanner.ScanContract(), result -> {
+                if (result == null || result.getContents() == null) {
+                    return;   // 用户取消
+                }
+                onScanned(result.getContents());
+            });
+
+    private final androidx.activity.result.ActivityResultLauncher<String> cameraPermission =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.RequestPermission(), granted -> {
+                if (granted) {
+                    startScanner();
+                } else {
+                    Toast.makeText(this, R.string.scan_need_camera, Toast.LENGTH_LONG).show();
+                }
+            });
+
+    private void launchScanner() {
+        if (checkSelfPermission(android.Manifest.permission.CAMERA)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startScanner();
+        } else {
+            cameraPermission.launch(android.Manifest.permission.CAMERA);
+        }
+    }
+
+    private void startScanner() {
+        com.journeyapps.barcodescanner.ScanOptions options = new com.journeyapps.barcodescanner.ScanOptions();
+        options.setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE);
+        options.setPrompt(getString(R.string.scan_prompt));
+        options.setBeepEnabled(false);
+        options.setOrientationLocked(false);
+        qrScanner.launch(options);
+    }
+
+    /** 扫到的内容形如 http://192.168.1.5:9500/?c=123456，也接受纯 IP。 */
+    private void onScanned(String text) {
+        String content = text == null ? "" : text.trim();
+        if (content.isEmpty() || (!content.startsWith("http://") && !content.matches("^[0-9a-fA-F:.]+(:\\d+)?$"))) {
+            Toast.makeText(this, R.string.scan_bad, Toast.LENGTH_LONG).show();
+            return;
+        }
+        String code = "";
+        int q = content.indexOf("?c=");
+        if (q >= 0) {
+            code = content.substring(q + 3);
+            content = content.substring(0, q);
+            int amp = code.indexOf('&');
+            if (amp >= 0) {
+                code = code.substring(0, amp);
+            }
+        }
+        final String address = content.endsWith("/") ? content.substring(0, content.length() - 1) : content;
+        if (code.isEmpty()) {
+            connectToManualServer(address);
+            return;
+        }
+        // 二维码里带了配对码，直接换令牌，用户什么都不用输
+        final String finalCode = code;
+        new Thread(() -> {
+            boolean ok = com.mk.androidtransfer.network.Pairing.pair(this, address, finalCode);
+            mainHandler.post(() -> {
+                if (ok) {
+                    RetrofitClient.setToken(com.mk.androidtransfer.network.Pairing.token(this, address));
+                    Toast.makeText(this, R.string.pair_ok, Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, R.string.pair_failed, Toast.LENGTH_LONG).show();
+                }
+                connectToManualServer(address);
+            });
+        }).start();
+    }
+
+    /** 连之前先把这台电脑的令牌装上；没有令牌又要求配对时，让用户输六位码。 */
+    private void ensurePaired(String baseUrl, Runnable onReady) {
+        String saved = com.mk.androidtransfer.network.Pairing.token(this, baseUrl);
+        if (saved != null && !saved.isEmpty()) {
+            RetrofitClient.setToken(saved);
+            onReady.run();
+            return;
+        }
+        new Thread(() -> {
+            boolean needs = com.mk.androidtransfer.network.Pairing.requiresPairing(baseUrl);
+            mainHandler.post(() -> {
+                if (!needs) {
+                    RetrofitClient.setToken("");
+                    onReady.run();
+                    return;
+                }
+                askPairCode(baseUrl, onReady);
+            });
+        }).start();
+    }
+
+    private void askPairCode(String baseUrl, Runnable onReady) {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        input.setHint("000000");
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.pair_title)
+                .setMessage(R.string.pair_message)
+                .setView(input)
+                .setPositiveButton(R.string.connect, (d, w) -> {
+                    String code = input.getText().toString().trim();
+                    new Thread(() -> {
+                        boolean ok = com.mk.androidtransfer.network.Pairing.pair(this, baseUrl, code);
+                        mainHandler.post(() -> {
+                            if (ok) {
+                                RetrofitClient.setToken(com.mk.androidtransfer.network.Pairing.token(this, baseUrl));
+                                Toast.makeText(this, R.string.pair_ok, Toast.LENGTH_SHORT).show();
+                                onReady.run();
+                            } else {
+                                Toast.makeText(this, R.string.pair_failed, Toast.LENGTH_LONG).show();
+                            }
+                        });
+                    }).start();
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
     }
 
     /**
@@ -819,6 +946,11 @@ public class MainActivity extends AppCompatActivity {
      * 注册设备连接
      */
     private void registerDeviceConnection(ServerInfo server) {
+        // 先确保这台电脑的配对令牌就位，否则后面每个请求都会被挡回 401
+        ensurePaired(server.getServerUrl(), () -> registerDeviceConnectionInner(server));
+    }
+
+    private void registerDeviceConnectionInner(ServerInfo server) {
         String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         String deviceName = DeviceNameGenerator.getOrGenerateDeviceName(this);
         

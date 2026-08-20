@@ -380,4 +380,12 @@
     <string name="pick_any_file">Send other files</string>
     <string name="pick_any_none">No files selected</string>
     <string name="pick_any_count">%1$d files selected</string>
+    <string name="scan_qr">Scan code</string>
+    <string name="scan_prompt">Point at the code on your computer</string>
+    <string name="scan_bad">That code is not a DroidTrans address</string>
+    <string name="scan_need_camera">Camera permission is needed to scan</string>
+    <string name="pair_title">Pairing needed</string>
+    <string name="pair_message">The six-digit code is on the computer’s Wi-Fi page. Scanning its QR code skips this.</string>
+    <string name="pair_ok">Paired</string>
+    <string name="pair_failed">Wrong code, or the computer is unreachable</string>
 </resources>

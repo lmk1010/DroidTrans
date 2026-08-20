@@ -104,7 +104,16 @@ public class FastTransferClient {
         try (OutputStream raw = socket.getOutputStream();
              DataOutputStream out = new DataOutputStream(new BufferedOutputStream(raw, CHUNK))) {
             byte[] name = item.getRelativePath().getBytes(StandardCharsets.UTF_8);
-            out.write(new byte[]{'A', 'T', 'F', '1'});
+            String token = RetrofitClient.getToken();
+            if (token != null && !token.isEmpty()) {
+                // ATF2 带配对令牌：TCP 这条高速通道以前谁连上都能往电脑写文件
+                byte[] tok = token.getBytes(StandardCharsets.UTF_8);
+                out.write(new byte[]{'A', 'T', 'F', '2'});
+                out.writeInt(tok.length);
+                out.write(tok);
+            } else {
+                out.write(new byte[]{'A', 'T', 'F', '1'});
+            }
             out.writeInt(name.length);
             out.write(name);
             out.writeLong(item.getSize());
@@ -127,7 +136,8 @@ public class FastTransferClient {
         readLine(ctrl);
         writeLine(ctrl, "USER android");
         readLine(ctrl);
-        writeLine(ctrl, "PASS transfer");
+        String ftpToken = RetrofitClient.getToken();
+        writeLine(ctrl, "PASS " + (ftpToken == null || ftpToken.isEmpty() ? "transfer" : ftpToken));
         readLine(ctrl);
         writeLine(ctrl, "TYPE I");
         readLine(ctrl);

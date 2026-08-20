@@ -1,6 +1,8 @@
 package fast
 
 import (
+	"bytes"
+	"encoding/binary"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -81,4 +83,53 @@ func TestListenRetryReportsLiveState(t *testing.T) {
 	if tcp, ftp := s.Live(); tcp || ftp {
 		t.Error("还没 Start 就报告在监听")
 	}
+}
+
+func TestReadHeaderBothVersions(t *testing.T) {
+	// ATF1：老格式，没有令牌
+	buf := &bytes.Buffer{}
+	buf.WriteString("ATF1")
+	writeStr(buf, "a.jpg")
+	_ = binary.Write(buf, binary.BigEndian, uint64(1234))
+	name, size, token, err := readHeader(buf)
+	if err != nil || name != "a.jpg" || size != 1234 || token != "" {
+		t.Fatalf("ATF1 解析错了: %q %d %q %v", name, size, token, err)
+	}
+
+	// ATF2：带令牌
+	buf = &bytes.Buffer{}
+	buf.WriteString("ATF2")
+	writeStr(buf, "tok123")
+	writeStr(buf, "b.mp4")
+	_ = binary.Write(buf, binary.BigEndian, uint64(99))
+	name, size, token, err = readHeader(buf)
+	if err != nil || name != "b.mp4" || size != 99 || token != "tok123" {
+		t.Fatalf("ATF2 解析错了: %q %d %q %v", name, size, token, err)
+	}
+}
+
+func TestReadHeaderRejectsGarbage(t *testing.T) {
+	buf := bytes.NewBufferString("HTTP/1.1 200")
+	if _, _, _, err := readHeader(buf); err == nil {
+		t.Error("非法魔数应当报错")
+	}
+}
+
+func TestCheckTokenGate(t *testing.T) {
+	s := New(t.TempDir(), "127.0.0.1")
+	if !s.checkToken("") {
+		t.Error("没设置校验函数时应当放行")
+	}
+	s.SetAuth(func(tok string) bool { return tok == "good" })
+	if s.checkToken("bad") {
+		t.Error("错误令牌不该放行")
+	}
+	if !s.checkToken("good") {
+		t.Error("正确令牌应当放行")
+	}
+}
+
+func writeStr(b *bytes.Buffer, s string) {
+	_ = binary.Write(b, binary.BigEndian, uint32(len(s)))
+	b.WriteString(s)
 }

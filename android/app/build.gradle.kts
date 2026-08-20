@@ -64,6 +64,9 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // 扫码连接：桌面端的二维码要能被 App 直接扫，而不是丢给系统浏览器
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
     // 图片加载
     implementation("com.github.bumptech.glide:glide:4.16.0")
 

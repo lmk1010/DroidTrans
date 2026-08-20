@@ -109,3 +109,6 @@ htmlcov/
 所有问题*.md
 打包说明.txt
 *.sh.bak
+
+# 配对令牌（本机凭据，不进版本库）
+pairing.json

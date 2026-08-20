@@ -118,7 +118,8 @@ func TestDeleteBatchRefusesTraversal(t *testing.T) {
 }
 
 func TestGuardBlocksForeignOrigin(t *testing.T) {
-	h := withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a := newTestApp(t)
+	h := a.withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 	}))
 	r := httptest.NewRequest("POST", "http://127.0.0.1:9500/api/history/clear", nil)
@@ -138,7 +139,8 @@ func TestGuardBlocksForeignOrigin(t *testing.T) {
 }
 
 func TestGuardBlocksRebindHost(t *testing.T) {
-	h := withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	a := newTestApp(t)
+	h := a.withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 	}))
 	r := httptest.NewRequest("GET", "/api/health", nil)
@@ -336,5 +338,82 @@ func TestOutboxListFlagsMissingFile(t *testing.T) {
 	first, _ := items[0].(map[string]any)
 	if size, _ := first["size"].(float64); size >= 0 {
 		t.Errorf("文件已不在，size 应当标成 -1，实际 %v", size)
+	}
+}
+
+func TestPairingGate(t *testing.T) {
+	dir := t.TempDir()
+	p := LoadPairing(filepath.Join(dir, "pairing.json"))
+	if !p.Required {
+		t.Error("默认应当要求配对")
+	}
+	_, code, _ := p.Snapshot()
+	if len(code) != 6 {
+		t.Fatalf("配对码 %q 不是六位", code)
+	}
+
+	if _, ok := p.Pair("000000", "d1", "手机"); ok {
+		t.Error("错误的配对码不该发令牌")
+	}
+	tok, ok := p.Pair(code, "d1", "手机")
+	if !ok || tok == "" {
+		t.Fatal("正确的配对码没换到令牌")
+	}
+	if !p.Valid(tok) {
+		t.Error("刚发的令牌应当有效")
+	}
+	if p.Valid("whatever") {
+		t.Error("随便一个字符串不该被当成令牌")
+	}
+
+	// 重新加载后仍然认这个令牌
+	again := LoadPairing(filepath.Join(dir, "pairing.json"))
+	if !again.Valid(tok) {
+		t.Error("重启后配对关系丢了")
+	}
+
+	again.Revoke(tok[:6])
+	if again.Valid(tok) {
+		t.Error("撤销之后还认")
+	}
+}
+
+func TestAllowRequestRules(t *testing.T) {
+	a := newTestApp(t)
+	a.Pair = LoadPairing(filepath.Join(t.TempDir(), "pairing.json"))
+	_, code, _ := a.Pair.Snapshot()
+	tok, _ := a.Pair.Pair(code, "d", "phone")
+
+	lan := func(path, token string) *http.Request {
+		r := httptest.NewRequest("POST", path, nil)
+		r.RemoteAddr = "192.168.1.44:51234"
+		if token != "" {
+			r.Header.Set("X-DT-Token", token)
+		}
+		return r
+	}
+
+	if a.allowRequest(lan("/api/inbox", "")) {
+		t.Error("局域网里没令牌的请求应当被挡")
+	}
+	if !a.allowRequest(lan("/api/inbox", tok)) {
+		t.Error("带正确令牌的请求应当放行")
+	}
+	// 发现类接口必须开着，否则手机连「这台电脑在不在」都问不出来
+	for _, p := range []string{"/api/health", "/api/wifi/info", "/api/fast/caps", "/api/pair"} {
+		if !a.allowRequest(lan(p, "")) {
+			t.Errorf("%s 应当保持开放", p)
+		}
+	}
+	// 桌面端界面跑在本机，不该被自己的配对挡住
+	local := httptest.NewRequest("POST", "/api/history/clear", nil)
+	local.RemoteAddr = "127.0.0.1:5555"
+	if !a.allowRequest(local) {
+		t.Error("本机界面被挡了")
+	}
+
+	a.Pair.SetRequired(false)
+	if !a.allowRequest(lan("/api/inbox", "")) {
+		t.Error("关掉配对后应当一律放行")
 	}
 }
