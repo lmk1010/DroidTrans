@@ -812,6 +812,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/history/devices", a.histDevices)
 	mux.HandleFunc("POST /api/history/clear", a.histClear)
 	mux.HandleFunc("POST /api/history/forget", a.histForget)
+	mux.HandleFunc("POST /api/history/prune_missing", a.histPruneMissing)
 	mux.HandleFunc("GET /api/gallery", a.gallery)
 	mux.HandleFunc("GET /api/gallery/batch", a.galleryBatch)
 	mux.HandleFunc("POST /api/reveal", a.revealPath)
@@ -1913,6 +1914,31 @@ func (a *App) histForget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"success": true})
 }
 
+// histPruneMissing 把「文件已经不在磁盘上」的批次记录清掉。
+//
+// 这些记录对用户没有任何用处——东西早就没了，却和正常批次一样占着图库的位置。
+// 只删记录，不碰磁盘。
+func (a *App) histPruneMissing(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.Store.Batches("")
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	a.mu.Lock()
+	base := a.wifiOut
+	a.mu.Unlock()
+	removed := 0
+	for _, b := range rows {
+		folder := filepath.Join(base, b.DeviceID, b.BatchID)
+		if !a.batchMissing(b.DeviceID, b.BatchID, folder) {
+			continue
+		}
+		a.Store.DeleteBatch(b.DeviceID, b.BatchID)
+		removed++
+	}
+	writeJSON(w, 200, map[string]any{"success": true, "removed": removed})
+}
+
 func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.Store.Batches("")
 	if err != nil {
@@ -1978,14 +2004,7 @@ func (a *App) gallery(w http.ResponseWriter, r *http.Request) {
 		if len(files) > count {
 			count = len(files)
 		}
-		missing := len(files) == 0
-		if !missing {
-			if p, _ := files[0]["path"].(string); p != "" {
-				if _, err := os.Stat(p); err != nil {
-					missing = true
-				}
-			}
-		}
+		missing := a.batchMissing(b.DeviceID, b.BatchID, folder)
 		size := b.TotalSize
 		if size == 0 {
 			for _, f := range files {
@@ -2034,6 +2053,27 @@ func (a *App) galleryBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"success": true, "device_id": id, "batch_id": batch, "folder": folder, "photos": files,
 	})
+}
+
+// batchMissing 判断一个批次的文件是不是已经不在磁盘上了。
+//
+// 图库列表和「清理这些记录」必须用同一个判定，否则会出现
+// 界面说 9 批、点清理只删掉 2 条这种对不上的情况。
+func (a *App) batchMissing(deviceID, batchID, folder string) bool {
+	files := a.batchFiles(deviceID, batchID, folder)
+	if len(files) == 0 {
+		return true
+	}
+	for _, f := range files {
+		p, _ := f["path"].(string)
+		if p == "" {
+			continue
+		}
+		if _, err := os.Stat(p); err == nil {
+			return false // 只要还有一个文件在，就不算丢
+		}
+	}
+	return true
 }
 
 func (a *App) batchFiles(deviceID, batchID, folder string) []map[string]any {

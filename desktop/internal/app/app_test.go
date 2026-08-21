@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"droidtrans/internal/store"
 )
 
 func TestAllowedHost(t *testing.T) {
@@ -461,5 +463,52 @@ func TestPhoneBrowserDetection(t *testing.T) {
 		if isPhoneBrowser(ua) {
 			t.Errorf("不该识别为手机浏览器: %q", ua)
 		}
+	}
+}
+
+func TestBatchMissingMatchesPrune(t *testing.T) {
+	a := newTestApp(t)
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	a.Store = st
+
+	// 一批文件还在
+	liveDir := filepath.Join(a.OutputDir, "dev", "live")
+	if err := os.MkdirAll(liveDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	livePath := filepath.Join(liveDir, "a.jpg")
+	if err := os.WriteFile(livePath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.SaveBatch(store.Batch{DeviceID: "dev", BatchID: "live", PhotoCount: 1})
+	st.AddPhoto("dev", "live", "a.jpg", livePath, 1)
+
+	// 一批只剩数据库记录，文件早没了
+	_ = st.SaveBatch(store.Batch{DeviceID: "dev", BatchID: "dead", PhotoCount: 1})
+	st.AddPhoto("dev", "dead", "b.jpg", filepath.Join(a.OutputDir, "dev", "dead", "b.jpg"), 1)
+
+	if a.batchMissing("dev", "live", liveDir) {
+		t.Error("文件还在的批次被判成丢失")
+	}
+	if !a.batchMissing("dev", "dead", filepath.Join(a.OutputDir, "dev", "dead")) {
+		t.Error("只剩数据库记录的批次应当算丢失")
+	}
+
+	w := httptest.NewRecorder()
+	a.histPruneMissing(w, httptest.NewRequest("POST", "/api/history/prune_missing", nil))
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := out["removed"].(float64); n != 1 {
+		t.Errorf("清理掉 %v 批，想要 1（界面标几批就该清几批）", out["removed"])
+	}
+	rows, _ := st.Batches("dev")
+	if len(rows) != 1 || rows[0].BatchID != "live" {
+		t.Errorf("剩下的批次不对: %+v", rows)
 	}
 }

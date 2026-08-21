@@ -71,6 +71,7 @@ const I18N = {
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
     noAppYet: '手机还没装卓传？', apkGet: '用相机扫上面的码',
+    goneN: '{n} 批的文件已不在', goneClean: '清理这些记录', goneShow: '看看',
     paneRecv: '接收', paneSend: '发送', sendWaiting: '等手机来取',
     sendHead: '发到手机', sendSub: '拖文件进窗口，或粘一段文字。手机打开卓传就能取走。',
     pairManage: '管理', pairSummary: '配对码 {code} · 已配对 {n} 台', pairSummaryOff: '配对已关闭',
@@ -119,6 +120,7 @@ const I18N = {
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
     noAppYet: 'No app on the phone yet?', apkGet: 'Scan the code above with the camera',
+    goneN: '{n} batches are missing their files', goneClean: 'Remove these records', goneShow: 'Show',
     paneRecv: 'Receive', paneSend: 'Send', sendWaiting: 'Waiting for the phone',
     sendHead: 'Send to phone', sendSub: 'Drop files on the window, or paste text. Your phone picks them up.',
     pairManage: 'Manage', pairSummary: 'Code {code} · {n} paired', pairSummaryOff: 'Pairing is off',
@@ -1424,6 +1426,30 @@ function fileURL(p) {
   return `/api/thumb?path=${encodeURIComponent(p)}`;
 }
 
+function renderGoneBar(n) {
+  const bar = $('#goneBar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', n === 0);
+  if (n === 0) return;
+  $('#goneText').textContent = t('goneN').replace('{n}', String(n));
+  $('#goneShow').textContent = showGone ? t('close') || '收起' : t('goneShow');
+}
+
+$('#goneShow')?.addEventListener('click', () => {
+  showGone = !showGone;
+  refreshHistory();
+});
+
+$('#goneClean')?.addEventListener('click', async () => {
+  const res = await api('/api/history/prune_missing', { body: '{}' });
+  if (res && res.success) {
+    showGone = false;
+    homeRecentKey = '';
+    refreshHistory();
+    renderHomeRecent();
+  }
+});
+
 // 只把记录从图库里去掉，磁盘上的文件不动
 async function forgetBatch(device, batch) {
   await api('/api/history/forget', {
@@ -1434,9 +1460,18 @@ async function forgetBatch(device, batch) {
   renderHomeRecent();
 }
 
+let showGone = false;
+
 function renderGallery(target, batches, limit) {
   const el = $(target);
-  const items = (batches || []).slice(0, limit || 48);
+  let all = batches || [];
+  if (target === '#histList') {
+    // 文件已经不在磁盘上的批次，默认不占位置：东西早就没了，看也没得看
+    const gone = all.filter((b) => b.missing);
+    if (!showGone) all = all.filter((b) => !b.missing);
+    renderGoneBar(gone.length);
+  }
+  const items = all.slice(0, limit || 48);
   if (target === '#histList') {
     $('#clearHist')?.classList.toggle('hidden', items.length === 0);
   }
