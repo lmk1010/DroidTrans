@@ -917,12 +917,15 @@ async function refreshHome() {
   });
   const next = $('#homeNext');
   if (next) {
+    // 这行本来就是「下一步该干什么」，之前用强调色却点不动，看着像坏掉的链接
     const code = usbCodeOf(dev);
+    let go = 'usb';
     if (code === 'unauthorized') next.textContent = t('homeNextAllow');
     else if (dev.connected) next.textContent = t('homeNextUsb');
-    else if (n) next.textContent = t('homeNextOnline');
-    else if (wifi.ip) next.textContent = t('homeNextWifi');
+    else if (n) { next.textContent = t('homeNextOnline'); go = 'history'; }
+    else if (wifi.ip) { next.textContent = t('homeNextWifi'); go = 'wifi'; }
     else next.textContent = t('homeNextIdle');
+    next.dataset.go = go;
   }
   maybeAutoScan(dev);
   lastGuide = { dev, wifiN: n };
@@ -2054,7 +2057,12 @@ $('#clearHist').addEventListener('click', async () => {
 $('#langBtn').addEventListener('click', () => {
   state.lang = state.lang === 'zh' ? 'en' : 'zh';
   localStorage.setItem('droidtrans.lang', state.lang);
-  applyLang();
+  $('#homeNext')?.addEventListener('click', () => {
+  const go = $('#homeNext').dataset.go;
+  if (go) show(go);
+});
+
+applyLang();
   if (wizardOpen) paintWizard(true);
   refreshHome();
   if (state.view === 'wifi') refreshWifi();

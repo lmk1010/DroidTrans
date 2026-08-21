@@ -8,6 +8,8 @@
   --glass: rgba(255, 255, 255, 0.055);
   --glass-strong: rgba(255, 255, 255, 0.09);
   --font: "Iowan Old Style", Palatino, "Songti SC", "Noto Serif SC", serif;
+  --gap-head: 24px;   /* 页头到第一块内容 */
+  --gap-block: 22px;  /* 块与块之间 */
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
   --blur: blur(28px) saturate(160%);
 }
@@ -137,7 +139,18 @@ main { padding: 52px 40px 40px; overflow: auto; }
   margin: 0 0 8px;
 }
 .page-head p { margin: 0; color: var(--muted); max-width: 34em; }
-#homeNext { color: var(--accent); font-size: 15px; margin-top: 6px; }
+#homeNext {
+  color: var(--accent);
+  font-size: 15px;
+  margin-top: 6px;
+  cursor: pointer;
+  display: inline-block;
+  border-radius: 8px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  transition: background 0.15s ease;
+}
+#homeNext:hover { background: rgba(76, 141, 255, 0.14); }
 .page-head.row { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
 /* 分段控件跟标题同排时对齐到顶部：贴着副标题会显得挤 */
 .page-head.row .seg { align-self: flex-start; margin-top: 6px; }
@@ -146,7 +159,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   border: 0;
 }
 
-.tiles { display: flex; flex-direction: column; gap: 2px; margin: 22px 0 0; }
+.tiles { display: flex; flex-direction: column; gap: 2px; margin: var(--gap-head) 0 0; }
 .tile {
   display: flex;
   align-items: center;
@@ -180,7 +193,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   display: flex;
   align-items: center;
   gap: 18px;
-  margin: 26px 0 0;
+  margin: var(--gap-block) 0 0;
   padding: 16px;
   border-radius: 18px;
   background: var(--glass);
@@ -203,7 +216,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
 }
 
 /* 总览页的「最近图库」条：4 张封面，占住原本空着的下半屏 */
-.home-recent { margin: 26px 0 0; }
+.home-recent { margin: var(--gap-block) 0 0; }
 .home-recent.hidden { display: none; }
 .sub-row {
   display: flex;
@@ -1495,7 +1508,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .pane.hidden { display: none !important; }
 /* 面板与页头之间的固定间距：以前靠各块自己的 margin 拼，
    接收面板有 24px，发送面板是 0，副标题直接贴上了输入框。 */
-.pane { margin-top: 24px; }
+.pane { margin-top: var(--gap-head); }
 .pane > :first-child { margin-top: 0; }
 
 /* 配对码平时收成一行，需要时才展开 */
@@ -1503,7 +1516,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 22px 0 0;
+  margin: var(--gap-block) 0 0;
   color: var(--muted);
   font-size: 12.5px;
 }
@@ -1516,7 +1529,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 22px 0 0;
+  margin: var(--gap-block) 0 0;
   color: var(--muted);
   font-size: 12.5px;
 }
