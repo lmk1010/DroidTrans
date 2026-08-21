@@ -1008,6 +1008,10 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 			hotspots = append(hotspots, u)
 		}
 	}
+	outCount, outSize := 0, int64(0)
+	if a.Out != nil {
+		outCount, outSize = a.Out.Stats()
+	}
 	pairRequired := false
 	if a.Pair != nil {
 		pairRequired, _, _ = a.Pair.Snapshot()
@@ -1020,6 +1024,8 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 		"url":               fmt.Sprintf("http://%s:%d", ip, HTTPPort),
 		"urls":              urls,
 		"apk_url":           APKDownloadURL,
+		"outbox_count":      outCount,
+		"outbox_size":       outSize,
 		"hotspot_urls":      hotspots,
 		"on_hotspot":        len(hotspots) > 0,
 		"connected_devices": list, "device_count": len(list),
@@ -1081,7 +1087,12 @@ func (a *App) wifiHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if id != "" {
 		a.touchDevice(id, name)
 	}
-	writeJSON(w, 200, map[string]any{"success": true})
+	count, size := 0, int64(0)
+	if a.Out != nil {
+		count, size = a.Out.Stats()
+	}
+	// 顺带告诉手机「这边有几个文件等着你取」，省掉一次单独的查询
+	writeJSON(w, 200, map[string]any{"success": true, "outbox_count": count, "outbox_size": size})
 }
 
 func (a *App) wifiStatus(w http.ResponseWriter, r *http.Request) {

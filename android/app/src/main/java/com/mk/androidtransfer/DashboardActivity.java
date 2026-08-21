@@ -90,9 +90,59 @@ public class DashboardActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 问一次电脑「有没有东西等着我取」。
+     *
+     * <p>以前电脑那边把文件放进队列后，手机上没有任何迹象，
+     * 得自己进「电脑发来的」才知道。这里在打开 App 时顺手问一句，
+     * 首页那行就能直接写出待取数量——不引入后台轮询。
+     */
+    private void refreshPendingCount() {
+        if (tvReceiveCardStatus == null) {
+            return;
+        }
+        android.content.SharedPreferences prefs =
+                getSharedPreferences("ServerCache", MODE_PRIVATE);
+        String ip = prefs.getString("last_ip", "");
+        int port = prefs.getInt("last_port", 9500);
+        if (ip.isEmpty()) {
+            return;
+        }
+        final String url = "http://" + ip + ":" + port + "/api/wifi/info";
+        new Thread(() -> {
+            int count = -1;
+            try {
+                okhttp3.OkHttpClient c = new okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+                        .build();
+                okhttp3.Request req = new okhttp3.Request.Builder().url(url).get().build();
+                try (okhttp3.Response res = c.newCall(req).execute()) {
+                    okhttp3.ResponseBody body = res.body();
+                    if (res.isSuccessful() && body != null) {
+                        count = new org.json.JSONObject(body.string()).optInt("outbox_count", 0);
+                    }
+                }
+            } catch (Exception ignored) {
+                // 连不上就保持原样，不打扰
+            }
+            final int n = count;
+            runOnUiThread(() -> {
+                if (n > 0) {
+                    tvReceiveCardStatus.setText(getString(R.string.card_receive_pending, n));
+                    tvReceiveCardStatus.setTextColor(getColor(R.color.primary));
+                } else if (n == 0) {
+                    tvReceiveCardStatus.setText(R.string.card_receive_subtitle);
+                    tvReceiveCardStatus.setTextColor(getColor(R.color.text_medium_emphasis));
+                }
+            });
+        }).start();
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
+        refreshPendingCount();
         
         // 重新启用所有卡片
         if (cardUsb != null) cardUsb.setEnabled(true);

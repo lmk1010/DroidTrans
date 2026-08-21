@@ -33,6 +33,8 @@ chk "正确码换到令牌" "$([ -n "$TOKEN" ] && echo yes || echo no)" "yes"
 chk "带令牌可访问" "$(curl -s -o /dev/null -w %{http_code} -H "X-DT-Token: $TOKEN" $LAN/api/inbox)" "200"
 
 echo "【3】电脑 → 手机（outbox）"
+# 先清空：断言的是绝对条数，别被上一轮/手工操作留下的东西带偏
+curl -s -X POST -d '{}' $BASE/api/outbox/remove >/dev/null
 rm -rf /tmp/rg && mkdir -p /tmp/rg/sub && echo hello > /tmp/rg/a.txt && echo world > /tmp/rg/sub/b.txt
 curl -s -X POST -H 'Content-Type: application/json' -d '{"paths":["/tmp/rg"]}' $BASE/api/outbox/add >/dev/null
 chk "目录展开成 2 条" "$(curl -s $BASE/api/outbox | python3 -c "import json,sys;print(len(json.load(sys.stdin)['items']))")" "2"

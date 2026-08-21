@@ -406,4 +406,5 @@
 This path skips the router — usually faster and steadier than public Wi-Fi.</string>
     <string name="hotspot_open">Open hotspot settings</string>
     <string name="hotspot_no_settings">Could not open hotspot settings — please turn it on manually</string>
+    <string name="card_receive_pending">%1$d files waiting</string>
 </resources>
