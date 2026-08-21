@@ -51,7 +51,11 @@ chk "设备已连接" "$DEV" "True"
 curl -s -X POST $BASE/api/scan >/dev/null; sleep 6
 chk "扫到相册" "$(curl -s $BASE/api/scan_result | python3 -c "import json,sys;print(len(json.load(sys.stdin)['albums'])>0)")" "True"
 
-echo "【6】清理"
+echo "【6】界面异常上报"
+chk "上报接口可用" "$(curl -s -X POST -H 'Content-Type: application/json' -d '{"message":"regress probe","where":"/"}' $BASE/api/client_error | python3 -c "import json,sys;print(json.load(sys.stdin)['success'])")" "True"
+chk "空消息被拒" "$(curl -s -o /dev/null -w %{http_code} -X POST -H 'Content-Type: application/json' -d '{"message":""}' $BASE/api/client_error)" "400"
+
+echo "【7】清理"
 curl -s -X POST -d '{}' $BASE/api/outbox/remove >/dev/null
 chk "队列已清空" "$(curl -s $BASE/api/outbox | python3 -c "import json,sys;print(json.load(sys.stdin)['count'])")" "0"
 

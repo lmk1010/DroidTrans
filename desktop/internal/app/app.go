@@ -748,6 +748,7 @@ func (a *App) refreshDevices() {
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", a.health)
+	mux.HandleFunc("POST /api/client_error", a.clientError)
 	mux.HandleFunc("GET /api/wifi/info", a.wifiInfo)
 	mux.HandleFunc("POST /api/wifi/connect", a.wifiConnect)
 	mux.HandleFunc("GET /api/wifi/status", a.wifiStatus)
@@ -954,6 +955,25 @@ func readJSON(r *http.Request) map[string]any {
 		m = map[string]any{}
 	}
 	return m
+}
+
+// clientError 收界面里抛出的异常，打到桌面端日志里。
+//
+// 界面出错时往往只是某个动作静默失效（上一次就是带 body 的请求退成 GET，
+// 扫描/停止/开始传输全都不响应），不盯着屏幕根本发现不了。
+func (a *App) clientError(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	msg, _ := body["message"].(string)
+	where, _ := body["where"].(string)
+	if strings.TrimSpace(msg) == "" {
+		writeJSON(w, 400, map[string]any{"success": false})
+		return
+	}
+	if len(msg) > 500 {
+		msg = msg[:500]
+	}
+	fmt.Printf("界面异常  %s  %s\n", where, msg)
+	writeJSON(w, 200, map[string]any{"success": true})
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {

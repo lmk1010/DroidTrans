@@ -1238,7 +1238,8 @@ main { padding: 52px 40px 40px; overflow: auto; }
 
 .fatal {
   position: fixed;
-  left: 16px;
+  /* 避开左侧导航栏：横幅盖住语言按钮和设备名 */
+  left: calc(236px + 16px);
   right: 16px;
   bottom: 16px;
   z-index: 90;

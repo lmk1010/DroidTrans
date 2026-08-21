@@ -7,6 +7,9 @@ window.addEventListener('unhandledrejection', (e) => {
   showFatal(String(e.reason && e.reason.message ? e.reason.message : e.reason));
 });
 
+let lastFatal = '';
+let fatalTimer = 0;
+
 function showFatal(msg) {
   let el = document.getElementById('fatal');
   if (!el) {
@@ -16,6 +19,21 @@ function showFatal(msg) {
     document.body.appendChild(el);
   }
   el.textContent = msg;
+
+  // 瞬时错误（比如桌面端重启时的 Failed to fetch）别永远挂在屏幕上
+  clearTimeout(fatalTimer);
+  fatalTimer = setTimeout(() => el.remove(), 8000);
+
+  // 同一条只报一次：上报给桌面端日志，不用盯着界面也能发现静默失效
+  if (msg === lastFatal) return;
+  lastFatal = msg;
+  try {
+    fetch('/api/client_error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: String(msg), where: location.pathname }),
+    }).catch(() => {});
+  } catch (_) { /* 上报失败就算了，不能让兜底自己再抛 */ }
 }
 
 const $ = (s, r = document) => r.querySelector(s);
