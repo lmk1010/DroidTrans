@@ -14,6 +14,11 @@ chk() { # chk 描述 实际 期望
   else echo "  ❌ $1  实际=$2 期望=$3"; fail=$((fail+1)); fi
 }
 
+echo "【0】界面静态检查"
+"$(dirname "$0")/check-frontend.py" > /tmp/regress_fe.txt 2>&1
+chk "无悬空引用 / GET 带 body / 缺文案" "$?" "0"
+[ -s /tmp/regress_fe.txt ] && sed 's/^/     /' /tmp/regress_fe.txt | grep "❌" || true
+
 echo "【1】服务与发现"
 chk "health 可达" "$(curl -s -o /dev/null -w %{http_code} $BASE/api/health)" "200"
 chk "电脑名已返回" "$(curl -s $BASE/api/wifi/info | python3 -c "import json,sys;print('yes' if json.load(sys.stdin).get('name') else 'no')")" "yes"

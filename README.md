@@ -27,7 +27,7 @@
 | --- | --- | --- |
 | `android/` | 手机 App | Android Studio 打开该目录 |
 | `desktop/` | **Go 桌面端**（HTTP 9500 + TCP 9501 + FTP 9502） | `cd desktop && ./build.sh` |
-| `scripts/` | 端到端回归脚本 | `./scripts/regress.sh` |
+| `scripts/` | 端到端回归 + 界面静态检查 | `./scripts/regress.sh`、`./scripts/check-frontend.py` |
 
 桌面端是一个 Go 二进制，界面内嵌。不再使用 Flask / Python / Electron / Tauri。
 

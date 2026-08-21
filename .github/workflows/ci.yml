@@ -28,6 +28,13 @@ jobs:
       - run: go test -race ./...
       - run: go build ./...
 
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 界面静态检查
+        run: ./scripts/check-frontend.py
+
   desktop-cross:
     runs-on: ubuntu-latest
     defaults:
