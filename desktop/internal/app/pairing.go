@@ -83,6 +83,8 @@ func (p *Pairing) Snapshot() (required bool, code string, peers []map[string]any
 	defer p.mu.RUnlock()
 	required = p.Required
 	code = p.Code
+	// 一台都没配对时也要给空数组：返回 null 会让按数组处理的客户端直接炸
+	peers = []map[string]any{}
 	for tok, peer := range p.Tokens {
 		peers = append(peers, map[string]any{
 			"token_hint": tok[:6],
