@@ -27,7 +27,17 @@
 | --- | --- | --- |
 | `android/` | 手机 App | Android Studio 打开该目录 |
 | `desktop/` | **Go 桌面端**（HTTP 9500 + TCP 9501 + FTP 9502） | `cd desktop && ./build.sh` |
-| `scripts/` | 端到端回归 + 界面静态检查 | `./scripts/regress.sh`、`./scripts/check-frontend.py` |
+| `scripts/` | 回归与冒烟脚本 | 见下 |
+
+### 验证
+
+```bash
+./scripts/check-frontend.py    # 界面静态检查（悬空引用、GET 带 body、缺文案）
+./scripts/regress.sh           # 桌面端端到端回归，19 项
+./scripts/regress-phone.sh     # 手机端冒烟，9 项（需连着手机/模拟器）
+```
+
+桌面端要先跑起来；手机端冒烟全程用 intent 驱动，不依赖屏幕坐标。
 
 桌面端是一个 Go 二进制，界面内嵌。不再使用 Flask / Python / Electron / Tauri。
 
