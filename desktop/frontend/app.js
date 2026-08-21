@@ -47,7 +47,6 @@ const I18N = {
     usbTile: '有线快传', wifiTile: '手机直传',
     scan: '扫描相册', scanning: '扫描中…', xfer: '开始传输', waiting: '等待设备', save: '保存到',
     selAll: '全选', selNone: '取消全选',
-    usbEmptyHint: '按左边步骤操作。插上线我会自己往下跳。',
     usbNoAlbum: '还没有相册', usbScanHint: '连上后会自动扫。选出要传的，再开始传输。',
     copy: '复制', copied: '已复制', open: '打开文件夹', openShort: '打开',
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
@@ -63,12 +62,10 @@ const I18N = {
     pairHint: '手机扫上面的二维码就自动配对；也可以手输这六位。',
     pairOffHint: '任何在同一网络里的设备都能连这台电脑。',
     pairPeers: '已配对 {n} 台',
-    sendTitle: '发到手机', sendPick: '选择文件…', clearAll: '全部清空',
+    sendPick: '选择文件…', clearAll: '全部清空',
     sendTextPh: '粘一段文字或链接，回车发过去', sendTextGo: '加入', kindText: '文字',
-    sendEmpty: '把文件拖到窗口里', sendEmptyHint: '也可以点「选择文件…」。手机打开卓传就能取走。',
-    waitingPhone: '等手机来取', tookN: '已取走',
+    sendEmpty: '把文件拖到窗口里', sendEmptyHint: '也可以点「选择文件…」。手机打开卓传就能取走。', tookN: '已取走',
     fileGone: '文件已不在',
-    dropNow: '松手就加入发送清单',
     firstRun: '第一次用', firstRunTitle: '手机扫码装卓传',
     firstRunHint: '装好打开就能连。也可以插数据线走 USB。',
     noPhone: '还没有手机连上来', noPhoneHint: '打开手机 App，搜到这台电脑即可',
@@ -77,31 +74,20 @@ const I18N = {
     homeNextOnline: '手机已在线，打开图库看刚传过来的。',
     homeNextWifi: 'Wi-Fi 已就绪。手机打开卓传会自己连。',
     homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
-    openThisPhone: '打开这台手机的图库',
-    noBatch: '还没有收到文件', histTitle: '图库', clear: '清空',
+    openThisPhone: '打开这台手机的图库', histTitle: '图库', clear: '清空',
     noHist: '图库还是空的', noHistHint: '从 USB 或 Wi-Fi 传过来，就会出现在这里。',
     unauth: '设备未授权 USB 调试', offline: '未连接设备',
-    recv: '正在接收', got: '已收到', photos: '张',
-    recentGallery: '最近图库', openGallery: '打开图库', reveal: '在访达中显示', forget: '从图库移除记录',
-    copyPath: '复制路径', delBatch: '删除这一批', copyAddr: '复制本机地址',
-    goUsb: '打开 USB', goWifi: '打开 Wi-Fi', goHist: '打开图库',
+    recv: '正在接收', got: '已收到', photos: '张', openGallery: '打开图库', reveal: '在访达中显示', forget: '从图库移除记录',
+    copyPath: '复制路径', delBatch: '删除这一批', copyAddr: '复制本机地址', goWifi: '打开 Wi-Fi', goHist: '打开图库',
     seeGallery: '查看', backAlbums: '← 返回相册',
     toPhotos: '导入照片',
     copyName: '复制名称', copyFile: '复制文件名',
-    etaLeft: '还剩',
     avgSpeed: '均速',
     chipToday: '今天', chipWeek: '近 7 天', chipCamera: '整个相机',
     pause: '暂停', resume: '继续', stop: '停止', paused: '已暂停', stopping: '正在停止…',
     wizWifi: '搞不定？改用 Wi-Fi 传',
     retryFailed: '重试失败的', deviceLost: '手机断开了',
     xferN: '传输 {n} 张',
-    recentNone: '这段时间相机里没有新照片',
-    copyLink: '复制下载链接',
-    close: '关闭',
-    getApp: '没装手机 App？点这里下载',
-    restartAdb: '重启 ADB',
-    pickBrand: '你的手机是',
-    guideWifiTitle: 'Wi-Fi 连不上时',
   },
   en: {
     navHome: 'Home', navHist: 'Gallery',
@@ -109,7 +95,6 @@ const I18N = {
     usbTile: 'USB transfer', wifiTile: 'Wi-Fi transfer',
     scan: 'Scan albums', scanning: 'Scanning…', xfer: 'Transfer', waiting: 'Waiting for device', save: 'Save to',
     selAll: 'Select all', selNone: 'Clear selection',
-    usbEmptyHint: 'Follow the steps on the USB page. I’ll jump when the phone appears.',
     usbNoAlbum: 'No albums yet', usbScanHint: 'Albums scan automatically. Pick what to send, then transfer.',
     copy: 'Copy', copied: 'Copied', open: 'Open folder', openShort: 'Open',
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
@@ -125,12 +110,10 @@ const I18N = {
     pairHint: 'Scanning the code above pairs automatically; or type these six digits.',
     pairOffHint: 'Any device on this network can reach this computer.',
     pairPeers: '{n} paired',
-    sendTitle: 'Send to phone', sendPick: 'Choose files…', clearAll: 'Clear all',
+    sendPick: 'Choose files…', clearAll: 'Clear all',
     sendTextPh: 'Paste text or a link, press Enter', sendTextGo: 'Add', kindText: 'text',
-    sendEmpty: 'Drop files onto this window', sendEmptyHint: 'Or use “Choose files…”. Your phone picks them up.',
-    waitingPhone: 'Waiting for the phone', tookN: 'picked up',
+    sendEmpty: 'Drop files onto this window', sendEmptyHint: 'Or use “Choose files…”. Your phone picks them up.', tookN: 'picked up',
     fileGone: 'file is gone',
-    dropNow: 'Release to add to the send list',
     firstRun: 'First time', firstRunTitle: 'Scan to install the phone app',
     firstRunHint: 'Open it and it finds this computer. USB works too.',
     noPhone: 'No phone yet', noPhoneHint: 'Open the app on your phone and find this computer',
@@ -139,31 +122,20 @@ const I18N = {
     homeNextOnline: 'Phone is online. Open the gallery for what just arrived.',
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
     homeNextIdle: 'Open USB. The page only shows the step you are on.',
-    openThisPhone: 'Open this phone’s gallery',
-    noBatch: 'Nothing received yet', histTitle: 'Gallery', clear: 'Clear',
+    openThisPhone: 'Open this phone’s gallery', histTitle: 'Gallery', clear: 'Clear',
     noHist: 'Gallery is empty', noHistHint: 'Files you send over USB or Wi-Fi show up here.',
     unauth: 'USB debugging not authorized', offline: 'No device',
-    recv: 'Receiving', got: 'Received', photos: 'photos',
-    recentGallery: 'Recent', openGallery: 'Open gallery', reveal: 'Reveal in Finder', forget: 'Remove from gallery',
-    copyPath: 'Copy path', delBatch: 'Delete batch', copyAddr: 'Copy address',
-    goUsb: 'Open USB', goWifi: 'Open Wi-Fi', goHist: 'Open gallery',
+    recv: 'Receiving', got: 'Received', photos: 'photos', openGallery: 'Open gallery', reveal: 'Reveal in Finder', forget: 'Remove from gallery',
+    copyPath: 'Copy path', delBatch: 'Delete batch', copyAddr: 'Copy address', goWifi: 'Open Wi-Fi', goHist: 'Open gallery',
     toPhotos: 'Add to Photos',
     seeGallery: 'View', backAlbums: '← Back to albums',
     copyName: 'Copy name', copyFile: 'Copy filename',
-    etaLeft: 'left',
     avgSpeed: 'avg',
     chipToday: 'Today', chipWeek: 'Last 7 days', chipCamera: 'Whole camera',
     pause: 'Pause', resume: 'Resume', stop: 'Stop', paused: 'Paused', stopping: 'Stopping…',
     wizWifi: 'Stuck? Send over Wi-Fi instead',
     retryFailed: 'Retry failed', deviceLost: 'Phone disconnected',
     xferN: 'Transfer {n}',
-    recentNone: 'No new camera photos in that period',
-    copyLink: 'Copy download link',
-    close: 'Close',
-    getApp: 'No phone app yet? Download it here',
-    restartAdb: 'Restart ADB',
-    pickBrand: 'Your phone',
-    guideWifiTitle: 'If Wi-Fi cannot find this Mac',
   },
 };
 
@@ -186,9 +158,13 @@ function applyLang() {
 }
 
 async function api(path, opts = {}) {
+  // 带 body 却没写 method 的调用（扫描、暂停、停止、开始传输…）会退成 GET，
+  // fetch 直接抛 "Request with GET/HEAD method cannot have body"，动作静默失效。
+  const method = opts.method || (opts.body != null ? 'POST' : 'GET');
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
     ...opts,
+    method,
   });
   const text = await res.text();
   try { return JSON.parse(text); } catch { return { success: false, error: text }; }
@@ -500,7 +476,7 @@ function wizardState(dev) {
   if (code === 'ready') {
     const who = (dev?.model || '').trim();
     return {
-      kind: 'done', scene: 'done', i: 4, n: total,
+      scene: 'done', i: 4, n: total,
       kicker: '5 / 5',
       title: zh ? '好了，手机已经连上' : 'The phone is connected',
       lines: who
@@ -512,7 +488,7 @@ function wizardState(dev) {
   }
   if (code === 'unauthorized') {
     return {
-      kind: 'allow', scene: 'allow', i: 3, n: total,
+      scene: 'allow', i: 3, n: total,
       kicker: '4 / 5',
       title: zh ? '看手机，点允许' : 'Tap Allow on the phone',
       lines: zh
@@ -524,7 +500,7 @@ function wizardState(dev) {
   }
   if (code === 'no_storage') {
     return {
-      kind: 'mtp', scene: 'mtp', i: 3, n: total,
+      scene: 'mtp', i: 3, n: total,
       kicker: '4 / 5',
       title: zh ? '改成传输文件' : 'Switch to File transfer',
       lines: zh
@@ -536,7 +512,7 @@ function wizardState(dev) {
   }
   if (code === 'offline') {
     return {
-      kind: 'offline', scene: 'offline', i: 3, n: total,
+      scene: 'offline', i: 3, n: total,
       kicker: '4 / 5',
       title: zh ? '重新插一下线' : 'Plug the cable in again',
       lines: zh
@@ -548,7 +524,7 @@ function wizardState(dev) {
   }
   if (code === 'adb_missing' || code === 'adb_error') {
     return {
-      kind: 'adb', scene: 'adb', i: 0, n: total,
+      scene: 'adb', i: 0, n: total,
       kicker: zh ? '电脑' : 'This Mac',
       title: zh ? 'USB 工具还没就绪' : 'USB tools are not ready',
       lines: zh
@@ -560,7 +536,7 @@ function wizardState(dev) {
   }
   if (!guideBrand) {
     return {
-      kind: 'brand', scene: 'brand', i: 0, n: total,
+      scene: 'brand', i: 0, n: total,
       kicker: '1 / 5',
       title: seq[0].title,
       lines: zh ? ['选对了，后面每一步只说这一家的路径。'] : ['Pick the brand so the next step matches your phone.'],
@@ -572,8 +548,7 @@ function wizardState(dev) {
   const steps = setupSeq(guideBrand).slice(1);
   const i = Math.min(Math.max(setupIdx, 0), steps.length - 1);
   const cur = steps[i];
-  return {
-    kind: 'setup', scene: cur.scene || 'dev', i: i + 1, n: total,
+  return { scene: cur.scene || 'dev', i: i + 1, n: total,
     kicker: `${i + 2} / 5`,
     title: cur.title,
     lines: cur.lines || [],
@@ -779,7 +754,7 @@ async function wizardPrimary() {
     return;
   }
   if (kind === 'adb') {
-    await api('/api/adb_restart', { method: 'POST', body: '{}' });
+    await api('/api/adb_restart', { body: '{}' });
   }
   await probeUsb();
 }
@@ -798,7 +773,7 @@ async function wizardSecondary() {
     return;
   }
   if (wizardKind === 'offline' || wizardKind === 'adb') {
-    await api('/api/adb_restart', { method: 'POST', body: '{}' });
+    await api('/api/adb_restart', { body: '{}' });
     await probeUsb();
     return;
   }
@@ -1265,7 +1240,15 @@ async function startUsbScan(opts = {}) {
     empty.classList.remove('hidden');
     empty.innerHTML = emptyHTML(I_STACK, t('scanning'), t('usbScanHint'));
   }
-  await api('/api/scan', { method: 'POST', body: '{}' });
+  const started = await api('/api/scan', { body: '{}' });
+  if (started && started.success === false) {
+    // 起不来就把状态放回去，别让「扫描中…」和转圈图标永远卡着
+    usbScanning = false;
+    $('#scanBtn').classList.remove('spinning');
+    $('#scanBtn').disabled = !state.usbConnected;
+    if (empty) empty.innerHTML = emptyHTML(I_PHONE, started.error || t('usbNoAlbum'), t('usbScanHint'));
+    return false;
+  }
   const t0 = Date.now();
   let err = '';
   while (Date.now() - t0 < 60000) {
@@ -1299,7 +1282,7 @@ async function startUsbScan(opts = {}) {
 $('#scanBtn').addEventListener('click', () => startUsbScan());
 $('#xferPause')?.addEventListener('click', async () => {
   const st = await api('/api/transfer_status');
-  await api(st.paused ? '/api/resume_live' : '/api/pause_transfer', { method: 'POST', body: '{}' });
+  await api(st.paused ? '/api/resume_live' : '/api/pause_transfer', { body: '{}' });
   pollXfer();
 });
 
@@ -1307,7 +1290,7 @@ $('#xferStop')?.addEventListener('click', async () => {
   $('#xferText').textContent = t('stopping');
   $('#xferPause').classList.add('hidden');
   $('#xferStop').classList.add('hidden');
-  await api('/api/stop_transfer', { method: 'POST', body: '{}' });
+  await api('/api/stop_transfer', { body: '{}' });
   pollXfer();
 });
 
@@ -1318,7 +1301,6 @@ $('#xferRetry')?.addEventListener('click', async () => {
   const photos = lastFailed.slice();
   $('#xferRetry').classList.add('hidden');
   const res = await api('/api/transfer', {
-    method: 'POST',
     body: JSON.stringify({ photos, output_dir: state.usbOut || undefined }),
   });
   if (res && res.success) {
@@ -1339,7 +1321,7 @@ $('#xferBtn').addEventListener('click', async () => {
     output_dir,
     selection: { albums: [...state.selectedAlbums], singles: [...state.selectedPhotos], exclude: {} },
   };
-  const res = await api('/api/transfer', { method: 'POST', body: JSON.stringify(body) });
+  const res = await api('/api/transfer', { body: JSON.stringify(body) });
   if (!res.success) {
     $('#xferBar').classList.remove('hidden');
     $('#xferSee').classList.add('hidden');
@@ -1417,7 +1399,7 @@ $('#xferImport')?.addEventListener('click', () => importToPhotos(lastXfer.folder
 
 function importToPhotos(path) {
   if (!path) return;
-  api('/api/import_photos', { method: 'POST', body: JSON.stringify({ folder_path: path }) });
+  api('/api/import_photos', { body: JSON.stringify({ folder_path: path }) });
 }
 
 function fileURL(p) {
@@ -1427,7 +1409,6 @@ function fileURL(p) {
 // 只把记录从图库里去掉，磁盘上的文件不动
 async function forgetBatch(device, batch) {
   await api('/api/history/forget', {
-    method: 'POST',
     body: JSON.stringify({ device_id: device, batch_id: batch }),
   });
   homeRecentKey = '';
@@ -1534,11 +1515,11 @@ function bindOpenAndMenu(el, onOpen, menuItems) {
 
 function openFolder(path) {
   if (!path) return;
-  api('/api/wifi/open_folder', { method: 'POST', body: JSON.stringify({ folder_path: path }) });
+  api('/api/wifi/open_folder', { body: JSON.stringify({ folder_path: path }) });
 }
 function reveal(path) {
   if (!path) return;
-  api('/api/reveal', { method: 'POST', body: JSON.stringify({ path }) });
+  api('/api/reveal', { body: JSON.stringify({ path }) });
 }
 async function copyText(s) {
   if (!s) return;
@@ -1546,7 +1527,7 @@ async function copyText(s) {
 }
 async function deleteBatch(device, batch) {
   if (!confirm(state.lang === 'zh' ? '删除这一批文件？' : 'Delete this batch?')) return;
-  await api('/api/wifi/delete_batch', { method: 'POST', body: JSON.stringify({ device_id: device, batch_id: batch }) });
+  await api('/api/wifi/delete_batch', { body: JSON.stringify({ device_id: device, batch_id: batch }) });
   refreshHome();
   if (state.view === 'wifi') refreshWifi();
   if (state.view === 'history') refreshHistory();
@@ -1703,12 +1684,12 @@ async function refreshPair() {
 }
 
 $('#pairNew')?.addEventListener('click', async () => {
-  await api('/api/pair/set', { method: 'POST', body: JSON.stringify({ new_code: true }) });
+  await api('/api/pair/set', { body: JSON.stringify({ new_code: true }) });
   refreshPair();
 });
 
 $('#pairOff')?.addEventListener('click', async () => {
-  await api('/api/pair/set', { method: 'POST', body: JSON.stringify({ required: !pairInfo.required }) });
+  await api('/api/pair/set', { body: JSON.stringify({ required: !pairInfo.required }) });
   refreshPair();
 });
 
@@ -1747,14 +1728,14 @@ async function refreshOutbox(force) {
   }).join('');
   box.querySelectorAll('.out-x').forEach((b) => {
     b.addEventListener('click', async () => {
-      await api(`/api/outbox/remove/${encodeURIComponent(b.dataset.id)}`, { method: 'POST', body: '{}' });
+      await api(`/api/outbox/remove/${encodeURIComponent(b.dataset.id)}`, { body: '{}' });
       refreshOutbox(true);
     });
   });
 }
 
 $('#outPick')?.addEventListener('click', async () => {
-  await api('/api/outbox/pick', { method: 'POST', body: '{}' });
+  await api('/api/outbox/pick', { body: '{}' });
   // 面板是原生模态，关掉之后再刷新几次，等用户选完
   [600, 1500, 3000, 6000].forEach((ms) => setTimeout(() => refreshOutbox(true), ms));
 });
@@ -1763,7 +1744,7 @@ async function sendText() {
   const input = $('#outText');
   const text = (input.value || '').trim();
   if (!text) return;
-  const res = await api('/api/outbox/text', { method: 'POST', body: JSON.stringify({ text }) });
+  const res = await api('/api/outbox/text', { body: JSON.stringify({ text }) });
   if (res && res.success) {
     input.value = '';
     refreshOutbox(true);
@@ -1809,7 +1790,7 @@ $('#outText')?.addEventListener('keydown', (e) => {
 });
 
 $('#outClear')?.addEventListener('click', async () => {
-  await api('/api/outbox/remove', { method: 'POST', body: '{}' });
+  await api('/api/outbox/remove', { body: '{}' });
   refreshOutbox(true);
 });
 
@@ -1854,8 +1835,6 @@ function renderQR(url) {
     text: url,
     width: 132,
     height: 132,
-    colorDark: '#f4f5f7',
-    colorLight: '#121317',
     correctLevel: QRCode.CorrectLevel.M,
   });
 }
@@ -1871,8 +1850,6 @@ function renderHomeQR(url) {
     text: url,
     width: 132,
     height: 132,
-    colorDark: '#f4f5f7',
-    colorLight: '#121317',
     correctLevel: QRCode.CorrectLevel.M,
   });
 }
@@ -1951,7 +1928,7 @@ function setOut(path, persist = true) {
   $('#wifiOut').value = path;
   state.usbOut = path;
   if (persist) {
-    api('/api/wifi/set_output_dir', { method: 'POST', body: JSON.stringify({ output_dir: path }) });
+    api('/api/wifi/set_output_dir', { body: JSON.stringify({ output_dir: path }) });
   }
 }
 
@@ -2020,7 +1997,7 @@ async function refreshHistory() {
 
 $('#clearHist').addEventListener('click', async () => {
   if (!confirm(state.lang === 'zh' ? '清空所有传输记录？' : 'Clear all transfer history?')) return;
-  await api('/api/history/clear', { method: 'POST', body: '{}' });
+  await api('/api/history/clear', { body: '{}' });
   refreshHistory();
 });
 
