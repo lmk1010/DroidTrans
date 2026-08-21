@@ -824,7 +824,13 @@ func (a *App) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/usb" || r.URL.Path == "/wifi" || r.URL.Path == "/history" || r.URL.Path == "/apk" || r.URL.Path == "/send" {
+		if r.URL.Path == "/" || r.URL.Path == "/usb" || r.URL.Path == "/wifi" || r.URL.Path == "/history" || r.URL.Path == "/send" {
+			// 手机浏览器扫码进来的：给一个手机专用落地页（装 App + 配对码），
+			// 而不是把桌面界面塞进一块小屏幕——那对用户毫无用处。
+			if isPhoneBrowser(r.UserAgent()) {
+				http.ServeFileFS(w, r, a.Frontend, "mobile.html")
+				return
+			}
 			http.ServeFileFS(w, r, a.Frontend, "index.html")
 			return
 		}
@@ -923,6 +929,16 @@ func safeUnder(base, rel string) (string, bool) {
 
 func pathEscape(s string) string {
 	return url.PathEscape(s)
+}
+
+// isPhoneBrowser 粗略判断请求是不是手机浏览器。
+// App 自己的请求带的是 OkHttp 的 UA，不会命中。
+func isPhoneBrowser(ua string) bool {
+	u := strings.ToLower(ua)
+	if strings.Contains(u, "okhttp") || strings.Contains(u, "dalvik") {
+		return false
+	}
+	return strings.Contains(u, "mobile") || strings.Contains(u, "android") || strings.Contains(u, "iphone")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -151,8 +151,15 @@ func (p *Pairing) Revoke(hint string) {
 
 // ---- 请求准入 ----
 
-// openPath 判断是不是「不需要配对也能问」的接口。
+// openPath 判断是不是「不需要配对也能问」的路径。
+//
+// 页面本身（界面外壳、手机落地页、图标）不含任何数据，必须放行：
+// 手机用相机扫码进来时还没配对，落地页正是给它看「怎么装 App、配对码是多少」的，
+// 把它挡掉就成了死循环。真正的数据接口照挡不误。
 func openPath(path string) bool {
+	if !strings.HasPrefix(path, "/api/") {
+		return true
+	}
 	switch path {
 	case "/api/health", "/api/wifi/info", "/api/fast/caps", "/api/pair":
 		return true

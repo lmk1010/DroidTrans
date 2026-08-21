@@ -53,6 +53,7 @@ const I18N = {
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
+    noAppYet: '手机还没装卓传？', apkGet: '用相机扫上面的码',
     paneRecv: '接收', paneSend: '发送', sendWaiting: '等手机来取',
     sendHead: '发到手机', sendSub: '拖文件进窗口，或粘一段文字。手机打开卓传就能取走。',
     pairManage: '管理', pairSummary: '配对码 {code} · 已配对 {n} 台', pairSummaryOff: '配对已关闭',
@@ -95,10 +96,6 @@ const I18N = {
     retryFailed: '重试失败的', deviceLost: '手机断开了',
     xferN: '传输 {n} 张',
     recentNone: '这段时间相机里没有新照片',
-    apkBtn: '下载 App',
-    apkKicker: '下载手机 App',
-    apkTitle: '扫码安装卓传',
-    apkHint: '没有 App 时扫这个。装好打开后，会自己找到这台电脑。',
     copyLink: '复制下载链接',
     close: '关闭',
     getApp: '没装手机 App？点这里下载',
@@ -118,6 +115,7 @@ const I18N = {
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
+    noAppYet: 'No app on the phone yet?', apkGet: 'Scan the code above with the camera',
     paneRecv: 'Receive', paneSend: 'Send', sendWaiting: 'Waiting for the phone',
     sendHead: 'Send to phone', sendSub: 'Drop files on the window, or paste text. Your phone picks them up.',
     pairManage: 'Manage', pairSummary: 'Code {code} · {n} paired', pairSummaryOff: 'Pairing is off',
@@ -160,10 +158,6 @@ const I18N = {
     retryFailed: 'Retry failed', deviceLost: 'Phone disconnected',
     xferN: 'Transfer {n}',
     recentNone: 'No new camera photos in that period',
-    apkBtn: 'Get app',
-    apkKicker: 'Get the phone app',
-    apkTitle: 'Scan to install DroidTrans',
-    apkHint: 'Scan this if you don’t have the app yet. Open it and it will find this Mac.',
     copyLink: 'Copy download link',
     close: 'Close',
     getApp: 'No phone app yet? Download it here',
@@ -833,7 +827,7 @@ document.addEventListener('click', (e) => {
   }
   const act = e.target.closest('[data-act]');
   if (!act) return;
-  if (act.dataset.act === 'apk') show('apk');
+  if (act.dataset.act === 'apk') show('wifi');
   if (act.dataset.act === 'wizard') show('usb');
   if (act.dataset.act === 'usb') show('usb');
   if (act.dataset.act === 'wifi') show('wifi');
@@ -865,7 +859,6 @@ function show(view) {
   if (view === 'usb') refreshUsb();
   if (view === 'wifi') refreshWifi();
   if (view === 'history') refreshHistory();
-  if (view === 'apk') refreshApk();
 }
 
 $$('nav button').forEach((b) => b.addEventListener('click', () => {
@@ -1796,6 +1789,16 @@ $$('.seg-btn').forEach((btn) => {
   btn.addEventListener('click', () => showPane(btn.dataset.pane));
 });
 
+$('#apkLink2')?.addEventListener('click', async () => {
+  // 相机扫码进来的会看到手机落地页（装 App + 配对码），所以同一个码就够了
+  const url = await ensureApkUrl();
+  if (url) copyText(url);
+  const el = $('#apkLink2');
+  const old = el.textContent;
+  el.textContent = t('copied');
+  setTimeout(() => { el.textContent = old; }, 1400);
+});
+
 $('#pairToggle')?.addEventListener('click', () => {
   $('#pairBox').classList.toggle('hidden');
 });
@@ -1839,7 +1842,6 @@ async function openDeviceGallery(deviceId) {
 }
 
 let lastQR = '';
-let lastApkQR = '';
 let apkUrl = '';
 function renderQR(url) {
   const box = $('#wifiQR');
@@ -1875,21 +1877,6 @@ function renderHomeQR(url) {
   });
 }
 
-function renderApkQR(url) {
-  const box = $('#apkQR');
-  if (!box || typeof QRCode === 'undefined' || !url) return;
-  if (url === lastApkQR && box.childElementCount) return;
-  lastApkQR = url;
-  box.innerHTML = '';
-  new QRCode(box, {
-    text: url,
-    width: 132,
-    height: 132,
-    colorDark: '#f4f5f7',
-    colorLight: '#121317',
-    correctLevel: QRCode.CorrectLevel.M,
-  });
-}
 
 let lastWifiURL = '';
 
@@ -1989,15 +1976,6 @@ $('#copyUrl').addEventListener('click', copyURL);
 $('#wifiURL').addEventListener('click', copyURL);
 $('#wifiRecent').addEventListener('click', () => show('history'));
 
-async function refreshApk() {
-  const url = await ensureApkUrl();
-  const link = $('#apkLink');
-  if (link) {
-    link.textContent = url;
-    link.title = url;
-  }
-  renderApkQR(url);
-}
 
 function flashCopy(btn) {
   if (!btn) return;
@@ -2015,12 +1993,6 @@ function flashCopy(btn) {
   }, 1400);
 }
 
-async function copyApk() {
-  const url = await ensureApkUrl();
-  try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
-  flashCopy($('#apkCopy'));
-}
-
 async function ensureApkUrl() {
   if (apkUrl) return apkUrl;
   try {
@@ -2031,8 +2003,6 @@ async function ensureApkUrl() {
   return apkUrl;
 }
 
-$('#apkCopy').addEventListener('click', copyApk);
-$('#apkLink').addEventListener('click', copyApk);
 $('#wizPrimary').addEventListener('click', wizardPrimary);
 $('#wizSecondary').addEventListener('click', wizardSecondary);
 
@@ -2068,13 +2038,12 @@ applyLang();
   if (state.view === 'wifi') refreshWifi();
   if (state.view === 'history') refreshHistory();
   if (state.view === 'usb') refreshUsb();
-  if (state.view === 'apk') refreshApk();
 });
 
 applyLang();
 // 先记下启动路径：show() 会把地址栏改写掉，之后再判断就晚了
 const bootPath = location.pathname;
-const bootView = { '/usb': 'usb', '/wifi': 'wifi', '/send': 'wifi', '/history': 'history', '/apk': 'apk' }[bootPath];
+const bootView = { '/usb': 'usb', '/wifi': 'wifi', '/send': 'wifi', '/history': 'history' }[bootPath];
 if (bootView) {
   show(bootView);
   if (bootPath === '/send') showPane('send');

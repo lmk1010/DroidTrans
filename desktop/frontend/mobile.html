@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>卓传</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      padding: 40px 22px calc(28px + env(safe-area-inset-bottom));
+      background: #0c0d11;
+      color: #eef0f4;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+    .logo { width: 56px; height: 56px; border-radius: 16px; }
+    h1 { font-size: 25px; margin: 0; letter-spacing: -0.02em; }
+    p { margin: 0; color: #9aa1ad; font-size: 14px; line-height: 1.6; }
+    .card {
+      background: rgba(255,255,255,0.055);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+    }
+    .code {
+      font-size: 30px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      font-variant-numeric: tabular-nums;
+      margin: 4px 0 6px;
+    }
+    .kicker { font-size: 11px; letter-spacing: 0.14em; color: #9aa1ad; }
+    a.btn {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      background: #4C8DFF;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 15px 18px;
+      border-radius: 14px;
+    }
+    ol { margin: 0; padding-left: 20px; color: #9aa1ad; font-size: 13.5px; line-height: 1.85; }
+    .host { color: #eef0f4; font-weight: 600; }
+    footer { margin-top: auto; color: #6b7280; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <img class="logo" src="/icon.svg" alt="" />
+  <div>
+    <h1 id="title">把东西传到这台电脑</h1>
+    <p>这台电脑是 <span class="host" id="host">—</span>，正在等手机连上来。</p>
+  </div>
+
+  <a class="btn" id="apk" href="#">下载卓传 App</a>
+
+  <div class="card" id="codeCard" hidden>
+    <span class="kicker">配对码</span>
+    <div class="code" id="code">——</div>
+    <p>装好后打开卓传，搜到这台电脑时输入这六位（或用 App 里的「扫码连接」再扫一次这个码，免输）。</p>
+  </div>
+
+  <div class="card">
+    <ol>
+      <li>点上面的按钮装好卓传</li>
+      <li>打开 App，它会自己找到这台电脑</li>
+      <li>选照片或文件，发过去</li>
+    </ol>
+  </div>
+
+  <footer id="addr"></footer>
+
+  <script>
+    fetch('/api/wifi/info').then(r => r.json()).then(info => {
+      document.getElementById('host').textContent = info.name || info.ip || '这台电脑';
+      document.getElementById('apk').href = info.apk_url || '#';
+      document.getElementById('addr').textContent = info.url || '';
+    }).catch(() => {});
+    // 配对码只在扫的那个二维码里带着，页面本身不向局域网暴露
+    const code = new URLSearchParams(location.search).get('c');
+    if (code) {
+      document.getElementById('code').textContent = code;
+      document.getElementById('codeCard').hidden = false;
+    }
+  </script>
+</body>
+</html>

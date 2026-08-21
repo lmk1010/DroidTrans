@@ -399,6 +399,14 @@ func TestAllowRequestRules(t *testing.T) {
 	if !a.allowRequest(lan("/api/inbox", tok)) {
 		t.Error("带正确令牌的请求应当放行")
 	}
+	// 页面本身要放行：手机扫码进来时还没配对，落地页正是给它看怎么配对的
+	for _, p := range []string{"/", "/wifi", "/app.js", "/icon.svg"} {
+		r := httptest.NewRequest("GET", p, nil)
+		r.RemoteAddr = "192.168.1.44:51234"
+		if !a.allowRequest(r) {
+			t.Errorf("%s 是页面资源，应当放行", p)
+		}
+	}
 	// 发现类接口必须开着，否则手机连「这台电脑在不在」都问不出来
 	for _, p := range []string{"/api/health", "/api/wifi/info", "/api/fast/caps", "/api/pair"} {
 		if !a.allowRequest(lan(p, "")) {
@@ -429,6 +437,29 @@ func TestHotspotNetRecognised(t *testing.T) {
 	for _, ip := range no {
 		if hotspotNet(ip) {
 			t.Errorf("%s 不该被认作热点网段", ip)
+		}
+	}
+}
+
+func TestPhoneBrowserDetection(t *testing.T) {
+	phone := []string{
+		"Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148",
+	}
+	for _, ua := range phone {
+		if !isPhoneBrowser(ua) {
+			t.Errorf("应当识别为手机浏览器: %s", ua)
+		}
+	}
+	notPhone := []string{
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15",
+		"okhttp/4.12.0", // App 自己的请求
+		"Dalvik/2.1.0 (Linux; U; Android 14)",
+		"",
+	}
+	for _, ua := range notPhone {
+		if isPhoneBrowser(ua) {
+			t.Errorf("不该识别为手机浏览器: %q", ua)
 		}
 	}
 }
