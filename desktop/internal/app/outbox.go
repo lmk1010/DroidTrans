@@ -32,6 +32,7 @@ type OutItem struct {
 	Text    string `json:"text,omitempty"`
 	AddedAt string `json:"added_at"`
 	Taken   int    `json:"taken"` // 被领取过几次
+	TakenAt string `json:"taken_at,omitempty"`
 	order   int
 }
 
@@ -126,7 +127,43 @@ func (o *Outbox) MarkTaken(id string) {
 	defer o.mu.Unlock()
 	if it, ok := o.items[id]; ok {
 		it.Taken++
+		it.TakenAt = time.Now().Format(time.RFC3339)
 	}
+}
+
+// ClearTaken 把已经被取走的条目移出队列，返回清掉的条数。
+//
+// 取走之后它们还留在清单里，下次再发新文件时旧的混在一起，越堆越长。
+func (o *Outbox) ClearTaken() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	n := 0
+	for id, it := range o.items {
+		if it.Taken > 0 {
+			delete(o.items, id)
+			n++
+		}
+	}
+	return n
+}
+
+// PruneTaken 清掉「取走超过 maxAge」的条目，交给后台维护定期调用。
+func (o *Outbox) PruneTaken(maxAge time.Duration) int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	n := 0
+	for id, it := range o.items {
+		if it.Taken == 0 || it.TakenAt == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, it.TakenAt)
+		if err != nil || time.Since(t) < maxAge {
+			continue
+		}
+		delete(o.items, id)
+		n++
+	}
+	return n
 }
 
 func (o *Outbox) Remove(id string) {
@@ -271,6 +308,13 @@ func (a *App) outboxText(w http.ResponseWriter, r *http.Request) {
 	}
 	count, size := a.Out.Stats()
 	writeJSON(w, 200, map[string]any{"success": true, "item": it, "count": count, "total_size": size})
+}
+
+// outboxClearTaken 一键清掉已取走的条目。
+func (a *App) outboxClearTaken(w http.ResponseWriter, r *http.Request) {
+	n := a.Out.ClearTaken()
+	count, size := a.Out.Stats()
+	writeJSON(w, 200, map[string]any{"success": true, "removed": n, "count": count, "total_size": size})
 }
 
 func (a *App) outboxRemove(w http.ResponseWriter, r *http.Request) {

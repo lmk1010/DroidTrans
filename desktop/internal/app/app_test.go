@@ -512,3 +512,44 @@ func TestBatchMissingMatchesPrune(t *testing.T) {
 		t.Errorf("剩下的批次不对: %+v", rows)
 	}
 }
+
+func TestOutboxClearAndPruneTaken(t *testing.T) {
+	dir := t.TempDir()
+	pa := filepath.Join(dir, "a.txt")
+	pb := filepath.Join(dir, "b.txt")
+	for _, p := range []string{pa, pb} {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := NewOutbox()
+	_, _ = o.Add(pa)
+	_, _ = o.Add(pb)
+	idA := ""
+	for _, it := range o.List() {
+		if it.Name == "a.txt" {
+			idA = it.ID
+		}
+	}
+	o.MarkTaken(idA)
+
+	// 刚取走的先留着：用户还要看到「已取走」这个反馈
+	if n := o.PruneTaken(2 * time.Hour); n != 0 {
+		t.Errorf("刚取走就被清掉了 %d 条", n)
+	}
+	// 放久了自动消失，没取走的必须留着
+	if n := o.PruneTaken(0); n != 1 {
+		t.Errorf("过期清理清掉 %d 条，想要 1", n)
+	}
+	if c, _ := o.Stats(); c != 1 {
+		t.Errorf("清理后剩 %d 条，想要 1", c)
+	}
+
+	o2 := NewOutbox()
+	_, _ = o2.Add(pa)
+	_, _ = o2.Add(pb)
+	o2.MarkTaken(o2.List()[0].ID)
+	if n := o2.ClearTaken(); n != 1 {
+		t.Errorf("一键清理清掉 %d 条，想要 1", n)
+	}
+}

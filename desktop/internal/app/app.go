@@ -564,6 +564,10 @@ func (a *App) maintain() {
 	a.pruneStaleDevices(10 * time.Minute)
 	a.pruneIdleSessions(10 * time.Minute)
 	a.pruneOldThumbs(7 * 24 * time.Hour)
+	if a.Out != nil {
+		// 取走超过两小时的就别占着清单了
+		a.Out.PruneTaken(2 * time.Hour)
+	}
 	a.Store.PruneEmptyBatches()
 	a.Store.Checkpoint()
 	fmt.Println("maintain  lan=", ip)
@@ -783,6 +787,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/outbox/add", a.outboxAdd)
 	mux.HandleFunc("POST /api/outbox/pick", a.outboxPick)
 	mux.HandleFunc("POST /api/outbox/text", a.outboxText)
+	mux.HandleFunc("POST /api/outbox/clear_taken", a.outboxClearTaken)
 	mux.HandleFunc("POST /api/outbox/remove", a.outboxRemove)
 	mux.HandleFunc("POST /api/outbox/remove/{id}", a.outboxRemove)
 	mux.HandleFunc("GET /api/outbox/file/{id}", a.outboxFile)

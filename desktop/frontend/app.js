@@ -82,8 +82,9 @@ const I18N = {
     pairOffHint: '任何在同一网络里的设备都能连这台电脑。',
     pairPeers: '已配对 {n} 台',
     sendPick: '选择文件…', clearAll: '全部清空',
+    tookN: '已取走 {n} 个', tookClear: '清掉',
     sendTextPh: '粘一段文字或链接，回车发过去', sendTextGo: '加入', kindText: '文字',
-    sendEmpty: '把文件拖到窗口里', sendEmptyHint: '也可以点「选择文件…」。手机打开卓传就能取走。', tookN: '已取走',
+    sendEmpty: '把文件拖到窗口里', sendEmptyHint: '也可以点「选择文件…」。手机打开卓传就能取走。',
     fileGone: '文件已不在',
     firstRun: '第一次用', firstRunTitle: '手机扫码装卓传',
     firstRunHint: '装好打开就能连。也可以插数据线走 USB。',
@@ -131,8 +132,9 @@ const I18N = {
     pairOffHint: 'Any device on this network can reach this computer.',
     pairPeers: '{n} paired',
     sendPick: 'Choose files…', clearAll: 'Clear all',
+    tookN: '{n} picked up', tookClear: 'Clear',
     sendTextPh: 'Paste text or a link, press Enter', sendTextGo: 'Add', kindText: 'text',
-    sendEmpty: 'Drop files onto this window', sendEmptyHint: 'Or use “Choose files…”. Your phone picks them up.', tookN: 'picked up',
+    sendEmpty: 'Drop files onto this window', sendEmptyHint: 'Or use “Choose files…”. Your phone picks them up.',
     fileGone: 'file is gone',
     firstRun: 'First time', firstRunTitle: 'Scan to install the phone app',
     firstRunHint: 'Open it and it finds this computer. USB works too.',
@@ -1756,7 +1758,17 @@ async function refreshOutbox(force) {
   const key = items.map((i) => `${i.id}:${i.size}:${i.taken}`).join('|');
   if (!force && key === outboxKey) return;
   outboxKey = key;
+  // 取走的不再占着清单：收成一行，跟图库里「文件已不在」同一套处理
+  const taken = items.filter((i) => i.taken > 0);
+  const waiting = items.filter((i) => !i.taken);
+  const tookBar = $('#tookBar');
+  if (tookBar) {
+    tookBar.classList.toggle('hidden', taken.length === 0);
+    $('#tookText').textContent = t('tookN').replace('{n}', String(taken.length));
+  }
   $('#outClear')?.classList.toggle('hidden', items.length === 0);
+  items.length = 0;
+  items.push(...waiting);
   if (!items.length) {
     box.innerHTML = `<div class="out-empty">${I_UP}<div>
       <strong>${esc(t('sendEmpty'))}</strong>
@@ -1769,12 +1781,10 @@ async function refreshOutbox(force) {
     const meta = gone
       ? `<span class="meta gone">${esc(t('fileGone'))}</span>`
       : `<span class="meta">${esc(fmtBytes(it.size) || '')}</span>`;
-    const took = it.taken > 0 ? `<span class="took">${esc(t('tookN'))}</span>` : '';
     const kind = it.text ? `<span class="kind">${esc(t('kindText'))}</span>` : '';
     return `<div class="out-row" title="${esc(it.text || it.path)}">
       ${kind}
       <span class="name">${esc(it.text || it.rel || it.name)}</span>
-      ${took}
       ${meta}
       <button type="button" class="out-x" data-id="${esc(it.id)}" aria-label="remove">✕</button>
     </div>`;
@@ -1840,6 +1850,11 @@ $('#pairToggle')?.addEventListener('click', () => {
 $('#outTextGo')?.addEventListener('click', sendText);
 $('#outText')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendText();
+});
+
+$('#tookClear')?.addEventListener('click', async () => {
+  await api('/api/outbox/clear_taken', { body: '{}' });
+  refreshOutbox(true);
 });
 
 $('#outClear')?.addEventListener('click', async () => {

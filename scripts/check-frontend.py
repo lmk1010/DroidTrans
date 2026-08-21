@@ -38,7 +38,16 @@ for m in re.finditer(r"fetch\(([^;]*?)\)\s*[;.]", js, re.S):
         line = js[: m.start()].count("\n") + 1
         problems.append(f"app.js:{line} fetch 带了 body 却没写 method，会退成 GET 抛异常")
 
-# ---- 3. 缺失的 i18n key ----
+# ---- 3. 同一字典里重复定义的 key ----
+for lang in ("zh", "en"):
+    block = re.search(r"%s:\s*\{(.*?)\n  \},?" % lang, js, re.S)
+    if not block:
+        continue
+    found = re.findall(r"(\w+):\s*'", block.group(1))
+    for k in {x for x in found if found.count(x) > 1}:
+        problems.append(f"app.js 的 {lang} 文案里 {k} 重复定义了（后面的会悄悄覆盖前面的）")
+
+# ---- 4. 缺失的 i18n key ----
 zh = re.search(r"zh:\s*\{(.*?)\n  \},", js, re.S)
 keys = set(re.findall(r"(\w+):\s*'", zh.group(1))) if zh else set()
 for m in re.finditer(r'data-i18n(?:-ph|-title)?="([\w]+)"', html):
