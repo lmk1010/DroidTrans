@@ -161,58 +161,75 @@
       </section>
 
       <section id="view-wifi" class="view">
-        <header class="page-head">
-          <h1 data-i18n="wifiTitle">Wi-Fi 接收</h1>
-          <p data-i18n="wifiSub">手机打开卓传会自己连上。</p>
+        <header class="page-head row">
+          <div>
+            <h1 id="wifiH1">Wi-Fi 接收</h1>
+            <p id="wifiP">手机打开卓传会自己连上。</p>
+          </div>
+          <div class="seg" role="tablist">
+            <button type="button" class="seg-btn on" data-pane="recv" data-i18n="paneRecv">接收</button>
+            <button type="button" class="seg-btn" data-pane="send" data-i18n="paneSend">发送</button>
+          </div>
         </header>
-        <div class="listen">
-          <div id="wifiQR" class="qr" aria-hidden="true"></div>
-          <div class="listen-copy">
-            <span class="kicker" data-i18n="localAddr">本机地址</span>
-            <strong id="wifiURL" title="">—</strong>
-            <em id="wifiHint" data-i18n="wifiHint">已装 App 时扫这个，或等它自己发现。</em>
-            <div id="wifiAlts" class="alts hidden"></div>
+
+        <div id="paneRecv" class="pane">
+          <div class="listen">
+            <div id="wifiQR" class="qr" aria-hidden="true"></div>
+            <div class="listen-copy">
+              <span class="kicker" data-i18n="localAddr">本机地址</span>
+              <strong id="wifiURL" title="">—</strong>
+              <em id="wifiHint" data-i18n="wifiHint">已装 App 时扫这个，或等它自己发现。</em>
+              <div id="wifiAlts" class="alts hidden"></div>
+            </div>
+            <button type="button" id="copyUrl" class="icon-btn" data-i18n-title="copy" title="复制" aria-label="复制">
+              <svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
+              <svg class="i-check hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
+            </button>
           </div>
-          <button type="button" id="copyUrl" class="icon-btn" data-i18n-title="copy" title="复制" aria-label="复制">
-            <svg class="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
-            <svg class="i-check hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
-          </button>
-        </div>
-        <div class="path-row glass">
-          <label data-i18n="save">保存到</label>
-          <input id="wifiOut" type="text" spellcheck="false" />
-          <button type="button" id="openOut" class="ghost" data-i18n="open">打开文件夹</button>
-        </div>
-        <div id="pairBox" class="pair-box hidden">
-          <div class="pair-left">
-            <span class="kicker" data-i18n="pairKicker">配对码</span>
-            <strong id="pairCode">——</strong>
-            <em id="pairPeers" data-i18n="pairHint">手机扫上面的二维码就自动配对；也可以手输这六位。</em>
+
+          <div class="path-row glass">
+            <label data-i18n="save">保存到</label>
+            <input id="wifiOut" type="text" spellcheck="false" />
+            <button type="button" id="openOut" class="ghost" data-i18n="open">打开文件夹</button>
           </div>
-          <div class="pair-acts">
-            <button type="button" id="pairNew" class="ghost" data-i18n="pairNew">换一个</button>
-            <button type="button" id="pairOff" class="ghost" data-i18n="pairOff">关掉配对</button>
+
+          <div class="sub-row">
+            <h3 data-i18n="online">在线设备</h3>
+            <button type="button" id="wifiRecent" class="linkish hidden"></button>
+          </div>
+          <div id="onlineList" class="list"></div>
+
+          <div id="pairBar" class="pair-bar hidden">
+            <span id="pairSummary"></span>
+            <button type="button" id="pairToggle" class="linkish" data-i18n="pairManage">管理</button>
+          </div>
+          <div id="pairBox" class="pair-box hidden">
+            <div class="pair-left">
+              <span class="kicker" data-i18n="pairKicker">配对码</span>
+              <strong id="pairCode">——</strong>
+              <em id="pairPeers" data-i18n="pairHint">手机扫上面的二维码就自动配对；也可以手输这六位。</em>
+            </div>
+            <div class="pair-acts">
+              <button type="button" id="pairNew" class="ghost" data-i18n="pairNew">换一个</button>
+              <button type="button" id="pairOff" class="ghost" data-i18n="pairOff">关掉配对</button>
+            </div>
           </div>
         </div>
 
-        <div class="sub-row">
-          <h3 data-i18n="sendTitle">发到手机</h3>
-          <div class="sub-acts">
-            <button type="button" id="outPick" class="ghost" data-i18n="sendPick">选择文件…</button>
-            <button type="button" id="outClear" class="linkish hidden" data-i18n="clearAll">全部清空</button>
+        <div id="paneSend" class="pane hidden">
+          <div class="send-text">
+            <input id="outText" type="text" spellcheck="false" data-i18n-ph="sendTextPh" placeholder="粘一段文字或链接，回车发过去" />
+            <button type="button" id="outTextGo" class="ghost" data-i18n="sendTextGo">加入</button>
           </div>
+          <div class="sub-row">
+            <h3 data-i18n="sendWaiting">等手机来取</h3>
+            <div class="sub-acts">
+              <button type="button" id="outPick" class="ghost" data-i18n="sendPick">选择文件…</button>
+              <button type="button" id="outClear" class="linkish hidden" data-i18n="clearAll">全部清空</button>
+            </div>
+          </div>
+          <div id="outbox" class="outbox"></div>
         </div>
-        <div class="send-text">
-          <input id="outText" type="text" spellcheck="false" data-i18n-ph="sendTextPh" placeholder="粘一段文字或链接，回车发过去" />
-          <button type="button" id="outTextGo" class="ghost" data-i18n="sendTextGo">加入</button>
-        </div>
-        <div id="outbox" class="outbox"></div>
-
-        <div class="sub-row">
-          <h3 data-i18n="online">在线设备</h3>
-          <button type="button" id="wifiRecent" class="linkish hidden"></button>
-        </div>
-        <div id="onlineList" class="list"></div>
       </section>
 
       <section id="view-apk" class="view">

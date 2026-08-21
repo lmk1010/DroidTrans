@@ -53,6 +53,9 @@ const I18N = {
     wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
     localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
+    paneRecv: '接收', paneSend: '发送', sendWaiting: '等手机来取',
+    sendHead: '发到手机', sendSub: '拖文件进窗口，或粘一段文字。手机打开卓传就能取走。',
+    pairManage: '管理', pairSummary: '配对码 {code} · 已配对 {n} 台', pairSummaryOff: '配对已关闭',
     hotspotOn: '正连着手机热点 · 不用路由器也能传',
     hotspotHint: '没有路由器？手机开个热点，电脑连上来一样传。',
     pairKicker: '配对码', pairNew: '换一个', pairOff: '关掉配对', pairOn: '开启配对',
@@ -115,6 +118,9 @@ const I18N = {
     wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
     localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
+    paneRecv: 'Receive', paneSend: 'Send', sendWaiting: 'Waiting for the phone',
+    sendHead: 'Send to phone', sendSub: 'Drop files on the window, or paste text. Your phone picks them up.',
+    pairManage: 'Manage', pairSummary: 'Code {code} · {n} paired', pairSummaryOff: 'Pairing is off',
     hotspotOn: 'On the phone’s hotspot — no router needed',
     hotspotHint: 'No router? Turn on the phone’s hotspot and join it from this computer.',
     pairKicker: 'Pairing code', pairNew: 'New code', pairOff: 'Turn off pairing', pairOn: 'Require pairing',
@@ -179,6 +185,9 @@ function applyLang() {
     el.setAttribute('aria-label', label);
   });
   $('#langBtn').textContent = state.lang === 'zh' ? 'EN' : '中文';
+  if ($('#paneSend')) {
+    showPane($('#paneSend').classList.contains('hidden') ? 'recv' : 'send');
+  }
   updateXferBtn();
 }
 
@@ -834,7 +843,10 @@ function show(view) {
   state.view = view;
   // 后端本来就把 /usb /wifi /history 当页面提供，地址栏跟着走，
   // 直接打开这些路径时才不会莫名其妙回到总览。
-  const path = view === 'home' ? '/' : '/' + view;
+  let path = view === 'home' ? '/' : '/' + view;
+  if (view === 'wifi' && !$('#paneSend')?.classList.contains('hidden')) {
+    path = '/send';
+  }
   if (location.pathname !== path) {
     try { history.replaceState(null, '', path); } catch (_) { /* file:// 下忽略 */ }
   }
@@ -1669,14 +1681,21 @@ async function refreshPair() {
   const info = await api('/api/pair/info');
   if (!info || info.success !== true) return;
   pairInfo = { required: !!info.required, code: info.code || '' };
-  box.classList.remove('hidden');
+  const peersN = (info.peers || []).length;
+  // 平时只留一行摘要：配对码天天占一大块没意义，要改的时候再展开
+  const bar = $('#pairBar');
+  if (bar) {
+    bar.classList.remove('hidden');
+    $('#pairSummary').textContent = pairInfo.required
+      ? t('pairSummary').replace('{code}', pairInfo.code || '——').replace('{n}', String(peersN))
+      : t('pairSummaryOff');
+  }
   $('#pairCode').textContent = pairInfo.required ? (pairInfo.code || '——') : '—';
   $('#pairNew').classList.toggle('hidden', !pairInfo.required);
   $('#pairOff').textContent = pairInfo.required ? t('pairOff') : t('pairOn');
-  const peers = info.peers || [];
   const hint = pairInfo.required ? t('pairHint') : t('pairOffHint');
-  $('#pairPeers').textContent = peers.length
-    ? `${hint}  ·  ${t('pairPeers').replace('{n}', String(peers.length))}`
+  $('#pairPeers').textContent = peersN
+    ? `${hint}  ·  ${t('pairPeers').replace('{n}', String(peersN))}`
     : hint;
   // 二维码带上配对码，扫一下就连上了，不用手输
   setWifiURL(lastWifiURL);
@@ -1749,6 +1768,29 @@ async function sendText() {
     refreshOutbox(true);
   }
 }
+
+function showPane(pane) {
+  $$('.seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.pane === pane));
+  // 标题跟着走：在「发送」面板上还写「Wi-Fi 接收」会让人以为切错了
+  const send = pane === 'send';
+  $('#wifiH1').textContent = send ? t('sendHead') : t('wifiTitle');
+  $('#wifiP').textContent = send ? t('sendSub') : t('wifiSub');
+  $('#paneRecv').classList.toggle('hidden', pane !== 'recv');
+  $('#paneSend').classList.toggle('hidden', pane !== 'send');
+  if (pane === 'send') refreshOutbox(true);
+  const path = pane === 'send' ? '/send' : '/wifi';
+  if (state.view === 'wifi' && location.pathname !== path) {
+    try { history.replaceState(null, '', path); } catch (_) { /* ignore */ }
+  }
+}
+
+$$('.seg-btn').forEach((btn) => {
+  btn.addEventListener('click', () => showPane(btn.dataset.pane));
+});
+
+$('#pairToggle')?.addEventListener('click', () => {
+  $('#pairBox').classList.toggle('hidden');
+});
 
 $('#outTextGo')?.addEventListener('click', sendText);
 $('#outText')?.addEventListener('keydown', (e) => {
@@ -2017,8 +2059,13 @@ $('#langBtn').addEventListener('click', () => {
 });
 
 applyLang();
-const bootView = { '/usb': 'usb', '/wifi': 'wifi', '/history': 'history', '/apk': 'apk' }[location.pathname];
-if (bootView) show(bootView);
+// 先记下启动路径：show() 会把地址栏改写掉，之后再判断就晚了
+const bootPath = location.pathname;
+const bootView = { '/usb': 'usb', '/wifi': 'wifi', '/send': 'wifi', '/history': 'history', '/apk': 'apk' }[bootPath];
+if (bootView) {
+  show(bootView);
+  if (bootPath === '/send') showPane('send');
+}
 refreshHome();
 refreshNames();
 setInterval(refreshHome, 4000);
