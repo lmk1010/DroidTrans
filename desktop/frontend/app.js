@@ -962,9 +962,12 @@ async function refreshUsb() {
   syncXferBar();
   const dev = await api('/api/device_status');
   state.usbConnected = !!dev.connected;
+  // 序列号对用户没意义，放进 title 里备查就行
+  const who = (dev.model || '').trim() || dev.selected || '';
   $('#usbDevice').textContent = dev.connected
-    ? `${dev.model || ''}  ·  ${dev.selected || ''}`
+    ? who
     : (dev.unauthorized_devices?.length ? t('unauth') : t('waiting'));
+  $('#usbDevice').title = dev.connected && dev.selected ? `${who} · ${dev.selected}` : '';
   $('#scanBtn').disabled = !dev.connected || usbScanning;
   const result = await api('/api/scan_result');
   lastGuide.dev = dev;
@@ -1258,7 +1261,8 @@ async function startUsbScan(opts = {}) {
   if (!state.usbConnected || usbScanning) return false;
   usbScanning = true;
   $('#scanBtn').disabled = true;
-  $('#scanBtn').textContent = t('scanning');
+  $('#scanBtn').classList.add('spinning');
+  $('#scanBtn').title = t('scanning');
   hidePhotos();
   const empty = $('#usbEmpty');
   if (empty && !state.currentAlbum) {
@@ -1286,7 +1290,8 @@ async function startUsbScan(opts = {}) {
       setUsbEmpty({ connected: state.usbConnected }, result.albums);
     }
   }
-  $('#scanBtn').textContent = t('scan');
+  $('#scanBtn').classList.remove('spinning');
+  $('#scanBtn').title = t('scan');
   $('#scanBtn').disabled = !state.usbConnected;
   usbScanning = false;
   if (!err && opts.preset) {

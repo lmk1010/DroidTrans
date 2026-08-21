@@ -1509,3 +1509,36 @@ main { padding: 52px 40px 40px; overflow: auto; }
 }
 .pair-bar.hidden { display: none !important; }
 .pair-box { margin-top: 10px; }
+
+/* 保存路径是「设一次就不动」的东西，收成底部一行小字，
+   别再用整行卡片占着页面顶部。 */
+.path-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.path-bar input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 4px 0;
+}
+.path-bar input:focus { color: var(--text); }
+.chip-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+#view-usb.guiding .path-bar { display: none; }
+
+#scanBtn svg { width: 17px; height: 17px; }
+#scanBtn.spinning svg { animation: spin 1s linear infinite; }
+#scanBtn:disabled { opacity: 0.35; }
