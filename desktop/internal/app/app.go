@@ -817,6 +817,9 @@ func (a *App) Handler() http.Handler {
 
 	fileServer := http.FileServer(http.FS(a.Frontend))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// 界面是随二进制一起更新的，浏览器/WebView 缓存住旧的 app.js
+		// 会让升级之后还在跑上一版界面。
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
 			return

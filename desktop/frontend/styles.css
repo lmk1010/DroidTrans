@@ -139,6 +139,8 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .page-head p { margin: 0; color: var(--muted); max-width: 34em; }
 #homeNext { color: var(--accent); font-size: 15px; margin-top: 6px; }
 .page-head.row { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+/* 分段控件跟标题同排时对齐到顶部：贴着副标题会显得挤 */
+.page-head.row .seg { align-self: flex-start; margin-top: 6px; }
 
 .glass, .tile, .listen, .xfer-bar, .path-row, .album, .photo, .ghost, .primary, .row-btn {
   border: 0;
@@ -451,7 +453,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .photo .vid svg { width: 36px; height: 36px; }
 
 .listen {
-  margin: 24px 0 16px;
+  margin: 0 0 18px;
   padding: 8px 0;
   border-radius: 0;
   background: none;
@@ -1347,7 +1349,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .lightbox-close svg { width: 17px; height: 17px; }
 
 /* 发到手机：待手机领取的文件清单 */
-.outbox { display: flex; flex-direction: column; gap: 2px; margin: 0 0 20px; }
+.outbox { display: flex; flex-direction: column; gap: 2px; margin: 0; }
 .out-empty {
   display: flex;
   align-items: center;
@@ -1440,7 +1442,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 8px;
+  margin: 0 0 22px;
   padding: 4px 4px 4px 12px;
   border-radius: 12px;
   background: var(--glass);
@@ -1491,6 +1493,10 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .seg-btn:hover { color: var(--text); }
 .seg-btn.on { background: var(--glass-strong); color: var(--text); }
 .pane.hidden { display: none !important; }
+/* 面板与页头之间的固定间距：以前靠各块自己的 margin 拼，
+   接收面板有 24px，发送面板是 0，副标题直接贴上了输入框。 */
+.pane { margin-top: 24px; }
+.pane > :first-child { margin-top: 0; }
 
 /* 配对码平时收成一行，需要时才展开 */
 .pair-bar {
