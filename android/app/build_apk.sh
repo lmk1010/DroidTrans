@@ -32,8 +32,20 @@ KEY_PASSWORD="android123456"            # 请修改为实际密钥密码
 # 获取脚本所在目录的父目录（AndroidTransferApp目录）
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSION="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION" 2>/dev/null | sed 's/^v//' || true)"
+VERSION="${VERSION:-1.0.0}"
+VMAJ="${VERSION%%.*}"
+REST="${VERSION#*.}"
+VMIN="${REST%%.*}"
+VPATCH="${REST#*.}"
+VPATCH="${VPATCH%%.*}"
+VERSION_CODE=$(( ${VMAJ:-0} * 10000 + ${VMIN:-0} * 100 + ${VPATCH:-0} ))
+export VERSION_NAME="$VERSION"
+export VERSION_CODE
 
 print_info "当前工作目录: $SCRIPT_DIR"
+print_info "版本: $VERSION_NAME ($VERSION_CODE)"
 
 # 检查keystore文件是否存在
 KEYSTORE_PATH="$SCRIPT_DIR/$KEYSTORE_FILE"
@@ -79,7 +91,7 @@ if [ -f "$APK_PATH" ]; then
     
     # 生成带时间戳的文件名
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    OUTPUT_APK="$OUTPUT_DIR/AndroidTransfer_v1.0_$TIMESTAMP.apk"
+    OUTPUT_APK="$OUTPUT_DIR/DroidTrans_${VERSION_NAME}_$TIMESTAMP.apk"
     cp "$APK_PATH" "$OUTPUT_APK"
     
     print_info "APK已复制到: $OUTPUT_APK"

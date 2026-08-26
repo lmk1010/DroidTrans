@@ -23,11 +23,12 @@ import (
 	"droidtrans/internal/bonjour"
 	"droidtrans/internal/fast"
 	"droidtrans/internal/store"
+	"droidtrans/internal/update"
 )
 
 const (
 	HTTPPort       = 9500
-	APKDownloadURL = "https://dl.neox-dev.com/droidtrans/latest.apk"
+	APKDownloadURL = "https://droid.mkstore.life/latest.apk"
 )
 
 type deviceInfo struct {
@@ -520,6 +521,10 @@ func (a *App) StartBackground() {
 	go a.monitorADB()
 	go a.maintainLoop()
 	go a.advertiseBonjour()
+	go func() {
+		time.Sleep(4 * time.Second)
+		update.Check()
+	}()
 }
 
 func computerName() string {
@@ -752,6 +757,8 @@ func (a *App) refreshDevices() {
 func (a *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", a.health)
+	mux.HandleFunc("GET /api/version", a.versionInfo)
+	mux.HandleFunc("POST /api/update/open", a.updateOpen)
 	mux.HandleFunc("POST /api/client_error", a.clientError)
 	mux.HandleFunc("GET /api/wifi/info", a.wifiInfo)
 	mux.HandleFunc("POST /api/wifi/connect", a.wifiConnect)
@@ -983,7 +990,36 @@ func (a *App) clientError(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "app": "droidtrans", "engine": "go", "root": a.OutputDir, "name": computerName()})
+	writeJSON(w, 200, map[string]any{
+		"ok": true, "app": "droidtrans", "engine": "go",
+		"version": update.Current(),
+		"root": a.OutputDir, "name": computerName(),
+	})
+}
+
+func (a *App) versionInfo(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("refresh") == "1" {
+		writeJSON(w, 200, update.Check())
+		return
+	}
+	st := update.Snapshot()
+	if st.CheckedAt == "" {
+		st = update.Check()
+	}
+	writeJSON(w, 200, st)
+}
+
+func (a *App) updateOpen(w http.ResponseWriter, r *http.Request) {
+	st := update.Snapshot()
+	if !st.Available || st.UpdateURL == "" {
+		writeJSON(w, 404, map[string]any{"ok": false, "error": "no update"})
+		return
+	}
+	if err := update.OpenURL(st.UpdateURL); err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "url": st.UpdateURL})
 }
 
 func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {

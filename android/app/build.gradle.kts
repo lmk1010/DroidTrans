@@ -2,6 +2,15 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+fun readRepoVersion(): Pair<String, Int> {
+    val f = rootProject.file("../VERSION")
+    val name = if (f.exists()) f.readText().trim().removePrefix("v") else "1.0.0"
+    val parts = name.split(".")
+    fun part(i: Int) = parts.getOrNull(i)?.toIntOrNull() ?: 0
+    val code = part(0) * 10000 + part(1) * 100 + part(2)
+    return name to maxOf(code, 1)
+}
+
 android {
     namespace = "com.mk.androidtransfer"
     compileSdk = 35
@@ -10,9 +19,10 @@ android {
         applicationId = "com.mk.androidtransfer"
         minSdk = 24
         targetSdk = 35
-        // CI 打包时用 VERSION_CODE / VERSION_NAME 覆盖，否则每次发版都是同一个版本号，装不上去
-        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
-        versionName = System.getenv("VERSION_NAME") ?: "1.0"
+        // CI 可用 VERSION_CODE / VERSION_NAME 覆盖；本地读仓库根 VERSION
+        val (repoName, repoCode) = readRepoVersion()
+        versionCode = (System.getenv("VERSION_CODE") ?: repoCode.toString()).toInt()
+        versionName = System.getenv("VERSION_NAME") ?: repoName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -108,6 +108,9 @@ const I18N = {
     wizWifi: '搞不定？改用 Wi-Fi 传',
     retryFailed: '重试失败的', deviceLost: '手机断开了',
     xferN: '传输 {n} 张',
+    updateAvail: '有新版本 {v}',
+    updateNow: '立即更新',
+    updateLater: '稍后',
   },
   en: {
     navHome: 'Home', navHist: 'Gallery',
@@ -158,6 +161,9 @@ const I18N = {
     wizWifi: 'Stuck? Send over Wi-Fi instead',
     retryFailed: 'Retry failed', deviceLost: 'Phone disconnected',
     xferN: 'Transfer {n}',
+    updateAvail: 'Update available: {v}',
+    updateNow: 'Update now',
+    updateLater: 'Later',
   },
 };
 
@@ -2044,7 +2050,7 @@ async function ensureApkUrl() {
     const info = await api('/api/wifi/info');
     if (info.apk_url) apkUrl = info.apk_url;
   } catch { /* ignore */ }
-  if (!apkUrl) apkUrl = 'https://dl.neox-dev.com/droidtrans/latest.apk';
+  if (!apkUrl) apkUrl = 'https://droid.mkstore.life/latest.apk';
   return apkUrl;
 }
 
@@ -2195,3 +2201,27 @@ $('#inboxDismiss').addEventListener('click', () => {
 });
 
 pollInbox();
+
+async function checkUpdateBanner() {
+  const el = $('#updateBanner');
+  if (!el) return;
+  try {
+    const st = await api('/api/version?refresh=1');
+    if (!st || !st.available) {
+      el.classList.add('hidden');
+      return;
+    }
+    $('#updateText').textContent = t('updateAvail').replace('{v}', st.latest || '');
+    $('#updateBtn').textContent = t('updateNow');
+    $('#updateDismiss').textContent = t('updateLater');
+    el.classList.remove('hidden');
+  } catch (_) { /* 检查失败就静默 */ }
+}
+
+$('#updateBtn')?.addEventListener('click', async () => {
+  try { await api('/api/update/open', { body: '{}' }); } catch (_) {}
+});
+$('#updateDismiss')?.addEventListener('click', () => {
+  $('#updateBanner')?.classList.add('hidden');
+});
+setTimeout(checkUpdateBanner, 5000);

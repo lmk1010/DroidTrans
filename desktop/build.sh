@@ -2,17 +2,21 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-echo "go mod tidy / build"
+REPO="$(cd "$ROOT/.." && pwd)"
+VERSION="$(tr -d '[:space:]' < "$REPO/VERSION" | sed 's/^v//')"
+VERSION="${VERSION:-0.0.0}"
+echo "go mod tidy / build  version=$VERSION"
 go mod tidy
 OUT="${ROOT}/../dist"
 mkdir -p "$OUT"
 BIN="$OUT/droidtrans"
 GOOS="${GOOS:-$(go env GOOS)}"
 GOARCH="${GOARCH:-$(go env GOARCH)}"
+LDFLAGS="-s -w -X droidtrans/internal/update.Version=${VERSION}"
 if [[ "$(uname)" == "Darwin" ]]; then
-  CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o "$BIN" .
+  CGO_ENABLED=1 go build -trimpath -ldflags="$LDFLAGS" -o "$BIN" .
 else
-  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$BIN" .
+  CGO_ENABLED=0 go build -trimpath -ldflags="$LDFLAGS" -o "$BIN" .
 fi
 echo "built $BIN ($(du -h "$BIN" | awk '{print $1}'))"
 
@@ -69,7 +73,7 @@ PY
     fi
   fi
   fi
-  cat > "$APP/Contents/Info.plist" <<'PLIST'
+  cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -77,8 +81,8 @@ PY
   <key>CFBundleName</key><string>DroidTrans</string>
   <key>CFBundleDisplayName</key><string>DroidTrans</string>
   <key>CFBundleIdentifier</key><string>com.mk.droidtrans</string>
-  <key>CFBundleVersion</key><string>1.0.0</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleVersion</key><string>${VERSION}</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleExecutable</key><string>droidtrans</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -103,8 +107,8 @@ PLIST
 若提示已损坏，终端执行：
 xattr -cr /Applications/DroidTrans.app
 EOF
-  DMG="$OUT/DroidTrans-1.0.0-macos-arm64.dmg"
+  DMG="$OUT/DroidTrans-${VERSION}-macos-arm64.dmg"
   rm -f "$DMG"
-  hdiutil create -volname DroidTrans -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+  hdiutil create -volname "DroidTrans ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
   echo "dmg $DMG ($(du -h "$DMG" | awk '{print $1}'))"
 fi
