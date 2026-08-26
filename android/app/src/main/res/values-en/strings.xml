@@ -38,7 +38,7 @@
     <string name="radar_center">Radar center</string>
     <string name="searching">Searching</string>
     <string name="wifi_title">Wi-Fi Transfer</string>
-    <string name="wifi_subtitle">Finds this computer on the LAN. Scan the Mac QR if you still need the app.</string>
+    <string name="wifi_subtitle">Finds this computer on the same Wi-Fi</string>
     <string name="scanning_servers_ellipsis">Scanning for servers...</string>
     <string name="refresh_scan">Refresh</string>
     <string name="scan_complete">Scan complete</string>

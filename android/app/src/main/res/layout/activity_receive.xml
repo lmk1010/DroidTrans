@@ -6,50 +6,55 @@
     android:background="@color/background"
     android:fitsSystemWindows="true">
 
-    <ImageButton
-        android:id="@+id/btnReceiveBack"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="8dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="@string/back"
-        android:src="@drawable/ic_arrow_back"
-        android:tint="@color/text_high_emphasis"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
-        android:id="@+id/tvReceiveTitle"
+    <LinearLayout
+        android:id="@+id/titleContainer"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="@dimen/page_gutter"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:text="@string/receive_title"
-        android:textColor="@color/text_high_emphasis"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        app:layout_constraintBottom_toBottomOf="@id/btnReceiveBack"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/btnReceiveBack"
-        app:layout_constraintTop_toTopOf="@id/btnReceiveBack" />
-
-    <TextView
-        android:id="@+id/tvReceiveSubtitle"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/page_gutter"
-        android:layout_marginEnd="@dimen/page_gutter"
-        android:layout_marginTop="2dp"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:textColor="@color/text_medium_emphasis"
-        android:textSize="13sp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/page_gutter"
+        android:paddingEnd="@dimen/page_gutter"
+        android:paddingTop="@dimen/page_gutter_top"
+        android:paddingBottom="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btnReceiveBack" />
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageButton
+            android:id="@+id/btnReceiveBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_arrow_back"
+            android:tint="@color/text_high_emphasis" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvReceiveTitle"
+                style="@style/TextAppearance.AndroidTransfer.PageTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/receive_title" />
+
+            <TextView
+                android:id="@+id/tvReceiveSubtitle"
+                style="@style/TextAppearance.AndroidTransfer.PageSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:maxLines="1" />
+        </LinearLayout>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/tvReceiveStatus"
@@ -63,7 +68,7 @@
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tvReceiveSubtitle" />
+        app:layout_constraintTop_toBottomOf="@id/titleContainer" />
 
     <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/receiveProgress"
@@ -106,8 +111,8 @@
         app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
-            android:layout_width="42dp"
-            android:layout_height="42dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:alpha="0.45"
             android:contentDescription="@string/receive_empty"
             android:src="@drawable/ic_image_placeholder"
@@ -116,7 +121,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="14dp"
             android:text="@string/receive_empty"
             android:textColor="@color/text_high_emphasis"
             android:textSize="15sp" />
@@ -124,7 +129,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:gravity="center"
             android:text="@string/receive_empty_hint"
             android:textColor="@color/text_medium_emphasis"

@@ -8,7 +8,7 @@
     android:paddingStart="@dimen/page_gutter"
     android:paddingEnd="@dimen/page_gutter"
     android:paddingTop="@dimen/page_gutter_top"
-    android:paddingBottom="@dimen/page_gutter"
+    android:paddingBottom="16dp"
     tools:context=".DashboardActivity">
 
     <LinearLayout
@@ -18,8 +18,8 @@
         android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="@dimen/page_header_icon"
+            android:layout_height="@dimen/page_header_icon"
             android:src="@drawable/ic_app_logo"
             android:contentDescription="@string/app_name" />
 
@@ -33,14 +33,17 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:includeFontPadding="false"
                 android:text="DroidTrans"
-                android:textSize="18sp"
+                android:textSize="17sp"
                 android:textStyle="bold"
                 android:textColor="@color/text_high_emphasis" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:includeFontPadding="false"
                 android:text="卓传"
                 android:textSize="13sp"
                 android:textColor="@color/text_medium_emphasis" />
@@ -49,14 +52,13 @@
 
     <TextView
         android:id="@+id/tvWelcomeTitle"
+        style="@style/TextAppearance.AndroidTransfer.PageTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="28dp"
+        android:layout_marginTop="20dp"
         android:text="@string/home_title"
-        android:textSize="30sp"
-        android:textStyle="bold"
-        android:lineSpacingMultiplier="1.08"
-        android:textColor="@color/text_high_emphasis" />
+        android:textSize="24sp"
+        android:lineSpacingMultiplier="1.1" />
 
     <com.mk.androidtransfer.view.DataTransferAnimationView
         android:id="@+id/dataTransferAnimation"
@@ -64,246 +66,244 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginTop="8dp"
-        android:layout_marginBottom="4dp" />
+        android:layout_marginBottom="8dp" />
 
     <LinearLayout
         android:id="@+id/cardUsb"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="88dp"
-        android:layout_marginBottom="4dp"
+        android:minHeight="@dimen/entry_row_min"
+        android:layout_marginBottom="@dimen/entry_row_gap"
         android:background="@drawable/bg_entry_row"
         android:clickable="true"
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="0dp"
-        android:paddingEnd="0dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp">
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
 
-        <ImageView
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_usb_modern"
-            android:tint="@color/primary"
-            android:contentDescription="@string/card_usb_title" />
+        <FrameLayout
+            android:layout_width="@dimen/entry_icon_well"
+            android:layout_height="@dimen/entry_icon_well">
+
+            <ImageView
+                android:layout_width="@dimen/entry_icon"
+                android:layout_height="@dimen/entry_icon"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_usb_modern"
+                android:scaleType="fitCenter"
+                android:tint="@color/primary"
+                android:contentDescription="@string/card_usb_title" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
             <TextView
+                style="@style/TextAppearance.AndroidTransfer.EntryTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="USB"
-                android:textAllCaps="true"
-                android:letterSpacing="0.16"
-                android:textSize="11sp"
-                android:textColor="@color/primary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/card_usb_title"
-                android:textColor="@color/text_high_emphasis"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:text="@string/card_usb_title" />
 
             <TextView
                 android:id="@+id/tvUsbStatus"
+                style="@style/TextAppearance.AndroidTransfer.EntrySubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/card_usb_subtitle"
-                android:textColor="@color/text_medium_emphasis"
-                android:textSize="13sp"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                android:layout_marginTop="3dp"
+                android:text="@string/card_usb_subtitle" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="@dimen/entry_chevron"
+            android:layout_height="@dimen/entry_chevron"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/text_disabled"
+            android:importantForAccessibility="no" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/cardWifi"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="88dp"
-        android:layout_marginBottom="4dp"
+        android:minHeight="@dimen/entry_row_min"
+        android:layout_marginBottom="@dimen/entry_row_gap"
         android:background="@drawable/bg_entry_row"
         android:clickable="true"
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="0dp"
-        android:paddingEnd="0dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp">
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
 
-        <ImageView
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_wifi_modern"
-            android:tint="@color/primary"
-            android:contentDescription="@string/card_wifi_title" />
+        <FrameLayout
+            android:layout_width="@dimen/entry_icon_well"
+            android:layout_height="@dimen/entry_icon_well">
+
+            <ImageView
+                android:layout_width="@dimen/entry_icon"
+                android:layout_height="@dimen/entry_icon"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_wifi_modern"
+                android:scaleType="fitCenter"
+                android:tint="@color/primary"
+                android:contentDescription="@string/card_wifi_title" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
             <TextView
+                style="@style/TextAppearance.AndroidTransfer.EntryTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Wi-Fi"
-                android:textAllCaps="true"
-                android:letterSpacing="0.16"
-                android:textSize="11sp"
-                android:textColor="@color/primary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/card_wifi_title"
-                android:textColor="@color/text_high_emphasis"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:text="@string/card_wifi_title" />
 
             <TextView
                 android:id="@+id/tvWifiStatus"
+                style="@style/TextAppearance.AndroidTransfer.EntrySubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/card_wifi_subtitle"
-                android:textColor="@color/text_medium_emphasis"
-                android:textSize="13sp"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                android:layout_marginTop="3dp"
+                android:text="@string/card_wifi_subtitle" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="@dimen/entry_chevron"
+            android:layout_height="@dimen/entry_chevron"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/text_disabled"
+            android:importantForAccessibility="no" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/cardReceive"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="88dp"
-        android:layout_marginBottom="4dp"
+        android:minHeight="@dimen/entry_row_min"
+        android:layout_marginBottom="@dimen/entry_row_gap"
         android:background="@drawable/bg_entry_row"
         android:clickable="true"
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp">
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
 
-        <ImageView
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_download_modern"
-            android:tint="@color/primary"
-            android:contentDescription="@string/card_receive_title" />
+        <FrameLayout
+            android:layout_width="@dimen/entry_icon_well"
+            android:layout_height="@dimen/entry_icon_well">
+
+            <ImageView
+                android:layout_width="@dimen/entry_icon"
+                android:layout_height="@dimen/entry_icon"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_download_modern"
+                android:scaleType="fitCenter"
+                android:tint="@color/primary"
+                android:contentDescription="@string/card_receive_title" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
             <TextView
+                style="@style/TextAppearance.AndroidTransfer.EntryTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="PC"
-                android:textAllCaps="true"
-                android:letterSpacing="0.16"
-                android:textSize="11sp"
-                android:textColor="@color/primary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/card_receive_title"
-                android:textColor="@color/text_high_emphasis"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:text="@string/card_receive_title" />
 
             <TextView
                 android:id="@+id/tvReceiveCardStatus"
+                style="@style/TextAppearance.AndroidTransfer.EntrySubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/card_receive_subtitle"
-                android:textColor="@color/text_medium_emphasis"
-                android:textSize="13sp"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                android:layout_marginTop="3dp"
+                android:text="@string/card_receive_subtitle" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="@dimen/entry_chevron"
+            android:layout_height="@dimen/entry_chevron"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/text_disabled"
+            android:importantForAccessibility="no" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/cardPhoneToPhone"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="72dp"
+        android:minHeight="@dimen/entry_row_min"
         android:background="@drawable/bg_entry_row"
         android:clickable="true"
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="0dp"
-        android:paddingEnd="0dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
 
-        <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:src="@drawable/ic_phone_transfer_modern"
-            android:tint="@color/primary"
-            android:contentDescription="@string/card_phone_title" />
+        <FrameLayout
+            android:layout_width="@dimen/entry_icon_well"
+            android:layout_height="@dimen/entry_icon_well">
+
+            <ImageView
+                android:layout_width="@dimen/entry_icon"
+                android:layout_height="@dimen/entry_icon"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_phone_transfer_modern"
+                android:scaleType="fitCenter"
+                android:tint="@color/primary"
+                android:contentDescription="@string/card_phone_title" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
             <TextView
+                style="@style/TextAppearance.AndroidTransfer.EntryTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="P2P"
-                android:textAllCaps="true"
-                android:letterSpacing="0.16"
-                android:textSize="11sp"
-                android:textColor="@color/primary" />
+                android:text="@string/card_phone_title" />
 
             <TextView
+                style="@style/TextAppearance.AndroidTransfer.EntrySubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="@string/card_phone_title"
-                android:textColor="@color/text_high_emphasis"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/card_phone_subtitle"
-                android:textColor="@color/text_medium_emphasis"
-                android:textSize="12sp"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                android:layout_marginTop="3dp"
+                android:text="@string/card_phone_subtitle" />
         </LinearLayout>
+
+        <ImageView
+            android:layout_width="@dimen/entry_chevron"
+            android:layout_height="@dimen/entry_chevron"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/text_disabled"
+            android:importantForAccessibility="no" />
     </LinearLayout>
 
 </LinearLayout>

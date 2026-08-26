@@ -39,21 +39,17 @@
             android:orientation="vertical">
 
             <TextView
+                style="@style/TextAppearance.AndroidTransfer.PageTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/usb_p2p_title"
-                android:textSize="28sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.01"
-                android:textColor="@color/text_high_emphasis" />
+                android:text="@string/usb_p2p_title" />
 
             <TextView
+                style="@style/TextAppearance.AndroidTransfer.PageSubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="@string/usb_p2p_choose_role"
-                android:textSize="14sp"
-                android:textColor="@color/text_medium_emphasis" />
+                android:text="@string/usb_p2p_choose_role" />
         </LinearLayout>
     </LinearLayout>
 

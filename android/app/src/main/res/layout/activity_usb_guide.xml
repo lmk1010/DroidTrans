@@ -40,21 +40,17 @@
                 android:orientation="vertical">
 
                 <TextView
+                    style="@style/TextAppearance.AndroidTransfer.PageTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:letterSpacing="-0.02"
-                    android:text="@string/usb_guide_title"
-                    android:textColor="@color/text_high_emphasis"
-                    android:textSize="30sp"
-                    android:textStyle="bold" />
+                    android:text="@string/usb_guide_title" />
 
                 <TextView
+                    style="@style/TextAppearance.AndroidTransfer.PageSubtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/usb_guide_subtitle"
-                    android:textColor="@color/text_medium_emphasis"
-                    android:textSize="13sp" />
+                    android:layout_marginTop="4dp"
+                    android:text="@string/usb_guide_subtitle" />
             </LinearLayout>
         </LinearLayout>
 

@@ -112,3 +112,4 @@ htmlcov/
 
 # 配对令牌（本机凭据，不进版本库）
 pairing.json
+.env.r2

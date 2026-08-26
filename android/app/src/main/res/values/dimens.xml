@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <dimen name="page_gutter">32dp</dimen>
-    <dimen name="page_gutter_top">12dp</dimen>
-    <dimen name="page_header_icon">48dp</dimen>
+    <dimen name="page_gutter">24dp</dimen>
+    <dimen name="page_gutter_top">8dp</dimen>
+    <dimen name="page_header_icon">40dp</dimen>
+    <dimen name="entry_icon_well">40dp</dimen>
+    <dimen name="entry_icon">26dp</dimen>
+    <dimen name="entry_row_min">72dp</dimen>
+    <dimen name="entry_row_gap">12dp</dimen>
+    <dimen name="entry_chevron">18dp</dimen>
 </resources>

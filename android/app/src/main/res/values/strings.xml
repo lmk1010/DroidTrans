@@ -40,7 +40,7 @@
     <string name="radar_center">雷达中心</string>
     <string name="searching">搜索中</string>
     <string name="wifi_title">Wi-Fi 接收</string>
-    <string name="wifi_subtitle">同一局域网里搜这台电脑。电脑 Wi-Fi 页可以扫码装 App。</string>
+    <string name="wifi_subtitle">同一局域网里搜这台电脑</string>
     <string name="scanning_servers_ellipsis">正在扫描服务器...</string>
     <string name="refresh_scan">刷新扫描</string>
     <string name="scan_complete">扫描完成</string>
@@ -158,7 +158,7 @@
     <string name="card_usb_coming_soon">USB 直连功能即将上线</string>
     <string name="card_wifi_title">手机直传</string>
     <string name="card_wifi_subtitle">打开后会自己搜电脑</string>
-    <string name="usb_debug_on">USB 调试已开，插上电脑就能传</string>
+    <string name="usb_debug_on">USB 调试已开，插上就能传</string>
     <string name="usb_debug_off">先打开 USB 调试</string>
     <string name="wifi_last">上次：%s</string>
     <string name="wifi_will_search">打开后会自动搜电脑</string>
