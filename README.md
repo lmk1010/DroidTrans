@@ -6,7 +6,27 @@
 
 **手机与电脑之间传东西：双向、任意文件、不挑品牌**
 
+当前版本 **1.0.3**（见仓库根目录 [`VERSION`](VERSION)）
+
 </div>
+
+## 下载
+
+正式包托管在 `https://droid.mkstore.life/`：
+
+| 平台 | 链接 |
+| --- | --- |
+| **Android APK** | https://droid.mkstore.life/latest.apk |
+| **macOS (Apple Silicon)** | https://droid.mkstore.life/DroidTrans-1.0.3-macos-arm64.dmg |
+| **版本清单** | https://droid.mkstore.life/latest.json |
+
+桌面端启动后会检查 `latest.json`；有新版时界面顶部提示，点「立即更新」打开下载。
+
+macOS 未签名时先拖进「应用程序」，再执行：
+
+```bash
+xattr -cr /Applications/DroidTrans.app
+```
 
 ## 能做什么
 
@@ -61,17 +81,29 @@ chmod +x build.sh
 ../dist/droidtrans
 ```
 
-macOS 会得到 `dist/DroidTrans.app`。未签名时先拖进应用程序，再执行：
-
-```bash
-xattr -cr /Applications/DroidTrans.app
-```
+macOS 会得到 `dist/DroidTrans.app` 与 `dist/DroidTrans-<VERSION>-macos-arm64.dmg`。
 
 无界面只听端口：
 
 ```bash
 ../dist/droidtrans -headless
 ```
+
+## 发版
+
+版本号只改仓库根目录 `VERSION`（如 `1.0.3`）。打包会读它：
+
+- 桌面：`desktop/build.sh` 写入二进制、`Info.plist`、DMG 文件名
+- Android：`versionName` / `versionCode`（`major*10000+minor*100+patch`）；CI 仍可用环境变量覆盖
+
+上传到 R2（需本机 `~/.neox-secrets/droidtrans-r2.env`）：
+
+```bash
+# 先打好桌面 DMG 与 Android release APK
+./scripts/upload-r2.sh
+```
+
+会写入 `latest.apk`、`DroidTrans-<ver>-macos-arm64.dmg`、`latest.json`。
 
 ## 开发
 
@@ -89,7 +121,7 @@ gofmt -l .           # 应当无输出
 
 Android 正式签名走 CI secrets：`RELEASE_KEYSTORE_BASE64` / `RELEASE_KEYSTORE_PASSWORD` /
 `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`。没配就出未签名包。
-versionCode 取 CI run number，versionName 取 tag 名。
+本地默认读 `VERSION`；CI 仍可用 `VERSION_CODE` / `VERSION_NAME`（或 tag）覆盖。
 
 ## 安全边界
 
