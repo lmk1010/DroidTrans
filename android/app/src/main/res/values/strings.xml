@@ -441,6 +441,9 @@
     <string name="peer_waiting">等对面来连</string>
     <string name="peer_receiving">正在接收文件</string>
     <string name="peer_receiving_hint">对面发送过来后会自动显示</string>
+    <string name="peer_connected">已连接，等待发送</string>
+    <string name="peer_connected_hint">对方可以开始选择照片、视频或文件</string>
+    <string name="peer_disconnect">断开连接</string>
     <string name="peer_code">配对码</string>
     <string name="peer_addr">或让对面手输这个地址</string>
     <string name="peer_got">已收到</string>
@@ -452,6 +455,10 @@
     <string name="peer_done_files">本次收到的文件</string>
     <string name="peer_continue">继续接收</string>
     <string name="peer_done_home">返回主界面</string>
+    <string name="peer_category_images">图片  %1$d</string>
+    <string name="peer_category_videos">视频  %1$d</string>
+    <string name="peer_category_files">文件  %1$d</string>
+    <string name="peer_category_text">文字  %1$d</string>
 
     <!-- 找电脑 -->
     <string name="connect_status_scanning">正在找同一 Wi-Fi 下的电脑…</string>

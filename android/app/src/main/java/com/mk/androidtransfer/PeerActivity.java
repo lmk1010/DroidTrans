@@ -12,7 +12,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.animation.LinearInterpolator;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -45,18 +44,22 @@ public class PeerActivity extends AppCompatActivity {
     private String kind = KIND_ANDROID;
 
     private View roleGroup;
+    private View connectedGroup;
     private View recvGroup;
     private View doneGroup;
     private TextView recvCode;
     private TextView recvAddr;
     private TextView recvName;
     private TextView recvStatus;
+    private TextView connectedName;
     private TextView recvError;
     private TextView recvGotLabel;
     private TextView recvBytesLabel;
     private TextView doneSummary;
-    private LinearLayout recvList;
-    private LinearLayout doneList;
+    private TextView doneImages;
+    private TextView doneVideos;
+    private TextView doneFiles;
+    private TextView doneText;
     private ImageView receiveArt;
     private AnimatorSet receiveAnimator;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -64,6 +67,10 @@ public class PeerActivity extends AppCompatActivity {
 
     private int gotCount;
     private long gotBytes;
+    private int imageCount;
+    private int videoCount;
+    private int fileCount;
+    private int textCount;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -79,18 +86,22 @@ public class PeerActivity extends AppCompatActivity {
         server = new PeerServer(this);
 
         roleGroup = findViewById(R.id.roleGroup);
+        connectedGroup = findViewById(R.id.connectedGroup);
         recvGroup = findViewById(R.id.recvGroup);
         doneGroup = findViewById(R.id.doneGroup);
         recvCode = findViewById(R.id.recvCode);
         recvAddr = findViewById(R.id.recvAddr);
         recvName = findViewById(R.id.recvName);
         recvStatus = findViewById(R.id.recvStatus);
+        connectedName = findViewById(R.id.connectedName);
         recvError = findViewById(R.id.recvError);
         recvGotLabel = findViewById(R.id.recvGotLabel);
         recvBytesLabel = findViewById(R.id.recvBytesLabel);
         doneSummary = findViewById(R.id.doneSummary);
-        recvList = findViewById(R.id.recvList);
-        doneList = findViewById(R.id.doneList);
+        doneImages = findViewById(R.id.doneImages);
+        doneVideos = findViewById(R.id.doneVideos);
+        doneFiles = findViewById(R.id.doneFiles);
+        doneText = findViewById(R.id.doneText);
         receiveArt = findViewById(R.id.receiveArt);
 
         boolean iphone = KIND_IPHONE.equals(kind);
@@ -108,6 +119,8 @@ public class PeerActivity extends AppCompatActivity {
 
         findViewById(R.id.btnHome).setOnClickListener(v -> finish());
         findViewById(R.id.btnStop).setOnClickListener(v -> stopReceiving());
+        findViewById(R.id.btnConnectedStop).setOnClickListener(v -> stopReceiving());
+        findViewById(R.id.btnConnectedHome).setOnClickListener(v -> finish());
         findViewById(R.id.btnDoneContinue).setOnClickListener(v -> startReceiving());
         findViewById(R.id.btnDoneHome).setOnClickListener(v -> finish());
     }
@@ -119,8 +132,10 @@ public class PeerActivity extends AppCompatActivity {
         stopReceiveAnimation();
         gotCount = 0;
         gotBytes = 0;
-        recvList.removeAllViews();
-        doneList.removeAllViews();
+        imageCount = 0;
+        videoCount = 0;
+        fileCount = 0;
+        textCount = 0;
         recvGotLabel.setVisibility(View.GONE);
         recvBytesLabel.setVisibility(View.GONE);
         recvError.setVisibility(View.GONE);
@@ -150,17 +165,36 @@ public class PeerActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onPeerConnected(String name) {
+                showConnected(name);
+            }
+
+            @Override
             public void onKnock(String who) {
+                // 连接请求一到，先给接收端一个明确的连接状态；
+                // 是否放行仍由弹窗里的「同意」决定。
+                showConnected(who);
                 askApproval(who);
             }
         });
 
         recvName.setText(deviceName());
         roleGroup.setVisibility(View.GONE);
+        connectedGroup.setVisibility(View.GONE);
         recvGroup.setVisibility(View.VISIBLE);
         doneGroup.setVisibility(View.GONE);
         startReceiveAnimation();
         // 收东西的时候屏幕别灭 —— 灭屏之后 Wi-Fi 会进省电，传一半可能断
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    private void showConnected(String name) {
+        connectedName.setText(name);
+        roleGroup.setVisibility(View.GONE);
+        recvGroup.setVisibility(View.GONE);
+        doneGroup.setVisibility(View.GONE);
+        connectedGroup.setVisibility(View.VISIBLE);
+        stopReceiveAnimation();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
@@ -169,6 +203,7 @@ public class PeerActivity extends AppCompatActivity {
         stopReceiveAnimation();
         server.stop();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        connectedGroup.setVisibility(View.GONE);
         recvGroup.setVisibility(View.GONE);
         doneGroup.setVisibility(View.GONE);
         roleGroup.setVisibility(View.VISIBLE);
@@ -186,9 +221,14 @@ public class PeerActivity extends AppCompatActivity {
         stopReceiveAnimation();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         recvGroup.setVisibility(View.GONE);
+        connectedGroup.setVisibility(View.GONE);
         doneGroup.setVisibility(View.VISIBLE);
         doneSummary.setText(getString(R.string.peer_done_summary, gotCount,
                 android.text.format.Formatter.formatFileSize(this, gotBytes)));
+        doneImages.setText(getString(R.string.peer_category_images, imageCount));
+        doneVideos.setText(getString(R.string.peer_category_videos, videoCount));
+        doneFiles.setText(getString(R.string.peer_category_files, fileCount));
+        doneText.setText(getString(R.string.peer_category_text, textCount));
     }
 
     private void startReceiveAnimation() {
@@ -241,31 +281,37 @@ public class PeerActivity extends AppCompatActivity {
     }
 
     private void addReceivedRow(String name, long size) {
+        if (connectedGroup.getVisibility() == View.VISIBLE) {
+            connectedGroup.setVisibility(View.GONE);
+            recvGroup.setVisibility(View.VISIBLE);
+        }
         gotCount++;
         gotBytes += Math.max(0, size);
+        String lower = name == null ? "" : name.toLowerCase(Locale.US);
+        if (lower.startsWith("text-") || lower.endsWith(".txt")
+                || lower.endsWith(".md") || lower.endsWith(".json")
+                || lower.endsWith(".csv")) {
+            textCount++;
+        } else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                || lower.endsWith(".png") || lower.endsWith(".gif")
+                || lower.endsWith(".webp") || lower.endsWith(".heic")
+                || lower.endsWith(".heif") || lower.endsWith(".bmp")) {
+            imageCount++;
+        } else if (lower.endsWith(".mp4") || lower.endsWith(".mov")
+                || lower.endsWith(".mkv") || lower.endsWith(".avi")
+                || lower.endsWith(".webm") || lower.endsWith(".3gp")) {
+            videoCount++;
+        } else {
+            fileCount++;
+        }
         recvGotLabel.setText(getString(R.string.peer_got) + " " + gotCount);
         recvGotLabel.setVisibility(View.VISIBLE);
         recvBytesLabel.setText(android.text.format.Formatter.formatFileSize(this, gotBytes));
         recvBytesLabel.setVisibility(View.VISIBLE);
         recvStatus.setText(R.string.peer_receiving);
 
-        addReceivedRow(recvList, name);
-        addReceivedRow(doneList, name);
         main.removeCallbacks(finishAfterIdle);
         main.postDelayed(finishAfterIdle, 1600);
-    }
-
-    private void addReceivedRow(LinearLayout target, String name) {
-        TextView row = new TextView(this);
-        row.setText("✓  " + name);
-        row.setTextColor(getColor(R.color.ok));
-        row.setTextSize(13f);
-        row.setGravity(Gravity.START);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(6);
-        target.addView(row, lp);
     }
 
     @Override

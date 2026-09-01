@@ -427,6 +427,9 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="peer_waiting">Waiting for the other phone</string>
     <string name="peer_receiving">Receiving files</string>
     <string name="peer_receiving_hint">Files will appear here as they arrive</string>
+    <string name="peer_connected">Connected, ready to receive</string>
+    <string name="peer_connected_hint">The sender can now choose photos, videos, or files</string>
+    <string name="peer_disconnect">Disconnect</string>
     <string name="peer_code">Pairing code</string>
     <string name="peer_addr">Or enter this address on the other phone</string>
     <string name="peer_got">Received</string>
@@ -438,6 +441,10 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="peer_done_files">Files received this time</string>
     <string name="peer_continue">Receive more</string>
     <string name="peer_done_home">Back to start</string>
+    <string name="peer_category_images">Images  %1$d</string>
+    <string name="peer_category_videos">Videos  %1$d</string>
+    <string name="peer_category_files">Files  %1$d</string>
+    <string name="peer_category_text">Text  %1$d</string>
     <string name="peer_knock_title">wants to connect</string>
     <string name="peer_knock_allow">Allow</string>
     <string name="peer_knock_deny">Deny</string>

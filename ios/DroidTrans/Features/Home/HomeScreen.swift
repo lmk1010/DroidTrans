@@ -28,6 +28,7 @@ struct HomeScreen: View {
     @State private var showHistory = false
     @State private var showGallery = false
     @State private var showSync = false
+    @State private var showTransferList = false
     @State private var toast: String?
     @State private var error: String?
 
@@ -79,6 +80,9 @@ struct HomeScreen: View {
         }
         .sheet(isPresented: $showSync) {
             SyncView(desktop: desktop)
+        }
+        .sheet(isPresented: $showTransferList) {
+            TransferListView(transfers: transfers)
         }
         .alert(L("home.error"), isPresented: .constant(error != nil)) {
             Button(L("common.ok")) { error = nil }
@@ -280,21 +284,46 @@ struct HomeScreen: View {
                 }
             }
 
-            if transfers.activeCount > 0 {
-                VStack(alignment: .leading, spacing: 6) {
+            Button { showTransferList = true } label: {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(transfers.activeCount > 0
+                                 ? L("home.transfer.sending")
+                                 : L("home.transfer.finished"))
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.ink)
+                            Text(L("home.transfer.count",
+                                  transfers.doneCount, transfers.jobs.count))
+                                .font(.system(size: 12.5, design: .monospaced))
+                                .foregroundStyle(Color.ink3)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.ink3)
+                    }
+
                     ProgressView(value: transfers.overallProgress)
                         .tint(.brand)
-                    Text("\(transfers.doneCount) / \(transfers.jobs.count)")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.ink3)
-                }
-            }
 
-            VStack(spacing: Space.s) {
-                ForEach(transfers.jobs) { job in
-                    JobRow(job: job)
+                    HStack {
+                        Text(humanSize(transfers.jobs.reduce(Int64(0)) {
+                            $0 + $1.size
+                        }))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.ink3)
+                        Spacer()
+                        Text(L("home.transfer.all"))
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Color.brand)
+                    }
                 }
+                .padding(Space.l)
+                .glass(radius: Radius.tile)
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("open-transfer-list")
         }
     }
 
@@ -519,6 +548,45 @@ private struct JobRow: View {
         case .failed:
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
         }
+    }
+}
+
+private struct TransferListView: View {
+    @ObservedObject var transfers: TransferManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            AppBackground()
+
+            VStack(spacing: 0) {
+                HStack {
+                    Button(L("common.done")) { dismiss() }
+                        .foregroundStyle(Color.brand)
+                    Spacer()
+                    Text(L("home.transfer.all"))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.ink)
+                    Spacer()
+                    Text("\(transfers.jobs.count)")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.ink3)
+                }
+                .padding(.horizontal, Space.gutter)
+                .padding(.vertical, Space.m)
+
+                ScrollView {
+                    LazyVStack(spacing: Space.s) {
+                        ForEach(transfers.jobs) { job in
+                            JobRow(job: job)
+                        }
+                    }
+                    .padding(.horizontal, Space.gutter)
+                    .padding(.bottom, Space.xxl)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 

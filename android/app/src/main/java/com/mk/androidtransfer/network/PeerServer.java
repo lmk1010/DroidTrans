@@ -76,6 +76,8 @@ public final class PeerServer {
 
         void onFileReceived(String name, long size, File file);
 
+        void onPeerConnected(String name);
+
         /**
          * 有人在敲门。界面弹个框问一句，然后调 approve() 或 deny()。
          *
@@ -369,6 +371,12 @@ public final class PeerServer {
             }
 
             if (tok != null) {
+                final String connectedName = who.isEmpty() ? "对方设备" : who;
+                main.post(() -> {
+                    if (listener != null) {
+                        listener.onPeerConnected(connectedName);
+                    }
+                });
                 send(out, 200, json("success", true, "token", tok));
             } else {
                 send(out, 403, json("success", false, "error", "配对码不对"));

@@ -47,6 +47,10 @@
 "home.send.text" = "Text";
 "home.inbox" = "From your computer";
 "home.transfers" = "Transfers";
+"home.transfer.sending" = "Sending";
+"home.transfer.finished" = "Transfer history";
+"home.transfer.count" = "%1$d / %2$d files";
+"home.transfer.all" = "All files";
 "home.get" = "Get";
 "home.copied" = "Copied";
 "home.savedToFiles" = "Saved to Files";

@@ -47,6 +47,10 @@
 "home.send.text" = "文字";
 "home.inbox" = "电脑发来的";
 "home.transfers" = "传输";
+"home.transfer.sending" = "正在传输";
+"home.transfer.finished" = "传输记录";
+"home.transfer.count" = "%1$d / %2$d 个文件";
+"home.transfer.all" = "全部文件";
 "home.get" = "取回";
 "home.copied" = "已复制";
 "home.savedToFiles" = "已存到「文件」";
