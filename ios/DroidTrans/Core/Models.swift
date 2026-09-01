@@ -67,6 +67,28 @@ struct Desktop: Identifiable, Equatable {
     /// 对面是台手机，连过去只要它点头，不用输码
     var approvesByTap: Bool { pairingMode == "approve" }
 
+    /// 设备发现时的图形类别。
+    ///
+    /// 手机服务端使用 9600 端口，且新版本会通告 approve 配对模式。
+    /// 名字判断只是给旧版或手输地址的响应兜底，不能只靠它识别，
+    /// 因为真实 Android 机型名（例如 PLK110）通常不包含 phone/android。
+    var isPhone: Bool {
+        if port == Ports.peer || approvesByTap { return true }
+        let n = name.lowercased()
+        return n.contains("iphone")
+            || n.contains("phone")
+            || n.contains("android")
+            || n.contains("pixel")
+            || n.contains("oneplus")
+            || n.contains("oppo")
+            || n.contains("vivo")
+            || n.contains("xiaomi")
+            || n.contains("redmi")
+            || n.contains("huawei")
+            || n.contains("honor")
+            || n.contains("samsung")
+    }
+
     /// 同一台电脑换了端口就是另一个入口，所以 id 要带上端口
     var id: String { "\(host):\(port)" }
     var baseURL: String { "http://\(host):\(port)" }

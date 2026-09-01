@@ -961,6 +961,7 @@ async function refreshUsb() {
   syncXferBar();
   const dev = await api('/api/device_status');
   state.usbConnected = !!dev.connected;
+  $('#view-usb').classList.toggle('usb-connected', state.usbConnected);
   // 序列号对用户没意义，放进 title 里备查就行
   const who = (dev.model || '').trim() || dev.selected || '';
   $('#usbDevice').textContent = dev.connected

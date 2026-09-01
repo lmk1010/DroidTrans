@@ -246,10 +246,6 @@ private struct DeviceNode: View {
 
     /// 名字里通常带着机型，据此挑素材。认不出来就当电脑。
     private var art: Art {
-        let n = device.name.lowercased()
-        if n.contains("iphone") || n.contains("phone") || n.contains("android") {
-            return .phone
-        }
-        return .laptop
+        device.isPhone ? .phone : .laptop
     }
 }

@@ -98,10 +98,13 @@
       </section>
 
       <section id="view-usb" class="view">
-        <header class="page-head row">
-          <div>
+        <header class="page-head row usb-head">
+          <div class="usb-head-copy">
             <h1>USB</h1>
-            <p id="usbDevice" data-i18n="waiting">等待设备</p>
+            <p class="usb-device-line">
+              <span class="usb-device-dot" aria-hidden="true"></span>
+              <span id="usbDevice" data-i18n="waiting">等待设备</span>
+            </p>
           </div>
           <div class="actions">
             <button type="button" id="scanBtn" class="icon-btn" disabled data-i18n-title="scan" title="扫描相册" aria-label="扫描相册">
@@ -135,10 +138,12 @@
             </div>
           </div>
         </div>
-        <div id="usbChips" class="chips hidden">
-          <button type="button" id="chipToday" class="ghost" data-range="today" data-i18n="chipToday">今天</button>
-          <button type="button" id="chipWeek" class="ghost" data-range="week" data-i18n="chipWeek">近 7 天</button>
-          <button type="button" id="chipCamera" class="ghost" data-i18n="chipCamera">整个相机</button>
+        <div id="usbChips" class="chips usb-toolbar hidden">
+          <span class="usb-filter-group">
+            <button type="button" id="chipToday" class="ghost" data-range="today" data-i18n="chipToday">今天</button>
+            <button type="button" id="chipWeek" class="ghost" data-range="week" data-i18n="chipWeek">近 7 天</button>
+            <button type="button" id="chipCamera" class="ghost" data-i18n="chipCamera">整个相机</button>
+          </span>
           <span class="chip-sep" aria-hidden="true"></span>
           <button type="button" id="selAll" class="ghost hidden" data-i18n="selAll">全选</button>
         </div>

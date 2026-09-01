@@ -91,6 +91,21 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(d.outboxCount, 0)
     }
 
+    func testPhoneModelUsesPhoneArtSignals() {
+        let onePlus = Desktop.fromWifiInfo(host: "192.168.1.8", json: [
+            "name": "PLK110",
+            "port": Ports.peer,
+            "pairing_mode": "approve",
+        ])
+        XCTAssertTrue(onePlus.isPhone)
+
+        let laptop = Desktop.fromWifiInfo(host: "192.168.1.9", json: [
+            "name": "MacBook Pro",
+            "port": Ports.http,
+        ])
+        XCTAssertFalse(laptop.isPhone)
+    }
+
     func testNumbersMayArriveAsDoubleOrString() {
         // JSON 里的数字反序列化成什么类型取决于它长什么样，
         // 直接 as? Int 会在 9500.0 这种情况下静默变 nil

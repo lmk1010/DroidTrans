@@ -155,6 +155,29 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .page-head.row { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
 /* 分段控件跟标题同排时对齐到顶部：贴着副标题会显得挤 */
 .page-head.row .seg { align-self: flex-start; margin-top: 6px; }
+.usb-head {
+  align-items: flex-start;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.usb-head-copy { min-width: 0; }
+.usb-head h1 { margin-bottom: 5px; }
+.usb-device-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+.usb-device-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.04);
+}
+.usb-connected .usb-device-dot { background: var(--ok); }
+.usb-head .actions { flex-shrink: 0; }
 
 .glass, .tile, .listen, .xfer-bar, .path-row, .album, .photo, .ghost, .primary, .row-btn {
   border: 0;
@@ -282,6 +305,24 @@ main { padding: 52px 40px 40px; overflow: auto; }
   gap: 8px;
   flex-wrap: wrap;
   margin: 2px 0 10px;
+}
+.usb-toolbar {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  margin: 14px 0 18px;
+}
+.usb-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.usb-toolbar .chip-sep {
+  margin-left: auto;
+}
+.usb-toolbar .ghost {
+  white-space: nowrap;
 }
 .alts {
   display: flex;
@@ -1258,6 +1299,19 @@ main { padding: 52px 40px 40px; overflow: auto; }
   nav button { font-size: 0; }
   nav button svg { width: 20px; height: 20px; }
   nav button { padding: 9px; }
+  #view-usb .usb-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #view-usb .usb-head .actions {
+    align-self: flex-end;
+  }
+  #view-usb .usb-toolbar {
+    align-items: flex-start;
+  }
+  #view-usb .usb-toolbar .chip-sep {
+    display: none;
+  }
 }
 
 .fatal {
