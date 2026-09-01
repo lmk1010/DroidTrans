@@ -439,12 +439,19 @@
     <string name="peer_recv">我要收</string>
     <string name="peer_recv_sub">把这台亮出来，让对面找到</string>
     <string name="peer_waiting">等对面来连</string>
+    <string name="peer_receiving">正在接收文件</string>
+    <string name="peer_receiving_hint">对面发送过来后会自动显示</string>
     <string name="peer_code">配对码</string>
     <string name="peer_addr">或让对面手输这个地址</string>
     <string name="peer_got">已收到</string>
     <string name="peer_stop">停止接收</string>
     <string name="peer_need_wifi">先连上 Wi-Fi，两台要在同一个网络里</string>
     <string name="peer_back">回主界面</string>
+    <string name="peer_done">传输完成</string>
+    <string name="peer_done_summary">已收到 %1$d 个文件 · %2$s</string>
+    <string name="peer_done_files">本次收到的文件</string>
+    <string name="peer_continue">继续接收</string>
+    <string name="peer_done_home">返回主界面</string>
 
     <!-- 找电脑 -->
     <string name="connect_status_scanning">正在找同一 Wi-Fi 下的电脑…</string>

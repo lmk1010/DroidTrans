@@ -404,6 +404,7 @@ public final class PeerServer {
         prefer.put("http_put");
 
         return json("success", true,
+                "engine", "android",
                 "name", deviceName(),
                 "ip", ip == null ? "" : ip,
                 "ips", ips,

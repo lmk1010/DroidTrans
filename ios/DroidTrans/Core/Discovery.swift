@@ -92,6 +92,16 @@ final class DesktopDiscovery: ObservableObject {
         let display = name.replacingOccurrences(of: "\\032", with: " ")
         byKey[key] = Desktop(host: host, port: port, name: display)
         found = byKey.values.sorted { $0.name < $1.name }
+
+        // Android 默认端口被占用时会通告备用端口，发现阶段补一次 info，
+        // 这样雷达也能依据 engine 正确显示手机图标。
+        Task { [weak self] in
+            guard let self else { return }
+            guard let enriched = try? await ApiClient(baseURL: "http://\(host):\(port)").info(),
+                  self.byKey[key] != nil else { return }
+            self.byKey[key] = enriched
+            self.found = self.byKey.values.sorted { $0.name < $1.name }
+        }
     }
 
     // MARK: - 手输 / 扫码

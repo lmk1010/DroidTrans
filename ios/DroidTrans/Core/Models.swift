@@ -17,6 +17,7 @@ struct Desktop: Identifiable, Equatable {
     let host: String
     let port: Int
     var name: String
+    var engine: String
     var pairingRequired: Bool
 
     /// 怎么配对。"approve" 表示对面是一台手机，点一下同意就行，不用输码；
@@ -42,6 +43,7 @@ struct Desktop: Identifiable, Equatable {
         host: String,
         port: Int = Ports.http,
         name: String,
+        engine: String = "",
         pairingRequired: Bool = true,
         pairingMode: String = "",
         prefer: [FastProtocol] = [],
@@ -54,6 +56,7 @@ struct Desktop: Identifiable, Equatable {
         self.host = host
         self.port = port
         self.name = name
+        self.engine = engine
         self.pairingRequired = pairingRequired
         self.pairingMode = pairingMode
         self.prefer = prefer
@@ -73,7 +76,9 @@ struct Desktop: Identifiable, Equatable {
     /// 名字判断只是给旧版或手输地址的响应兜底，不能只靠它识别，
     /// 因为真实 Android 机型名（例如 PLK110）通常不包含 phone/android。
     var isPhone: Bool {
-        if port == Ports.peer || approvesByTap { return true }
+        if engine == "android" || engine == "swift" || port == Ports.peer || approvesByTap {
+            return true
+        }
         let n = name.lowercased()
         return n.contains("iphone")
             || n.contains("phone")
@@ -104,6 +109,7 @@ struct Desktop: Identifiable, Equatable {
             host: host,
             port: intOf(j["port"]) ?? Ports.http,
             name: name.isEmpty ? host : name,
+            engine: (j["engine"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "",
             pairingRequired: j["pairing_required"] as? Bool ?? true,
             pairingMode: j["pairing_mode"] as? String ?? "",
             // 认不出来的协议 id 直接丢掉，别让新版桌面端把老版 App 卡死

@@ -1,11 +1,16 @@
 package com.mk.androidtransfer;
 
 import android.content.Intent;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.animation.LinearInterpolator;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -41,14 +46,24 @@ public class PeerActivity extends AppCompatActivity {
 
     private View roleGroup;
     private View recvGroup;
+    private View doneGroup;
     private TextView recvCode;
     private TextView recvAddr;
     private TextView recvName;
+    private TextView recvStatus;
     private TextView recvError;
     private TextView recvGotLabel;
+    private TextView recvBytesLabel;
+    private TextView doneSummary;
     private LinearLayout recvList;
+    private LinearLayout doneList;
+    private ImageView receiveArt;
+    private AnimatorSet receiveAnimator;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final Runnable finishAfterIdle = this::finishReceiving;
 
     private int gotCount;
+    private long gotBytes;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -65,12 +80,18 @@ public class PeerActivity extends AppCompatActivity {
 
         roleGroup = findViewById(R.id.roleGroup);
         recvGroup = findViewById(R.id.recvGroup);
+        doneGroup = findViewById(R.id.doneGroup);
         recvCode = findViewById(R.id.recvCode);
         recvAddr = findViewById(R.id.recvAddr);
         recvName = findViewById(R.id.recvName);
+        recvStatus = findViewById(R.id.recvStatus);
         recvError = findViewById(R.id.recvError);
         recvGotLabel = findViewById(R.id.recvGotLabel);
+        recvBytesLabel = findViewById(R.id.recvBytesLabel);
+        doneSummary = findViewById(R.id.doneSummary);
         recvList = findViewById(R.id.recvList);
+        doneList = findViewById(R.id.doneList);
+        receiveArt = findViewById(R.id.receiveArt);
 
         boolean iphone = KIND_IPHONE.equals(kind);
         ((ImageView) findViewById(R.id.roleIcon))
@@ -87,15 +108,23 @@ public class PeerActivity extends AppCompatActivity {
 
         findViewById(R.id.btnHome).setOnClickListener(v -> finish());
         findViewById(R.id.btnStop).setOnClickListener(v -> stopReceiving());
+        findViewById(R.id.btnDoneContinue).setOnClickListener(v -> startReceiving());
+        findViewById(R.id.btnDoneHome).setOnClickListener(v -> finish());
     }
 
     // ------------------------------------------------------------------ 接收
 
     private void startReceiving() {
+        main.removeCallbacks(finishAfterIdle);
+        stopReceiveAnimation();
         gotCount = 0;
+        gotBytes = 0;
         recvList.removeAllViews();
+        doneList.removeAllViews();
         recvGotLabel.setVisibility(View.GONE);
+        recvBytesLabel.setVisibility(View.GONE);
         recvError.setVisibility(View.GONE);
+        recvStatus.setText(R.string.peer_receiving_hint);
 
         server.start(deviceName(), new PeerServer.Listener() {
             @Override
@@ -117,7 +146,7 @@ public class PeerActivity extends AppCompatActivity {
 
             @Override
             public void onFileReceived(String name, long size, File file) {
-                addReceivedRow(name);
+                addReceivedRow(name, size);
             }
 
             @Override
@@ -129,15 +158,68 @@ public class PeerActivity extends AppCompatActivity {
         recvName.setText(deviceName());
         roleGroup.setVisibility(View.GONE);
         recvGroup.setVisibility(View.VISIBLE);
+        doneGroup.setVisibility(View.GONE);
+        startReceiveAnimation();
         // 收东西的时候屏幕别灭 —— 灭屏之后 Wi-Fi 会进省电，传一半可能断
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     private void stopReceiving() {
+        main.removeCallbacks(finishAfterIdle);
+        stopReceiveAnimation();
         server.stop();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         recvGroup.setVisibility(View.GONE);
+        doneGroup.setVisibility(View.GONE);
         roleGroup.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * PUT 没有单独的“批次结束”请求，所以用最后一个文件后的短暂空闲判断传输完成。
+     * 大文件只会在完整落盘后回调，不会在传输中误切页面。
+     */
+    private void finishReceiving() {
+        if (gotCount == 0 || !server.isRunning()) {
+            return;
+        }
+        server.stop();
+        stopReceiveAnimation();
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        recvGroup.setVisibility(View.GONE);
+        doneGroup.setVisibility(View.VISIBLE);
+        doneSummary.setText(getString(R.string.peer_done_summary, gotCount,
+                android.text.format.Formatter.formatFileSize(this, gotBytes)));
+    }
+
+    private void startReceiveAnimation() {
+        receiveArt.setVisibility(View.VISIBLE);
+        receiveAnimator = new AnimatorSet();
+        ObjectAnimator scaleX = ObjectAnimator.ofFloat(
+                receiveArt, View.SCALE_X, 0.96f, 1.04f, 0.96f);
+        ObjectAnimator scaleY = ObjectAnimator.ofFloat(
+                receiveArt, View.SCALE_Y, 0.96f, 1.04f, 0.96f);
+        ObjectAnimator floatY = ObjectAnimator.ofFloat(
+                receiveArt, View.TRANSLATION_Y, 0f, -8f, 0f);
+        scaleX.setRepeatCount(ObjectAnimator.INFINITE);
+        scaleY.setRepeatCount(ObjectAnimator.INFINITE);
+        floatY.setRepeatCount(ObjectAnimator.INFINITE);
+        receiveAnimator.playTogether(scaleX, scaleY, floatY);
+        receiveAnimator.setDuration(1800);
+        receiveAnimator.setInterpolator(new LinearInterpolator());
+        receiveAnimator.setStartDelay(120);
+        receiveAnimator.start();
+    }
+
+    private void stopReceiveAnimation() {
+        if (receiveAnimator != null) {
+            receiveAnimator.cancel();
+            receiveAnimator = null;
+        }
+        if (receiveArt != null) {
+            receiveArt.setScaleX(1f);
+            receiveArt.setScaleY(1f);
+            receiveArt.setTranslationY(0f);
+        }
     }
 
     /**
@@ -158,11 +240,22 @@ public class PeerActivity extends AppCompatActivity {
                 .show();
     }
 
-    private void addReceivedRow(String name) {
+    private void addReceivedRow(String name, long size) {
         gotCount++;
+        gotBytes += Math.max(0, size);
         recvGotLabel.setText(getString(R.string.peer_got) + " " + gotCount);
         recvGotLabel.setVisibility(View.VISIBLE);
+        recvBytesLabel.setText(android.text.format.Formatter.formatFileSize(this, gotBytes));
+        recvBytesLabel.setVisibility(View.VISIBLE);
+        recvStatus.setText(R.string.peer_receiving);
 
+        addReceivedRow(recvList, name);
+        addReceivedRow(doneList, name);
+        main.removeCallbacks(finishAfterIdle);
+        main.postDelayed(finishAfterIdle, 1600);
+    }
+
+    private void addReceivedRow(LinearLayout target, String name) {
         TextView row = new TextView(this);
         row.setText("✓  " + name);
         row.setTextColor(getColor(R.color.ok));
@@ -172,11 +265,13 @@ public class PeerActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.topMargin = dp(6);
-        recvList.addView(row, lp);
+        target.addView(row, lp);
     }
 
     @Override
     protected void onDestroy() {
+        main.removeCallbacks(finishAfterIdle);
+        stopReceiveAnimation();
         super.onDestroy();
         server.stop();
     }

@@ -128,7 +128,7 @@ struct HomeScreen: View {
 
     private var connectionCard: some View {
         HStack(spacing: Space.m) {
-            ArtIcon(art: .laptop, size: 46)
+            ArtIcon(art: desktop.isPhone ? .phone : .laptop, size: 46)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(desktop.name)
