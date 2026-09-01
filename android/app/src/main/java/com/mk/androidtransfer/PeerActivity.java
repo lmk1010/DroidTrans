@@ -171,9 +171,8 @@ public class PeerActivity extends AppCompatActivity {
 
             @Override
             public void onKnock(String who) {
-                // 连接请求一到，先给接收端一个明确的连接状态；
-                // 是否放行仍由弹窗里的「同意」决定。
-                showConnected(who);
+                // 这是连接请求，不是连接完成。保持「等待连接」页，
+                // 直到主人点同意且配对令牌真正发出去。
                 askApproval(who);
             }
         });

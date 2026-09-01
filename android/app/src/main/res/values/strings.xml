@@ -438,7 +438,7 @@
     <string name="peer_send_sub">去找对面那台，把东西传过去</string>
     <string name="peer_recv">我要收</string>
     <string name="peer_recv_sub">把这台亮出来，让对面找到</string>
-    <string name="peer_waiting">等对面来连</string>
+    <string name="peer_waiting">等待连接</string>
     <string name="peer_receiving">正在接收文件</string>
     <string name="peer_receiving_hint">对面发送过来后会自动显示</string>
     <string name="peer_connected">已连接，等待发送</string>

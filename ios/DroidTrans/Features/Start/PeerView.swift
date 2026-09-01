@@ -21,7 +21,11 @@ struct PeerView: View {
             AppBackground()
 
             if receiving {
-                receiveScreen
+                if peer.connectedName != nil && peer.received.isEmpty {
+                    connectedScreen
+                } else {
+                    receiveScreen
+                }
             } else {
                 rolePicker
             }
@@ -124,6 +128,45 @@ struct PeerView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
+    }
+
+    // MARK: - 已连接，等待发送
+
+    private var connectedScreen: some View {
+        VStack(spacing: Space.l) {
+            Spacer(minLength: Space.xxl)
+
+            ArtIcon(art: .link, size: 68)
+
+            Text(L("peer.connected"))
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(Color.ink)
+
+            Text(peer.connectedName ?? L("peer.someone"))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.brand)
+
+            Text(L("peer.connectedHint"))
+                .font(.system(size: 14))
+                .foregroundStyle(Color.ink2)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .padding(.horizontal, Space.xl)
+
+            ProgressView()
+                .tint(Color.brand)
+                .padding(.top, Space.s)
+
+            Spacer()
+
+            Button(L("peer.stop")) {
+                peer.stop()
+                receiving = false
+            }
+            .font(.system(size: 15))
+            .foregroundStyle(Color.ink2)
+            .padding(.bottom, Space.xl)
+        }
     }
 
     // MARK: - 正在接收

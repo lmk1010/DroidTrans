@@ -424,7 +424,7 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="peer_send_sub">Find the other phone and send files to it</string>
     <string name="peer_recv">Receive</string>
     <string name="peer_recv_sub">Make this phone visible to the sender</string>
-    <string name="peer_waiting">Waiting for the other phone</string>
+    <string name="peer_waiting">Waiting for a connection</string>
     <string name="peer_receiving">Receiving files</string>
     <string name="peer_receiving_hint">Files will appear here as they arrive</string>
     <string name="peer_connected">Connected, ready to receive</string>

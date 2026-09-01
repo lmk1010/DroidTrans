@@ -120,7 +120,7 @@
                     android:layout_height="180dp"
                     android:layout_marginTop="18dp"
                     android:contentDescription="@null"
-                    android:src="@drawable/peer_receive" />
+                    android:src="@drawable/art_link" />
 
                 <TextView
                     android:layout_width="wrap_content"

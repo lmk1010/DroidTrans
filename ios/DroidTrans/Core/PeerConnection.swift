@@ -107,6 +107,7 @@ final class PeerConnection {
             }
 
             if let tok {
+                await MainActor.run { server.noteConnected(name: who) }
                 try await sendJSON(200, ["success": true, "token": tok])
             } else {
                 try await sendJSON(403, ["success": false, "error": L("pair.wrongCode")])

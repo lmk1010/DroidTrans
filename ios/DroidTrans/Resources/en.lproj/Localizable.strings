@@ -251,7 +251,9 @@
 "peer.send.sub" = "Find the other device and send to it";
 "peer.recv" = "Receive";
 "peer.recv.sub" = "Make this device visible to the other one";
-"peer.waiting" = "Waiting for the other device";
+"peer.waiting" = "Waiting for a connection";
+"peer.connected" = "Connected, ready to receive";
+"peer.connectedHint" = "The sender can now choose photos, videos, or files";
 "peer.code" = "Pairing code";
 "peer.addr" = "Or have them type this address";
 "peer.got" = "Received";

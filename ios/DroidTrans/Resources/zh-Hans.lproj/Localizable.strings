@@ -251,7 +251,9 @@
 "peer.send.sub" = "去找对面那台，把东西传过去";
 "peer.recv" = "我要收";
 "peer.recv.sub" = "把这台亮出来，让对面找到";
-"peer.waiting" = "等对面来连";
+"peer.waiting" = "等待连接";
+"peer.connected" = "已连接，等待发送";
+"peer.connectedHint" = "对方可以开始选择照片、视频或文件";
 "peer.code" = "配对码";
 "peer.addr" = "或让对面手输这个地址";
 "peer.got" = "已收到";

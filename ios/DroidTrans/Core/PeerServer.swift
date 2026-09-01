@@ -28,6 +28,8 @@ final class PeerServer: ObservableObject {
     @Published private(set) var running = false
     @Published private(set) var pairingCode = ""
     @Published private(set) var boundPort: Int
+    /// 配对令牌已经发出后才有值。敲门阶段不能算已连接。
+    @Published private(set) var connectedName: String?
 
     /// 有人在敲门，等这台点头。
     ///
@@ -69,6 +71,7 @@ final class PeerServer: ObservableObject {
     init(port: UInt16 = UInt16(Ports.peer), advertiseService: Bool = true) {
         requestedPort = port
         boundPort = Int(port)
+        connectedName = nil
         self.advertiseService = advertiseService
     }
 
@@ -88,6 +91,7 @@ final class PeerServer: ObservableObject {
         guard listener == nil else { return }
         lastError = nil
         received = []
+        connectedName = nil
         tokens = []
         pairingCode = Self.newCode()
 
@@ -163,6 +167,7 @@ final class PeerServer: ObservableObject {
         for (_, c) in conns { c.cancel() }
         conns = [:]
         tokens = []
+        connectedName = nil
         running = false
         finishKnock(nil)   // 别把还挂着的那条连接留在那儿等超时
     }
@@ -225,6 +230,11 @@ final class PeerServer: ObservableObject {
     /// 只给 PeerConnection 用（拆到另一个文件了，所以不能 fileprivate）
     func valid(_ token: String) -> Bool {
         !token.isEmpty && tokens.contains(token)
+    }
+
+    /// 配对成功，发送方已经拿到令牌，可以把接收端切到连接等待页。
+    func noteConnected(name: String) {
+        connectedName = name
     }
 
     /// 只给 PeerConnection 用（拆到另一个文件了，所以不能 fileprivate）
