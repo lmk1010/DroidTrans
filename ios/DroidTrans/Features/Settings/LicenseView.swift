@@ -97,12 +97,12 @@ struct LicenseView: View {
             .glass()
 
             Button(L("license.remove"), role: .destructive) {
-                store.remove()
-                code = ""
+                Task { await deactivate() }
             }
             .font(.system(size: 14))
             .foregroundStyle(.red.opacity(0.9))
             .padding(.top, Space.s)
+            .disabled(busy)
         }
     }
 
@@ -181,6 +181,22 @@ struct LicenseView: View {
             if case .failure(let e) = store.save(fresh) {
                 error = e.localizedDescription
             }
+        } catch {
+            self.error = (error as? ApiError)?.message ?? error.localizedDescription
+        }
+    }
+
+    private func deactivate() async {
+        guard let token = store.token else {
+            store.remove()
+            return
+        }
+        busy = true
+        defer { busy = false }
+        do {
+            try await LicenseAPI.deactivate(token: token)
+            store.remove()
+            code = ""
         } catch {
             self.error = (error as? ApiError)?.message ?? error.localizedDescription
         }

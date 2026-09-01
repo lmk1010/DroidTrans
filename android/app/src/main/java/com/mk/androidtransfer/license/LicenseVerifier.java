@@ -23,10 +23,19 @@ public final class LicenseVerifier {
     }
 
     public static License verify(String token) throws LicenseException {
-        return verify(token, System.currentTimeMillis());
+        return verify(token, System.currentTimeMillis(), null);
+    }
+
+    public static License verify(String token, String expectedDeviceId) throws LicenseException {
+        return verify(token, System.currentTimeMillis(), expectedDeviceId);
     }
 
     static License verify(String token, long nowMillis) throws LicenseException {
+        return verify(token, nowMillis, null);
+    }
+
+    static License verify(String token, long nowMillis, String expectedDeviceId)
+            throws LicenseException {
         if (token == null) {
             throw new LicenseException(LicenseException.Reason.MALFORMED);
         }
@@ -78,6 +87,9 @@ public final class LicenseVerifier {
         if (license.getVersion() != 2 || !PRODUCT.equals(license.getProduct())) {
             throw new LicenseException(LicenseException.Reason.WRONG_PRODUCT);
         }
+        if (!deviceMatches(license, expectedDeviceId)) {
+            throw new LicenseException(LicenseException.Reason.DEVICE_MISMATCH);
+        }
         if (license.isExpired(nowMillis)) {
             throw new LicenseException(LicenseException.Reason.EXPIRED, license);
         }
@@ -85,6 +97,13 @@ public final class LicenseVerifier {
             throw new LicenseException(LicenseException.Reason.STALE, license);
         }
         return license;
+    }
+
+    static boolean deviceMatches(License license, String expectedDeviceId) {
+        String boundDeviceId = license.getDeviceId();
+        return boundDeviceId.isEmpty()
+                || expectedDeviceId == null
+                || boundDeviceId.equals(expectedDeviceId);
     }
 
     /**

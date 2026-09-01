@@ -6,6 +6,7 @@ public final class LicenseException extends Exception {
         MALFORMED,
         BAD_SIGNATURE,
         WRONG_PRODUCT,
+        DEVICE_MISMATCH,
         EXPIRED,
         STALE
     }

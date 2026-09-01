@@ -1,0 +1,27 @@
+{
+  "name": "droidtrans-licensing",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "卓传的收款与授权服务：接 Waffo 的结账和 webhook，签发离线可验的许可证。",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node --experimental-strip-types src/server.ts",
+    "keygen": "node --experimental-strip-types src/keygen.ts",
+    "typecheck": "tsc --noEmit",
+    "setup": "node --experimental-strip-types src/setup.ts",
+    "selftest": "node --experimental-strip-types src/selftest.ts",
+    "e2e": "node --experimental-strip-types src/e2e.ts",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/server.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "hook": "node --experimental-strip-types src/hook.ts",
+    "hooklist": "node --experimental-strip-types src/hooklist.ts"
+  },
+  "dependencies": {
+    "@waffo/pancake-ts": "^0.19.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "esbuild": "^0.28.2",
+    "puppeteer-core": "^25.9.0"
+  }
+}

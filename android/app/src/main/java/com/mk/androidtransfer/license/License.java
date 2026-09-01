@@ -18,6 +18,7 @@ public final class License {
     private String product;
     private String plan;
     private String code;
+    private String deviceId;
     private String email;
     private String issued;
     private String expires;
@@ -37,6 +38,10 @@ public final class License {
 
     public String getCode() {
         return code == null ? "" : code;
+    }
+
+    public String getDeviceId() {
+        return deviceId == null ? "" : deviceId;
     }
 
     public String getEmail() {

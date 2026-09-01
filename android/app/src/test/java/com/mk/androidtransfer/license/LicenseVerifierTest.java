@@ -1,5 +1,7 @@
 package com.mk.androidtransfer.license;
 
+import com.google.gson.Gson;
+
 import org.junit.Test;
 
 import java.io.BufferedReader;
@@ -75,6 +77,18 @@ public final class LicenseVerifierTest {
         assertEquals("DT-01A2-3456-789B",
                 LicenseApi.normalizeCode("dt oia2 3456 789b"));
         assertTrue(LicenseApi.normalizeCode("too short").isEmpty());
+    }
+
+    @Test
+    public void enforcesNewDeviceBindingsButAcceptsLegacyLicenses() throws Exception {
+        License bound = new Gson().fromJson(
+                "{\"deviceId\":\"device-a\"}", License.class);
+        assertTrue(LicenseVerifier.deviceMatches(bound, "device-a"));
+        assertFalse(LicenseVerifier.deviceMatches(bound, "device-b"));
+
+        License legacy = LicenseVerifier.verify(
+                vector(), ISSUED_MS + 24 * 60 * 60 * 1000L, "device-b");
+        assertTrue(legacy.getDeviceId().isEmpty());
     }
 
     private String vector() throws Exception {

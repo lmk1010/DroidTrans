@@ -3,10 +3,13 @@ package com.mk.androidtransfer.license;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.UUID;
+
 /** Private on-device storage plus automatic 14-day renewal. */
 public final class LicenseStore {
     private static final String PREFS = "droidtrans_license";
     private static final String TOKEN_KEY = "license_token";
+    private static final String DEVICE_ID_KEY = "license_device_id";
     private static volatile LicenseStore instance;
 
     private final SharedPreferences preferences;
@@ -39,7 +42,7 @@ public final class LicenseStore {
             return;
         }
         try {
-            license = LicenseVerifier.verify(token);
+            license = LicenseVerifier.verify(token, getDeviceId());
             problem = null;
         } catch (LicenseException e) {
             problem = e;
@@ -52,7 +55,7 @@ public final class LicenseStore {
     }
 
     public synchronized License save(String token) throws LicenseException {
-        License verified = LicenseVerifier.verify(token);
+        License verified = LicenseVerifier.verify(token, getDeviceId());
         preferences.edit().putString(TOKEN_KEY, token).apply();
         license = verified;
         problem = null;
@@ -81,6 +84,14 @@ public final class LicenseStore {
         return preferences.getString(TOKEN_KEY, null);
     }
 
+    public synchronized String getDeviceId() {
+        String id = preferences.getString(DEVICE_ID_KEY, null);
+        if (id != null && !id.isEmpty()) return id;
+        id = UUID.randomUUID().toString();
+        preferences.edit().putString(DEVICE_ID_KEY, id).apply();
+        return id;
+    }
+
     /** Best-effort startup refresh. A network failure never removes a still-valid offline license. */
     public void refreshIfNeeded() {
         final String token;
@@ -95,7 +106,7 @@ public final class LicenseStore {
             if (token == null) return;
             refreshing = true;
         }
-        LicenseApi.refresh(token, new LicenseApi.ResultCallback() {
+        LicenseApi.refresh(token, getDeviceId(), new LicenseApi.ResultCallback() {
             @Override
             public void onSuccess(String freshToken) {
                 try {
@@ -112,6 +123,10 @@ public final class LicenseStore {
             @Override
             public void onFailure(LicenseApi.ApiException error) {
                 synchronized (LicenseStore.this) {
+                    if ("revoked".equals(error.getCode())
+                            || "device_deactivated".equals(error.getCode())) {
+                        remove();
+                    }
                     refreshing = false;
                 }
             }

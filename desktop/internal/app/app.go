@@ -326,6 +326,8 @@ func New() (*App, error) {
 		settingsPath: filepath.Join(out, "settings.json"),
 	}
 	a.Pair = LoadPairing(filepath.Join(out, "pairing.json"))
+	// 授权在本机读一次就够了，之后全程离线判断
+	a.LoadLicense()
 	if saved := loadSettings(a.settingsPath); saved.OutputDir != "" {
 		if err := os.MkdirAll(saved.OutputDir, 0o755); err == nil {
 			a.OutputDir = saved.OutputDir
@@ -797,6 +799,10 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/outbox/clear_taken", a.outboxClearTaken)
 	mux.HandleFunc("POST /api/outbox/remove", a.outboxRemove)
 	mux.HandleFunc("POST /api/outbox/remove/{id}", a.outboxRemove)
+	mux.HandleFunc("GET /api/license", a.licenseStatus)
+	mux.HandleFunc("POST /api/license/activate", a.licenseActivate)
+	mux.HandleFunc("POST /api/license/deactivate", a.licenseDeactivate)
+	mux.HandleFunc("POST /api/license/buy", a.licenseBuy)
 	mux.HandleFunc("GET /api/outbox/file/{id}", a.outboxFile)
 
 	mux.HandleFunc("GET /api/device_status", a.deviceStatus)

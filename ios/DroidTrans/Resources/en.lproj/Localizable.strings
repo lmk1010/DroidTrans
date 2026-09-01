@@ -163,6 +163,7 @@
 "license.err.notFound" = "No such activation code";
 "license.err.revoked" = "This code has been revoked";
 "license.err.tooMany" = "Too many devices activated. Deactivate one first.";
+"license.err.device" = "This device's license state is out of sync. Activate it again.";
 "license.err.invalidCode" = "That code doesn't look right";
 
 "license.free.short" = "Free";

@@ -31,6 +31,11 @@ public final class LicenseApi {
         void onFailure(ApiException error);
     }
 
+    public interface ActionCallback {
+        void onSuccess();
+        void onFailure(ApiException error);
+    }
+
     public static final class ApiException extends Exception {
         private final String code;
 
@@ -47,16 +52,25 @@ public final class LicenseApi {
     private LicenseApi() {
     }
 
-    public static void activate(String code, ResultCallback callback) {
+    public static void activate(String code, String deviceId, ResultCallback callback) {
         Map<String, String> body = new HashMap<>();
         body.put("code", code);
+        body.put("device_id", deviceId);
         post("/api/activate", body, callback);
     }
 
-    public static void refresh(String token, ResultCallback callback) {
+    public static void refresh(String token, String deviceId, ResultCallback callback) {
         Map<String, String> body = new HashMap<>();
         body.put("license", token);
+        body.put("device_id", deviceId);
         post("/api/refresh", body, callback);
+    }
+
+    public static void deactivate(String token, String deviceId, ActionCallback callback) {
+        Map<String, String> body = new HashMap<>();
+        body.put("license", token);
+        body.put("device_id", deviceId);
+        postAction("/api/deactivate", body, callback);
     }
 
     public static String normalizeCode(String input) {
@@ -107,6 +121,40 @@ public final class LicenseApi {
                         return;
                     }
                     callback.onSuccess(token);
+                } catch (Exception e) {
+                    callback.onFailure(new ApiException("bad_response", e.getLocalizedMessage()));
+                }
+            }
+        });
+    }
+
+    private static void postAction(String path, Map<String, String> body,
+                                   ActionCallback callback) {
+        Request request = new Request.Builder()
+                .url(BASE + path)
+                .post(RequestBody.create(GSON.toJson(body), JSON))
+                .build();
+        CLIENT.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                callback.onFailure(new ApiException("network", e.getLocalizedMessage()));
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (Response closed = response) {
+                    String text = closed.body() == null ? "" : closed.body().string();
+                    JsonObject json = text.isEmpty()
+                            ? new JsonObject()
+                            : JsonParser.parseString(text).getAsJsonObject();
+                    if (!closed.isSuccessful()) {
+                        String code = json.has("error")
+                                ? json.get("error").getAsString()
+                                : "http";
+                        callback.onFailure(new ApiException(code, "HTTP " + closed.code()));
+                        return;
+                    }
+                    callback.onSuccess();
                 } catch (Exception e) {
                     callback.onFailure(new ApiException("bad_response", e.getLocalizedMessage()));
                 }

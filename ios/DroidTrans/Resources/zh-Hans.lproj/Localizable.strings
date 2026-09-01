@@ -163,6 +163,7 @@
 "license.err.notFound" = "没有这个激活码";
 "license.err.revoked" = "这个激活码已被吊销";
 "license.err.tooMany" = "激活的设备太多了，先在其他设备上取消激活";
+"license.err.device" = "这台设备的授权状态不一致，请重新激活";
 "license.err.invalidCode" = "激活码格式不对";
 
 "license.free.short" = "免费版";

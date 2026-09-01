@@ -57,6 +57,18 @@ final class LicenseTests: XCTestCase {
         XCTAssertThrowsError(try LicenseVerifier.verify("onlybody."))
     }
 
+    func testLegacyLicenseWithoutDeviceBindingRemainsCompatible() throws {
+        let token = try vector()
+        do {
+            let lic = try LicenseVerifier.verify(token, expectedDeviceId: "device-test")
+            XCTAssertNil(lic.deviceId)
+        } catch LicenseError.stale(let lic) {
+            XCTAssertNil(lic.deviceId)
+        } catch LicenseError.expired(let lic) {
+            XCTAssertNil(lic.deviceId)
+        }
+    }
+
     /// 服务端签的时间戳带毫秒。默认的 ISO8601 formatter 认不了它，
     /// 会把每个日期都解析成 nil —— 于是「终身版」和「已过期」都判不出来。
     func testParsesFractionalSecondTimestamps() throws {

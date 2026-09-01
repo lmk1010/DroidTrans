@@ -490,7 +490,8 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="member_refresh_success">License updated</string>
     <string name="member_remove_local">Remove from this device</string>
     <string name="member_remove_title">Remove this license?</string>
-    <string name="member_remove_message">This only removes the local license. It does not issue a refund or affect other devices.</string>
+    <string name="member_remove_message">This releases this device slot and removes the local license. It does not issue a refund or affect other devices.</string>
+    <string name="member_deactivate_success">This device slot has been released</string>
     <string name="member_activate_hint">Already have a code? Enter it to activate Pro on this device.</string>
     <string name="member_code_hint">DT-XXXX-XXXX-XXXX</string>
     <string name="member_activate">Activate Pro</string>
@@ -507,5 +508,6 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="member_err_not_found">Activation code not found</string>
     <string name="member_err_revoked">This license was refunded or revoked</string>
     <string name="member_err_too_many">Device limit reached. Remove an old device first.</string>
+    <string name="member_err_device">This device\'s license state is out of sync. Activate it again.</string>
     <string name="member_err_network">Could not reach the license server. Check the network and try again.</string>
 </resources>

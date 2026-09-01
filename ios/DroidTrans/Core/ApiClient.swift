@@ -7,10 +7,12 @@ import Foundation
 struct ApiError: Error, LocalizedError {
     let message: String
     let statusCode: Int?
+    let code: String?
 
-    init(_ message: String, statusCode: Int? = nil) {
+    init(_ message: String, statusCode: Int? = nil, code: String? = nil) {
         self.message = message
         self.statusCode = statusCode
+        self.code = code
     }
 
     /// 配对被拒：令牌无效，或者已经在电脑上被撤销了

@@ -510,7 +510,8 @@
     <string name="member_refresh_success">授权已更新</string>
     <string name="member_remove_local">移除本机激活</string>
     <string name="member_remove_title">移除本机授权？</string>
-    <string name="member_remove_message">这只会删除本机保存的授权，不会退款，也不会影响其他设备。</string>
+    <string name="member_remove_message">这会释放本机占用的激活名额并删除本地授权，不会退款，也不会影响其他设备。</string>
+    <string name="member_deactivate_success">已释放本机激活名额</string>
     <string name="member_activate_hint">已有激活码？输入后即可在本机开通 Pro。</string>
     <string name="member_code_hint">DT-XXXX-XXXX-XXXX</string>
     <string name="member_activate">激活 Pro</string>
@@ -527,5 +528,6 @@
     <string name="member_err_not_found">没有找到这个激活码</string>
     <string name="member_err_revoked">这份授权已被退款或撤销</string>
     <string name="member_err_too_many">激活设备已达上限，请先在旧设备移除激活</string>
+    <string name="member_err_device">这台设备的授权状态不一致，请重新激活</string>
     <string name="member_err_network">无法连接授权服务器，请检查网络后重试</string>
 </resources>

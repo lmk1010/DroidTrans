@@ -163,7 +163,7 @@ public final class MeActivity extends AppCompatActivity {
             return;
         }
         setBusy(true);
-        LicenseApi.activate(normalized, new LicenseApi.ResultCallback() {
+        LicenseApi.activate(normalized, store.getDeviceId(), new LicenseApi.ResultCallback() {
             @Override
             public void onSuccess(String token) {
                 runOnUiThread(() -> {
@@ -194,7 +194,7 @@ public final class MeActivity extends AppCompatActivity {
         String token = store.getToken();
         if (token == null) return;
         setBusy(true);
-        LicenseApi.refresh(token, new LicenseApi.ResultCallback() {
+        LicenseApi.refresh(token, store.getDeviceId(), new LicenseApi.ResultCallback() {
             @Override
             public void onSuccess(String freshToken) {
                 runOnUiThread(() -> {
@@ -224,12 +224,40 @@ public final class MeActivity extends AppCompatActivity {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.member_remove_title)
                 .setMessage(R.string.member_remove_message)
-                .setPositiveButton(R.string.member_remove_local, (dialog, which) -> {
-                    store.remove();
-                    render();
-                })
+                .setPositiveButton(R.string.member_remove_local,
+                        (dialog, which) -> deactivate())
                 .setNegativeButton(R.string.cancel, null)
                 .show();
+    }
+
+    private void deactivate() {
+        if (busy) return;
+        String token = store.getToken();
+        if (token == null || token.isEmpty()) {
+            store.remove();
+            render();
+            return;
+        }
+        setBusy(true);
+        LicenseApi.deactivate(token, store.getDeviceId(), new LicenseApi.ActionCallback() {
+            @Override
+            public void onSuccess() {
+                runOnUiThread(() -> {
+                    store.remove();
+                    render();
+                    setBusy(false);
+                    showMessage(R.string.member_deactivate_success);
+                });
+            }
+
+            @Override
+            public void onFailure(LicenseApi.ApiException error) {
+                runOnUiThread(() -> {
+                    setBusy(false);
+                    showMessage(apiMessage(error));
+                });
+            }
+        });
     }
 
     private void openPricing() {
@@ -253,6 +281,11 @@ public final class MeActivity extends AppCompatActivity {
                 return R.string.member_err_too_many;
             case "invalid_code":
                 return R.string.member_code_invalid;
+            case "invalid_license":
+            case "device_mismatch":
+            case "device_deactivated":
+            case "missing_device_id":
+                return R.string.member_err_device;
             case "no_license":
             case "bad_response":
                 return R.string.member_response_invalid;

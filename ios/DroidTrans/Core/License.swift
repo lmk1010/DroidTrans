@@ -14,6 +14,8 @@ struct License: Codable, Equatable {
     let product: String
     let plan: String          // year / years3 / lifetime
     let code: String
+    /// 新许可证绑定到签发时的设备；nil 兼容早期 v2 许可证。
+    let deviceId: String?
     let email: String
     let issued: String
     /// 终身版是 null
@@ -50,6 +52,7 @@ enum LicenseError: Error, LocalizedError {
     case malformed
     case badSignature
     case wrongProduct
+    case deviceMismatch
     case expired(License)
     case stale(License)
 
@@ -58,6 +61,7 @@ enum LicenseError: Error, LocalizedError {
         case .malformed: return L("license.err.malformed")
         case .badSignature: return L("license.err.signature")
         case .wrongProduct: return L("license.err.product")
+        case .deviceMismatch: return L("license.err.device")
         case .expired: return L("license.err.expired")
         case .stale: return L("license.err.stale")
         }
@@ -73,7 +77,7 @@ enum LicenseVerifier {
     private static let publicKeyRaw = Data(base64Encoded:
         "1DoaCefyZVtNEp7mzFstWOPezLYPU6LPuUkIv1R5hqo=")!
 
-    static func verify(_ token: String) throws -> License {
+    static func verify(_ token: String, expectedDeviceId: String? = nil) throws -> License {
         guard let dot = token.firstIndex(of: "."), dot != token.startIndex,
               token.index(after: dot) != token.endIndex else {
             throw LicenseError.malformed
@@ -97,6 +101,11 @@ enum LicenseVerifier {
         }
         guard lic.v == 2, lic.product == "droidtrans-pro" else {
             throw LicenseError.wrongProduct
+        }
+        if let boundDeviceId = lic.deviceId,
+           let expectedDeviceId,
+           boundDeviceId != expectedDeviceId {
+            throw LicenseError.deviceMismatch
         }
 
         // 过期要排在「太久没回连」前面判断：过期是更根本的状态，
@@ -153,7 +162,7 @@ final class LicenseStore: ObservableObject {
             return
         }
         do {
-            license = try LicenseVerifier.verify(token)
+            license = try LicenseVerifier.verify(token, expectedDeviceId: Store.shared.deviceId)
             problem = nil
         } catch let e as LicenseError {
             switch e {
@@ -174,7 +183,7 @@ final class LicenseStore: ObservableObject {
     @discardableResult
     func save(_ token: String) -> Result<License, Error> {
         do {
-            let lic = try LicenseVerifier.verify(token)
+            let lic = try LicenseVerifier.verify(token, expectedDeviceId: Store.shared.deviceId)
             defaults.set(token, forKey: key)
             license = lic
             problem = nil
@@ -211,6 +220,10 @@ final class LicenseStore: ObservableObject {
             let fresh = try await LicenseAPI.refresh(token: token)
             _ = save(fresh)
         } catch {
+            if let api = error as? ApiError,
+               api.code == "revoked" || api.code == "device_deactivated" {
+                remove()
+            }
             // 仍在 45 天宽限期内就继续离线可用；过期状态留给授权页提示用户重试。
         }
     }

@@ -26,7 +26,10 @@ enum LicenseAPI {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["jws": jws])
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "jws": jws,
+            "device_id": await deviceId(),
+        ])
         req.timeoutInterval = 25
 
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -34,7 +37,8 @@ enum LicenseAPI {
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         guard (200..<300).contains(status),
               let license = json["license"] as? String, !license.isEmpty else {
-            throw ApiError(appleMessage(json["error"] as? String, status: status))
+            let code = json["error"] as? String
+            throw ApiError(appleMessage(code, status: status), statusCode: status, code: code)
         }
         return (json["code"] as? String ?? "", license)
     }
@@ -44,6 +48,8 @@ enum LicenseAPI {
         case "bad_transaction": return L("iap.err.badTransaction")
         case "unknown_product": return L("iap.err.unknownProduct")
         case "revoked": return L("license.err.revoked")
+        case "too_many_activations": return L("license.err.tooMany")
+        case "missing_device_id": return L("license.err.device")
         default: return "HTTP \(status)"
         }
     }
@@ -57,12 +63,38 @@ enum LicenseAPI {
         try await post("/api/refresh", ["license": token])
     }
 
+    /// 释放服务端的设备名额。成功之后调用方才删除本地许可证。
+    static func deactivate(token: String) async throws {
+        guard let url = URL(string: base + "/api/deactivate") else {
+            throw ApiError(L("error.badAddress", "/api/deactivate"))
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "license": token,
+            "device_id": await deviceId(),
+        ])
+        req.timeoutInterval = 20
+
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard (200..<300).contains(status) else {
+            let machineCode = json["error"] as? String
+            throw ApiError(message(for: machineCode, status: status),
+                           statusCode: status, code: machineCode)
+        }
+    }
+
     private static func post(_ path: String, _ body: [String: String]) async throws -> String {
         guard let url = URL(string: base + path) else { throw ApiError(L("error.badAddress", path)) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        var requestBody = body
+        requestBody["device_id"] = await deviceId()
+        req.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         req.timeoutInterval = 20
 
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -71,7 +103,9 @@ enum LicenseAPI {
 
         guard (200..<300).contains(code) else {
             // 服务端的 error 是机器可读的短码，翻成人话再给用户看
-            throw ApiError(message(for: json["error"] as? String, status: code))
+            let machineCode = json["error"] as? String
+            throw ApiError(message(for: machineCode, status: code),
+                           statusCode: code, code: machineCode)
         }
         guard let token = json["license"] as? String, !token.isEmpty else {
             throw ApiError(L("license.err.noLicense"))
@@ -85,7 +119,13 @@ enum LicenseAPI {
         case "revoked": return L("license.err.revoked")
         case "too_many_activations": return L("license.err.tooMany")
         case "invalid_code": return L("license.err.invalidCode")
+        case "invalid_license", "device_mismatch", "device_deactivated", "missing_device_id":
+            return L("license.err.device")
         default: return "HTTP \(status)"
         }
+    }
+
+    private static func deviceId() async -> String {
+        await MainActor.run { Store.shared.deviceId }
     }
 }
