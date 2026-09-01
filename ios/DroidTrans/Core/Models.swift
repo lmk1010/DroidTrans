@@ -70,6 +70,10 @@ struct Desktop: Identifiable, Equatable {
     /// 对面是台手机，连过去只要它点头，不用输码
     var approvesByTap: Bool { pairingMode == "approve" }
 
+    /// 对面明确是 Android 手机。不要只靠机型名判断，像 PLK110 这种名称没有
+    /// 任何 phone/android 关键词。
+    var isAndroidPhone: Bool { engine == "android" }
+
     /// 设备发现时的图形类别。
     ///
     /// 手机服务端使用 9600 端口，且新版本会通告 approve 配对模式。

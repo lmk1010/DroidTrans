@@ -133,6 +133,26 @@ public final class Pairing {
     }
 
     /**
+     * 发现雷达节点时读取实现引擎。Bonjour 只告诉我们地址和端口，
+     * 真实的 Android 机型名（例如 PLK110）不能靠名字判断。
+     */
+    public static String engine(String baseUrl) {
+        Request req = new Request.Builder()
+                .url("http://" + normalize(baseUrl) + "/api/health")
+                .get()
+                .build();
+        try (Response res = CLIENT.newCall(req).execute()) {
+            ResponseBody rb = res.body();
+            if (!res.isSuccessful() || rb == null) {
+                return "";
+            }
+            return new JSONObject(rb.string()).optString("engine", "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
      * 敲门：不带码地请求一次，挂在那儿等对面点头。
      *
      * <p>用的还是 /api/pair，只是 code 留空 —— 对面认得这个约定，

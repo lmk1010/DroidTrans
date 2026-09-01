@@ -2,6 +2,8 @@ package com.mk.androidtransfer.widget;
 
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -35,6 +37,9 @@ public class RadarScanView extends View {
     private Paint serverPulsePaint;
     private Paint serverLabelPaint;
     private Paint serverLabelBgPaint;
+    private Bitmap laptopArt;
+    private Bitmap phoneArt;
+    private Bitmap androidArt;
     private final RectF labelRect = new RectF();
     private float centerX, centerY;
     private float radius;
@@ -63,6 +68,7 @@ public class RadarScanView extends View {
         public String serverName;
         public String ip;
         public int port;
+        public String engine;
         public float angle;
         public float distance;
         public long timestamp;
@@ -71,17 +77,19 @@ public class RadarScanView extends View {
         public float x, y;
         public float labelX, labelY, labelWidth, labelHeight;
 
-        public ServerDot(String serverName, String ip, int port, float angle, float distance) {
+        public ServerDot(String serverName, String ip, int port, String engine,
+                         float angle, float distance) {
             this.serverName = serverName;
             this.ip = ip;
             this.port = port;
+            this.engine = engine == null ? "" : engine;
             this.angle = angle;
             this.distance = distance;
             this.timestamp = System.currentTimeMillis();
         }
 
         public ServerInfo toServerInfo() {
-            return new ServerInfo(serverName, ip, port);
+            return new ServerInfo(serverName, ip, port, engine);
         }
     }
 
@@ -150,6 +158,10 @@ public class RadarScanView extends View {
         serverLabelBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         serverLabelBgPaint.setStyle(Paint.Style.FILL);
         serverLabelBgPaint.setColor(Color.TRANSPARENT);
+
+        laptopArt = BitmapFactory.decodeResource(getResources(), R.drawable.art_laptop);
+        phoneArt = BitmapFactory.decodeResource(getResources(), R.drawable.art_phone);
+        androidArt = BitmapFactory.decodeResource(getResources(), R.drawable.art_android);
     }
 
     private void drawComputer(Canvas canvas, float x, float y) {
@@ -162,6 +174,16 @@ public class RadarScanView extends View {
         canvas.drawRoundRect(labelRect, 3f, 3f, computerPaint);
         canvas.drawLine(x, y + h / 2f - 1f, x, y + h / 2f + 6f, computerPaint);
         canvas.drawLine(x - 11f, y + h / 2f + 6f, x + 11f, y + h / 2f + 6f, computerPaint);
+    }
+
+    private void drawDevice(Canvas canvas, float x, float y, Bitmap art, float size) {
+        if (art == null) {
+            drawComputer(canvas, x, y);
+            return;
+        }
+        labelRect.set(x - size / 2f, y - size / 2f,
+                x + size / 2f, y + size / 2f);
+        canvas.drawBitmap(art, null, labelRect, null);
     }
 
     @Override
@@ -209,7 +231,8 @@ public class RadarScanView extends View {
         canvas.drawCircle(centerX, centerY, radius, radarPaint);
         canvas.restore();
 
-        drawComputer(canvas, centerX, centerY);
+        // Android 端雷达中心代表本机，不能再用电脑图标。
+        drawDevice(canvas, centerX, centerY, androidArt, 64f);
     }
 
     private void drawServerDots(Canvas canvas) {
@@ -236,7 +259,7 @@ public class RadarScanView extends View {
 
             canvas.save();
             canvas.scale(dot.scale, dot.scale, x, y);
-            drawComputer(canvas, x, y);
+            drawDevice(canvas, x, y, iconFor(dot), 58f);
             canvas.restore();
 
             if (dot.scale >= 0.8f && dot.labelScale > 0f) {
@@ -385,10 +408,33 @@ public class RadarScanView extends View {
                 serverInfo.getName(),
                 serverInfo.getIp(),
                 serverInfo.getPort(),
+                serverInfo.getEngine(),
                 angle,
                 distance
         ));
         invalidate();
+    }
+
+    public void updateServerDot(ServerInfo serverInfo) {
+        for (ServerDot dot : serverDots) {
+            if (dot.ip.equals(serverInfo.getIp()) && dot.port == serverInfo.getPort()) {
+                dot.serverName = serverInfo.getName();
+                dot.engine = serverInfo.getEngine();
+                invalidate();
+                return;
+            }
+        }
+    }
+
+    private Bitmap iconFor(ServerDot dot) {
+        if ("android".equalsIgnoreCase(dot.engine)) {
+            return androidArt;
+        }
+        if ("swift".equalsIgnoreCase(dot.engine)) {
+            return phoneArt;
+        }
+        // 9600 是手机服务端的固定端口，供旧版本或探测失败时兜底。
+        return dot.port == 9600 ? phoneArt : laptopArt;
     }
 
     public void removeServerDot(String ip) {

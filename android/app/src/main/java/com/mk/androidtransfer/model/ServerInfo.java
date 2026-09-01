@@ -7,12 +7,18 @@ public class ServerInfo {
     private String name;        // 服务器名称
     private String ipAddress;   // IP地址
     private int port;           // 端口号
+    private String engine;      // go / swift / android
     private boolean available;  // 是否可用
 
     public ServerInfo(String name, String ipAddress, int port) {
+        this(name, ipAddress, port, "");
+    }
+
+    public ServerInfo(String name, String ipAddress, int port, String engine) {
         this.name = name;
         this.ipAddress = ipAddress;
         this.port = port;
+        this.engine = engine == null ? "" : engine.trim().toLowerCase(java.util.Locale.US);
         this.available = true;
     }
 
@@ -38,6 +44,33 @@ public class ServerInfo {
 
     public void setPort(int port) {
         this.port = port;
+    }
+
+    public String getEngine() {
+        return engine;
+    }
+
+    public void setEngine(String engine) {
+        this.engine = engine == null ? "" : engine.trim().toLowerCase(java.util.Locale.US);
+    }
+
+    public boolean isAndroidPhone() {
+        return "android".equals(engine);
+    }
+
+    public boolean isIPhone() {
+        return "swift".equals(engine);
+    }
+
+    public boolean isPhone() {
+        if (isAndroidPhone() || isIPhone() || port == 9600) {
+            return true;
+        }
+        String n = name == null ? "" : name.toLowerCase(java.util.Locale.US);
+        return n.contains("iphone") || n.contains("phone") || n.contains("android")
+                || n.contains("pixel") || n.contains("oneplus") || n.contains("oppo")
+                || n.contains("vivo") || n.contains("xiaomi") || n.contains("redmi")
+                || n.contains("huawei") || n.contains("honor") || n.contains("samsung");
     }
 
     public boolean isAvailable() {

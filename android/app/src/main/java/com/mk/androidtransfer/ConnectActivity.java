@@ -119,6 +119,23 @@ public class ConnectActivity extends AppCompatActivity {
         found.put(key, info);
         radar.addServerDot(info);
         refreshStatus();
+
+        // Bonjour 只有地址信息。补一次 health，才能把 Android/iPhone
+        // 从电脑节点里区分出来，并在雷达上换成对应素材。
+        io.execute(() -> {
+            String engine = Pairing.engine(info.getServerUrl());
+            if (engine.isEmpty()) {
+                return;
+            }
+            main.post(() -> {
+                ServerInfo current = found.get(key);
+                if (current == null) {
+                    return;
+                }
+                current.setEngine(engine);
+                radar.updateServerDot(current);
+            });
+        });
     }
 
     private void refreshStatus() {

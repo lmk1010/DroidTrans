@@ -246,6 +246,9 @@ private struct DeviceNode: View {
 
     /// 名字里通常带着机型，据此挑素材。认不出来就当电脑。
     private var art: Art {
-        device.isPhone ? .phone : .laptop
+        if device.isAndroidPhone {
+            return .android
+        }
+        return device.isPhone ? .phone : .laptop
     }
 }
