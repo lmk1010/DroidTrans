@@ -5,7 +5,7 @@
 /// 可以在这里输入激活，所以两条路并存。
 ///
 /// 商品 ID 与 Resources/Products.storekit 一致，上架前要在
-/// App Store Connect 里建同名的三个非消耗型商品。
+/// App Store Connect 里建同名商品：1 年/3 年是非续期订阅，终身是非消耗型。
 
 import Foundation
 import StoreKit
@@ -32,6 +32,21 @@ enum ProPlan: String, CaseIterable, Identifiable {
         case .years3: return L("license.plan.years3")
         case .lifetime: return L("license.plan.lifetime")
         }
+    }
+
+    /// 非续期订阅的有效期由 App 自己判断；终身档没有到期时间。
+    var entitlementDays: Int? {
+        switch self {
+        case .year: return 365
+        case .years3: return 365 * 3
+        case .lifetime: return nil
+        }
+    }
+
+    func isActive(purchasedAt: Date, now: Date = Date()) -> Bool {
+        guard let days = entitlementDays else { return true }
+        let expires = purchasedAt.addingTimeInterval(TimeInterval(days) * 24 * 3600)
+        return expires > now
     }
 }
 
@@ -77,16 +92,18 @@ final class IAP: ObservableObject {
         await refreshOwned()
     }
 
-    /// 当前这个 Apple ID 已经买过哪些。
+    /// 当前这个 Apple ID 仍在有效期内的权益。
     func refreshOwned() async {
         var found: Set<String> = []
         var redeemJWS: String?
         for await result in Transaction.currentEntitlements {
-            if case .verified(let t) = result, t.revocationDate == nil {
-                found.insert(t.productID)
-                if redeemJWS == nil {
-                    redeemJWS = result.jwsRepresentation
-                }
+            guard case .verified(let t) = result,
+                  t.revocationDate == nil,
+                  let plan = ProPlan(rawValue: t.productID),
+                  plan.isActive(purchasedAt: t.purchaseDate) else { continue }
+            found.insert(t.productID)
+            if redeemJWS == nil || plan == .lifetime {
+                redeemJWS = result.jwsRepresentation
             }
         }
         owned = found
@@ -136,7 +153,11 @@ final class IAP: ObservableObject {
         // 未通过校验的交易一律不认。StoreKit 2 已经替我们验过签名，
         // 走到 .unverified 说明这笔东西不可信。
         guard case .verified(let t) = result else { return }
-        if t.revocationDate != nil {
+        guard let plan = ProPlan(rawValue: t.productID) else {
+            await t.finish()
+            return
+        }
+        if t.revocationDate != nil || !plan.isActive(purchasedAt: t.purchaseDate) {
             owned.remove(t.productID)
             LicenseStore.shared.setLocalPurchase(!owned.isEmpty)
             await t.finish()

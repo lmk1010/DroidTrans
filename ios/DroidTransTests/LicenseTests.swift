@@ -7,6 +7,28 @@ import XCTest
 /// Swift 这边自己造一份来验自己没有意义 —— 要保证的是
 /// 「Node 签的东西，Go 和 Swift 都认」。
 final class LicenseTests: XCTestCase {
+    func testStoreKitPlansRespectTheirPurchasedDuration() {
+        let bought = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(ProPlan.year.isActive(
+            purchasedAt: bought,
+            now: bought.addingTimeInterval(364 * 24 * 3600)))
+        XCTAssertFalse(ProPlan.year.isActive(
+            purchasedAt: bought,
+            now: bought.addingTimeInterval(366 * 24 * 3600)))
+
+        XCTAssertTrue(ProPlan.years3.isActive(
+            purchasedAt: bought,
+            now: bought.addingTimeInterval(1094 * 24 * 3600)))
+        XCTAssertFalse(ProPlan.years3.isActive(
+            purchasedAt: bought,
+            now: bought.addingTimeInterval(1096 * 24 * 3600)))
+
+        XCTAssertTrue(ProPlan.lifetime.isActive(
+            purchasedAt: bought,
+            now: bought.addingTimeInterval(20 * 365 * 24 * 3600)))
+    }
+
 
     private func vector() throws -> String {
         let bundle = Bundle(for: type(of: self))

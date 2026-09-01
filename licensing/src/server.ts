@@ -257,7 +257,9 @@ const server = createServer(async (req, res) => {
           // 用户想换设备时凭激活码本身找回，不靠邮箱。
           email: `apple-${tx.originalTransactionId}@appstore.local`,
           plan,
-          createdAt: new Date().toISOString(),
+          // 非续期订阅的期限从 Apple 签名的购买时间起算，不能从兑换时间起算；
+          // 否则卸载一年后再恢复购买会凭空多出一年。
+          createdAt: new Date(tx.purchaseDate).toISOString(),
           activations: [],
         }
         store.put(rec)

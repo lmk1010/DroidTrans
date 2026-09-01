@@ -1,7 +1,6 @@
 {
   "identifier" : "DroidTransPro",
-  "nonRenewingSubscriptions" : [],
-  "products" : [
+  "nonRenewingSubscriptions" : [
     {
       "displayPrice" : "1.99",
       "familyShareable" : false,
@@ -15,7 +14,7 @@
       ],
       "productID" : "life.mkstore.droidtrans.pro.year",
       "referenceName" : "Pro 1 Year",
-      "type" : "NonConsumable"
+      "type" : "NonRenewingSubscription"
     },
     {
       "displayPrice" : "3.99",
@@ -30,8 +29,10 @@
       ],
       "productID" : "life.mkstore.droidtrans.pro.years3",
       "referenceName" : "Pro 3 Years",
-      "type" : "NonConsumable"
-    },
+      "type" : "NonRenewingSubscription"
+    }
+  ],
+  "products" : [
     {
       "displayPrice" : "9.99",
       "familyShareable" : false,
