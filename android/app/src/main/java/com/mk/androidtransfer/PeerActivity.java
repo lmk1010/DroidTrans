@@ -108,7 +108,7 @@ public class PeerActivity extends AppCompatActivity {
                     recvCode.setText(spaced(server.getPairingCode()));
                     String ip = server.localIp();
                     if (ip != null) {
-                        recvAddr.setText(ip + ":" + PeerServer.PORT);
+                        recvAddr.setText(ip + ":" + server.getBoundPort());
                     } else {
                         recvAddr.setText(R.string.peer_need_wifi);
                     }

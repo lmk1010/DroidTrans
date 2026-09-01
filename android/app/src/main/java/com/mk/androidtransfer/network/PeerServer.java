@@ -68,7 +68,7 @@ public final class PeerServer {
 
     private static final String TAG = "PeerServer";
 
-    /** 手机当接收方时监听的端口。避开桌面端的 9500，见 iOS 端 Ports.peer 的注释。 */
+    /** 手机当接收方时优先监听的端口。避开桌面端的 9500，见 iOS 端 Ports.peer 的注释。 */
     public static final int PORT = 9600;
 
     public interface Listener {
@@ -90,6 +90,7 @@ public final class PeerServer {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private ServerSocket socket;
+    private volatile int boundPort = PORT;
     private ExecutorService pool;
     private WifiManager.MulticastLock lock;
     private NsdManager.RegistrationListener registration;
@@ -131,17 +132,27 @@ public final class PeerServer {
         tokens.clear();
         pairingCode = String.format(Locale.US, "%06d", new Random().nextInt(1000000));
 
-        // setReuseAddress 必须在 bind 之前设 —— new ServerSocket(PORT) 会直接
-        // 连着绑上，那之后再设就是个空操作。刚 stop() 完立刻再 start() 时，
-        // 上一个套接字还在 TIME_WAIT，没有这个标志就会绑不上。
+        // setReuseAddress 必须在 bind 之前设。9600 被其他进程占用时不能让整条
+        // 手机互传不可用，退到系统分配的空闲端口；Bonjour 和手输地址都会使用
+        // boundPort，因此对端不需要知道这次是不是用了备用端口。
         try {
-            socket = new ServerSocket();
-            socket.setReuseAddress(true);
-            socket.bind(new java.net.InetSocketAddress(PORT));
-        } catch (IOException e) {
-            closeQuietly(socket);
-            socket = null;
-            fail("端口 " + PORT + " 打不开：" + e.getMessage());
+            socket = bind(PORT);
+            boundPort = PORT;
+        } catch (IOException primary) {
+            Log.w(TAG, "端口 " + PORT + " 不可用，改用系统分配端口: " + primary.getMessage());
+            try {
+                socket = bind(0);
+                boundPort = socket.getLocalPort();
+            } catch (IOException fallback) {
+                closeQuietly(socket);
+                socket = null;
+                fail("接收端口打不开：" + fallback.getMessage());
+                return;
+            }
+        }
+
+        if (socket == null || boundPort <= 0) {
+            fail("接收端口无效");
             return;
         }
 
@@ -183,6 +194,23 @@ public final class PeerServer {
 
     public String getPairingCode() {
         return pairingCode;
+    }
+
+    /** 本次接收实际监听的端口。9600 被占用时这里会是系统分配的空闲端口。 */
+    public int getBoundPort() {
+        return boundPort;
+    }
+
+    private ServerSocket bind(int port) throws IOException {
+        ServerSocket candidate = new ServerSocket();
+        candidate.setReuseAddress(true);
+        try {
+            candidate.bind(new java.net.InetSocketAddress(port));
+            return candidate;
+        } catch (IOException e) {
+            closeQuietly(candidate);
+            throw e;
+        }
     }
 
     private void fail(String msg) {
@@ -227,7 +255,7 @@ public final class PeerServer {
         NsdServiceInfo info = new NsdServiceInfo();
         info.setServiceName(deviceName);
         info.setServiceType(BonjourBrowser.SERVICE_TYPE);
-        info.setPort(PORT);
+        info.setPort(boundPort);
 
         registration = new NsdManager.RegistrationListener() {
             @Override
@@ -379,7 +407,7 @@ public final class PeerServer {
                 "name", deviceName(),
                 "ip", ip == null ? "" : ip,
                 "ips", ips,
-                "port", PORT,
+                "port", boundPort,
                 "pairing_required", true,
                 // 告诉对面「点一下同意就行，别让人输码」。
                 // 桌面端不发这个字段，所以老流程完全不受影响。
