@@ -27,6 +27,7 @@ final class PeerServer: ObservableObject {
 
     @Published private(set) var running = false
     @Published private(set) var pairingCode = ""
+    @Published private(set) var boundPort: Int
 
     /// 有人在敲门，等这台点头。
     ///
@@ -61,6 +62,15 @@ final class PeerServer: ObservableObject {
     private var tokens: Set<String> = []
 
     private let queue = DispatchQueue(label: "life.mkstore.droidtrans.peer")
+    private let requestedPort: UInt16
+    private let advertiseService: Bool
+
+    /// 线上固定 9600；测试传 0 让系统分配空闲端口，避免用例之间争抢。
+    init(port: UInt16 = UInt16(Ports.peer), advertiseService: Bool = true) {
+        requestedPort = port
+        boundPort = Int(port)
+        self.advertiseService = advertiseService
+    }
 
     var deviceName: String { Store.shared.deviceName }
 
@@ -106,15 +116,21 @@ final class PeerServer: ObservableObject {
             // 悄悄走 AWDL，对面能连上但网段对不上，排查起来很痛苦
             params.includePeerToPeer = false
 
-            let l = try NWListener(using: params, on: NWEndpoint.Port(rawValue: UInt16(Ports.peer))!)
+            let port = requestedPort == 0
+                ? NWEndpoint.Port.any
+                : NWEndpoint.Port(rawValue: requestedPort)!
+            let l = try NWListener(using: params, on: port)
             // 广播的名字就是设备名，对面雷达上显示的就是这个
-            l.service = NWListener.Service(name: deviceName, type: kBonjourService)
+            if advertiseService {
+                l.service = NWListener.Service(name: deviceName, type: kBonjourService)
+            }
 
             l.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
                     switch state {
                     case .ready:
                         self?.running = true
+                        self?.boundPort = Int(l.port?.rawValue ?? self?.requestedPort ?? 0)
                     case .failed(let e):
                         self?.lastError = e.localizedDescription
                         self?.stop()

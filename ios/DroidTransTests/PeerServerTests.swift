@@ -7,15 +7,15 @@ import XCTest
 /// 因为这一半最容易错的地方不在纯函数里，而在「HTTP 头解析对不对」
 /// 「不带码的请求会不会挂住」这种只有真跑一遍才暴露的地方。
 ///
-/// 端口用 Ports.peer，和线上一致。CI 上并行跑测试时可能撞端口，
-/// 所以每个用例跑完都 stop()。
+/// 每个用例让系统分配空闲端口。线上仍固定 9600；测试没必要和别的进程
+/// 争同一个端口，否则前一个 listener 刚关闭就会让下一个用例随机失败。
 @MainActor
 final class PeerServerTests: XCTestCase {
 
     private var server: PeerServer!
 
     override func setUp() async throws {
-        server = PeerServer.shared
+        server = PeerServer(port: 0, advertiseService: false)
         server.start()
         try await waitUntilUp()
     }
@@ -25,7 +25,7 @@ final class PeerServerTests: XCTestCase {
         server = nil
     }
 
-    private var base: String { "http://127.0.0.1:\(Ports.peer)" }
+    private var base: String { "http://127.0.0.1:\(server.boundPort)" }
 
     /// 监听是异步就绪的，起来之前打它会连接被拒。
     ///
@@ -55,7 +55,7 @@ final class PeerServerTests: XCTestCase {
         let j = try await get("/api/wifi/info")
         XCTAssertEqual(j["pairing_mode"] as? String, "approve")
         XCTAssertEqual(j["pairing_required"] as? Bool, true)
-        XCTAssertEqual(j["port"] as? Int, Ports.peer)
+        XCTAssertEqual(j["port"] as? Int, server.boundPort)
         // 手机这侧只实现了 HTTP PUT，多报一条通道会让发送方走上死路
         XCTAssertEqual(j["prefer"] as? [String], ["http_put"])
     }

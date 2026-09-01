@@ -12,6 +12,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.mk.androidtransfer.license.LicenseStore;
+
 /**
  * 主界面：先选跟谁传，再进对应的连接流程。
  *
@@ -45,7 +47,9 @@ public class StartActivity extends AppCompatActivity {
                 v -> openPeer(PeerActivity.KIND_ANDROID));
 
         findViewById(R.id.btnSettings).setOnClickListener(
-                v -> startActivity(new Intent(this, UploadHistoryActivity.class)));
+                v -> startActivity(new Intent(this, MeActivity.class)));
+
+        LicenseStore.get(this).refreshIfNeeded();
     }
 
     private void openPeer(String kind) {

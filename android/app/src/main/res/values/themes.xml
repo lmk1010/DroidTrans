@@ -93,6 +93,16 @@
         <item name="android:textColor">@color/ink2</item>
     </style>
 
+    <style name="MemberValue" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">middle</item>
+    </style>
+
     <style name="Widget.AndroidTransfer.FlatCard" parent="Widget.Material3.CardView.Filled">
         <item name="cardElevation">0dp</item>
         <item name="strokeWidth">0dp</item>

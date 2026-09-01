@@ -80,12 +80,25 @@ final class IAP: ObservableObject {
     /// 当前这个 Apple ID 已经买过哪些。
     func refreshOwned() async {
         var found: Set<String> = []
+        var redeemJWS: String?
         for await result in Transaction.currentEntitlements {
             if case .verified(let t) = result, t.revocationDate == nil {
                 found.insert(t.productID)
+                if redeemJWS == nil {
+                    redeemJWS = result.jwsRepresentation
+                }
             }
         }
         owned = found
+        LicenseStore.shared.setLocalPurchase(!found.isEmpty)
+
+        // 重装或换机后 currentEntitlements 能恢复本机权益，也要顺便把三端通用
+        // 许可证取回来；否则 iPhone 显示已购买，Mac/Android 却没有可用激活码。
+        if !found.isEmpty,
+           LicenseStore.shared.token == nil || LicenseStore.shared.problem != nil,
+           let redeemJWS {
+            await redeem(redeemJWS)
+        }
     }
 
     func buy(_ product: Product) async -> Bool {
@@ -123,7 +136,14 @@ final class IAP: ObservableObject {
         // 未通过校验的交易一律不认。StoreKit 2 已经替我们验过签名，
         // 走到 .unverified 说明这笔东西不可信。
         guard case .verified(let t) = result else { return }
+        if t.revocationDate != nil {
+            owned.remove(t.productID)
+            LicenseStore.shared.setLocalPurchase(!owned.isEmpty)
+            await t.finish()
+            return
+        }
         owned.insert(t.productID)
+        LicenseStore.shared.setLocalPurchase(true)
 
         // 换一份三端通用的许可证。只在本机解锁是不够的 ——
         // 用户在 Mac 上也该能用同一份授权。

@@ -122,11 +122,17 @@ final class LicenseStore: ObservableObject {
     @Published private(set) var license: License?
     /// 过期或太久没回连时，仍然把内容留着，界面才能提示「续期」而不是一句「无效」
     @Published private(set) var problem: LicenseError?
+    /// App Store 已验证的本机权益。
+    ///
+    /// 通用许可证兑换依赖网络；购买已经由 StoreKit 验过时，兑换服务暂时不可用
+    /// 不能反过来把这台 iPhone 锁回免费版。
+    @Published private(set) var localPurchase = false
 
     private let defaults = UserDefaults(suiteName: kAppGroup) ?? .standard
     private let key = "license_token"
+    private var refreshing = false
 
-    var isPro: Bool { license != nil && problem == nil }
+    var isPro: Bool { (license != nil && problem == nil) || localPurchase }
 
     private init() {
         // 内购的用例要从「还没买过」开始。不清的话，上一次跑留下的许可证
@@ -185,6 +191,29 @@ final class LicenseStore: ObservableObject {
     }
 
     var token: String? { defaults.string(forKey: key) }
+
+    func setLocalPurchase(_ owned: Bool) {
+        localPurchase = owned
+    }
+
+    /// 启动时静默续签。联网失败保留当前离线授权，不打断用户传文件。
+    func refreshIfNeeded() async {
+        guard !refreshing, let token,
+              let license,
+              license.needsRefresh || {
+                  if case .stale = problem { return true }
+                  return false
+              }() else { return }
+
+        refreshing = true
+        defer { refreshing = false }
+        do {
+            let fresh = try await LicenseAPI.refresh(token: token)
+            _ = save(fresh)
+        } catch {
+            // 仍在 45 天宽限期内就继续离线可用；过期状态留给授权页提示用户重试。
+        }
+    }
 }
 
 // MARK: - 工具

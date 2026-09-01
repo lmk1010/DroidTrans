@@ -407,4 +407,105 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="hotspot_open">Open hotspot settings</string>
     <string name="hotspot_no_settings">Could not open hotspot settings — please turn it on manually</string>
     <string name="card_receive_pending">%1$d files waiting</string>
+
+    <!-- Start screen -->
+    <string name="start_subtitle">Who are you transferring with?</string>
+    <string name="start_desktop">Computer</string>
+    <string name="start_desktop_sub">Connect with one tap on the same Wi-Fi</string>
+    <string name="start_iphone">iPhone</string>
+    <string name="start_iphone_sub">Run DroidTrans on both phones, then send or receive</string>
+    <string name="start_android">Android phone</string>
+    <string name="start_android_sub">Run DroidTrans on both phones and connect directly</string>
+    <string name="start_settings">Settings</string>
+
+    <!-- Phone-to-phone -->
+    <string name="peer_role">Are you sending or receiving?</string>
+    <string name="peer_send">Send</string>
+    <string name="peer_send_sub">Find the other phone and send files to it</string>
+    <string name="peer_recv">Receive</string>
+    <string name="peer_recv_sub">Make this phone visible to the sender</string>
+    <string name="peer_waiting">Waiting for the other phone</string>
+    <string name="peer_code">Pairing code</string>
+    <string name="peer_addr">Or enter this address on the other phone</string>
+    <string name="peer_got">Received</string>
+    <string name="peer_stop">Stop receiving</string>
+    <string name="peer_need_wifi">Join Wi-Fi first. Both phones must use the same network.</string>
+    <string name="peer_back">Back to start</string>
+    <string name="peer_knock_title">wants to connect</string>
+    <string name="peer_knock_allow">Allow</string>
+    <string name="peer_knock_deny">Deny</string>
+    <string name="peer_knock_hint">The other phone can only send files here. It cannot browse files on this phone.</string>
+    <string name="approval_waiting">Waiting for approval…</string>
+    <string name="approval_refused">The other phone did not approve</string>
+
+    <!-- Computer connection and home -->
+    <string name="connect_status_scanning">Looking for computers on this Wi-Fi…</string>
+    <string name="connect_status_one">Tap to connect</string>
+    <string name="connect_status_many">Choose a computer</string>
+    <string name="connect_hint">Keep DroidTrans open on the computer and join the same Wi-Fi.\nIf automatic discovery is blocked, scan the code or enter the address.</string>
+    <string name="connect_scan">Scan code</string>
+    <string name="connect_manual">Enter address</string>
+    <string name="connect_failed">Could not connect</string>
+    <string name="connect_manual_hint">Enter the address shown in the DroidTrans computer window.</string>
+    <string name="pair_screen_title">Pair with this computer</string>
+    <string name="pair_hint">The six-digit code is shown in the DroidTrans computer window.</string>
+    <string name="pair_cancel">Cancel and choose another</string>
+    <string name="pair_wrong">Incorrect pairing code</string>
+    <string name="home_switch">Switch</string>
+    <string name="home_send">Send</string>
+    <string name="home_sending">Sending</string>
+    <string name="home_photos">Photos and videos</string>
+    <string name="home_photos_sub">Pick from the gallery and send directly</string>
+    <string name="home_files">Files</string>
+    <string name="home_files_sub">Select multiple files of any type</string>
+    <string name="home_text">Text</string>
+    <string name="home_text_sub">Send directly to the computer clipboard</string>
+    <string name="home_text_sent">Sent to the computer clipboard</string>
+    <string name="home_send_failed">Could not send</string>
+    <string name="common_connect">Connect</string>
+    <string name="common_send">Send</string>
+
+    <!-- Me / Pro -->
+    <string name="member_title">Me · Pro</string>
+    <string name="member_free">Free</string>
+    <string name="member_free_detail">Photos, files, text, and phone transfers remain free</string>
+    <string name="member_active">Pro active</string>
+    <string name="member_active_detail">This license works on macOS, Android, and iOS</string>
+    <string name="member_expired">Pro expired</string>
+    <string name="member_expired_detail">Basic transfers still work; incremental sync is paused</string>
+    <string name="member_needs_online">Online renewal required</string>
+    <string name="member_stale_detail">Not verified for 45 days. Connect once to restore Pro.</string>
+    <string name="member_invalid">Invalid local license</string>
+    <string name="member_invalid_detail">The saved license is damaged or belongs to another product</string>
+    <string name="member_details">License details</string>
+    <string name="member_plan_year">One year</string>
+    <string name="member_plan_years3">Three years</string>
+    <string name="member_plan_lifetime">Lifetime</string>
+    <string name="member_plan_format">Plan  %1$s</string>
+    <string name="member_code_format">Code  %1$s</string>
+    <string name="member_email_format">Email  %1$s</string>
+    <string name="member_expiry_format">Expires  %1$s</string>
+    <string name="member_never">Never expires</string>
+    <string name="member_refresh">Renew online</string>
+    <string name="member_refresh_success">License updated</string>
+    <string name="member_remove_local">Remove from this device</string>
+    <string name="member_remove_title">Remove this license?</string>
+    <string name="member_remove_message">This only removes the local license. It does not issue a refund or affect other devices.</string>
+    <string name="member_activate_hint">Already have a code? Enter it to activate Pro on this device.</string>
+    <string name="member_code_hint">DT-XXXX-XXXX-XXXX</string>
+    <string name="member_activate">Activate Pro</string>
+    <string name="member_view_pricing">View pricing and buy</string>
+    <string name="member_perk_incremental">Pro: hide transferred photos</string>
+    <string name="member_perk_detail">Remember past transfers and select only new photos. One purchase works on all three platforms.</string>
+    <string name="member_incremental_locked">Hiding transferred photos is a Pro feature. Regular transfers remain free.</string>
+    <string name="exclude_uploaded_pro">Hide uploaded · Pro</string>
+    <string name="member_expired_recovery">Renew, then enter the new activation code to restore Pro.</string>
+    <string name="member_stale_recovery">Connect to the internet and renew. No new purchase is needed.</string>
+    <string name="member_invalid_recovery">Remove the damaged local license, then enter the original code again.</string>
+    <string name="member_code_invalid">Enter a valid 12-character DroidTrans activation code</string>
+    <string name="member_response_invalid">The server returned an invalid license. Try again later.</string>
+    <string name="member_err_not_found">Activation code not found</string>
+    <string name="member_err_revoked">This license was refunded or revoked</string>
+    <string name="member_err_too_many">Device limit reached. Remove an old device first.</string>
+    <string name="member_err_network">Could not reach the license server. Check the network and try again.</string>
 </resources>

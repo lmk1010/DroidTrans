@@ -68,6 +68,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".MeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.DroidTrans.Dark"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- 「和电脑传」那条路：找电脑 → 配对 → 主界面 -->
         <activity
             android:name=".ConnectActivity"

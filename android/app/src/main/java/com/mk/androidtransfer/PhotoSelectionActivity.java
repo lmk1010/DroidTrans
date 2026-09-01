@@ -37,6 +37,7 @@ import com.mk.androidtransfer.adapter.AlbumListAdapter;
 import com.mk.androidtransfer.util.ThemeBars;
 import com.mk.androidtransfer.adapter.PhotoGridAdapter;
 import com.mk.androidtransfer.database.UploadRecordDao;
+import com.mk.androidtransfer.license.LicenseStore;
 import com.mk.androidtransfer.model.AlbumInfo;
 import com.mk.androidtransfer.model.ApiResponse;
 import com.mk.androidtransfer.model.PhotoInfo;
@@ -252,7 +253,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         
         // 过滤已上传照片
         btnFilterUploaded.setOnClickListener(v -> {
-            toggleFilterUploaded();
+            openIncrementalFilter();
         });
 
         // 次级操作：取消全选 / 排序 / 排除已上传，都收在这里，
@@ -760,7 +761,10 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         menu.getMenu().add(0, 1, 0, R.string.deselect_all);
         if (!isAlbumView) {
             menu.getMenu().add(0, 2, 1, R.string.sort);
-            menu.getMenu().add(0, 3, 2, R.string.exclude_uploaded);
+            menu.getMenu().add(0, 3, 2,
+                    LicenseStore.get(this).isPro()
+                            ? R.string.exclude_uploaded
+                            : R.string.exclude_uploaded_pro);
         }
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
@@ -771,7 +775,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                     showSortDialog();
                     return true;
                 case 3:
-                    toggleFilterUploaded();
+                    openIncrementalFilter();
                     return true;
                 default:
                     return false;
@@ -1005,6 +1009,17 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                 updateSelectionCount(0);
             });
         }).start();
+    }
+
+    private void openIncrementalFilter() {
+        if (LicenseStore.get(this).isPro()) {
+            toggleFilterUploaded();
+            return;
+        }
+        Toast.makeText(this, R.string.member_incremental_locked, Toast.LENGTH_LONG).show();
+        Intent intent = new Intent(this, MeActivity.class);
+        intent.putExtra(MeActivity.EXTRA_FOCUS_PRO, true);
+        startActivity(intent);
     }
     
     /**

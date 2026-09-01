@@ -85,6 +85,8 @@ targets:
       path: ShareExtension/Info.plist
       properties:
         CFBundleDisplayName: DroidTrans
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: ShareViewController

@@ -74,6 +74,9 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // Android 7/8 没有平台 Ed25519 API。许可证要离线验签，所以用纯 Java 实现。
+    implementation("net.i2p.crypto:eddsa:0.3.0")
+
     // 扫码连接：桌面端的二维码要能被 App 直接扫，而不是丢给系统浏览器
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 

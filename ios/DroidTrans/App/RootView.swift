@@ -6,7 +6,11 @@ struct RootView: View {
 
     var body: some View {
         content
-            .task { await app.restoreLastSession() }
+            .task {
+                await app.restoreLastSession()
+                await IAP.shared.refreshOwned()
+                await LicenseStore.shared.refreshIfNeeded()
+            }
     }
 
     @ViewBuilder

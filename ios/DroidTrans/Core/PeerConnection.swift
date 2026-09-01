@@ -137,13 +137,15 @@ final class PeerConnection {
 
     private func info() async -> [String: Any] {
         guard let server else { return [:] }
-        let (name, ip) = await MainActor.run { (server.deviceName, server.localIP) }
+        let (name, ip, port) = await MainActor.run {
+            (server.deviceName, server.localIP, server.boundPort)
+        }
         return [
             "success": true,
             "name": name,
             "ip": ip ?? "",
             "ips": [ip].compactMap { $0 },
-            "port": Ports.peer,
+            "port": port,
             "pairing_required": true,
             // 告诉对面「点一下同意就行，别让人输码」。
             // 桌面端不发这个字段，所以老流程完全不受影响。
