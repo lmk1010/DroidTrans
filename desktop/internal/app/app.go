@@ -22,6 +22,7 @@ import (
 	"droidtrans/internal/adb"
 	"droidtrans/internal/bonjour"
 	"droidtrans/internal/fast"
+	"droidtrans/internal/license"
 	"droidtrans/internal/store"
 	"droidtrans/internal/update"
 )
@@ -272,6 +273,10 @@ func (a *App) tryReuse(dest string, expected int64) (int64, bool) {
 			return st.Size(), true
 		}
 		_ = os.Remove(dest)
+	}
+	// 目标路径上的续传/幂等写入仍然免费；跨批次复用已有文件是 Pro 的去重与增量能力。
+	if !a.Can(license.FeatureDedupe) || !a.Can(license.FeatureIncrementalSync) {
+		return 0, false
 	}
 	src := a.Store.ExistingPath(filepath.Base(dest), expected)
 	if src == "" || src == dest {

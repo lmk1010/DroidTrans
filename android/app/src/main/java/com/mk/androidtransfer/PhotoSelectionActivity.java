@@ -559,7 +559,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
         List<PhotoInfo> next = new ArrayList<>(source);
         if (isFilteringUploaded) {
             try {
-                Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths();
+                Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths(serverUrl);
                 List<PhotoInfo> filtered = new ArrayList<>();
                 for (PhotoInfo photo : next) {
                     if (!uploadedPaths.contains(photo.getStablePath())
@@ -910,8 +910,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                     fileBody
             );
 
-            String relativePath = photo.getPath().replaceFirst("^/storage/emulated/0/", "")
-                    .replaceFirst("^/sdcard/", "");
+            String relativePath = photo.getUploadRelativePath();
             RequestBody relativePathBody = RequestBody.create(
                     MediaType.parse("text/plain"),
                     relativePath
@@ -973,7 +972,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
             int excluded = 0;
             try {
                 if (isFilteringUploaded) {
-                    Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths();
+                    Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths(serverUrl);
                     for (PhotoInfo photo : source) {
                         if (uploadedPaths.contains(photo.getStablePath())
                                 || uploadedPaths.contains(photo.getPath())) {
@@ -1028,7 +1027,7 @@ public class PhotoSelectionActivity extends AppCompatActivity {
     private void updateFilterButtonText() {
         new Thread(() -> {
             try {
-                Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths();
+                Set<String> uploadedPaths = uploadRecordDao.getUploadedFilePaths(serverUrl);
                 int uploadedCount = 0;
                 
                 for (PhotoInfo photo : allPhotoList) {

@@ -107,6 +107,7 @@ public class PhotoInfo implements Parcelable {
             String rel = relativePath.endsWith("/") ? relativePath : relativePath + "/";
             return "/storage/emulated/0/" + rel + name;
         }
+        if (!TextUtils.isEmpty(uri)) return uri;
         return name;
     }
 

@@ -119,6 +119,26 @@ func TestDeleteBatchRefusesTraversal(t *testing.T) {
 	}
 }
 
+func TestAlbumTransferRequiresPro(t *testing.T) {
+	a := newTestApp(t)
+	r := httptest.NewRequest("POST", "/api/transfer",
+		strings.NewReader(`{"selection":{"albums":["/sdcard/DCIM/Camera"],"singles":[]}}`))
+	w := httptest.NewRecorder()
+
+	a.startTransfer(w, r)
+
+	if w.Code != http.StatusPaymentRequired {
+		t.Fatalf("状态码 %d，想要 %d", w.Code, http.StatusPaymentRequired)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["error"] != "请先激活 Pro" {
+		t.Fatalf("错误信息 %v，想要 Pro 提示", body["error"])
+	}
+}
+
 func TestGuardBlocksForeignOrigin(t *testing.T) {
 	a := newTestApp(t)
 	h := a.withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

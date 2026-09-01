@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"droidtrans/internal/adb"
+	"droidtrans/internal/license"
 	"droidtrans/internal/store"
 )
 
@@ -533,6 +534,18 @@ func (a *App) listAlbumMedia(album string) []string {
 }
 
 func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	if sel, ok := body["selection"].(map[string]any); ok {
+		if albums, ok := sel["albums"].([]any); ok && len(albums) > 0 && !a.Can(license.FeatureUSBBulk) {
+			writeJSON(w, http.StatusPaymentRequired, map[string]any{
+				"success": false,
+				"error":   "请先激活 Pro",
+				"feature": string(license.FeatureUSBBulk),
+			})
+			return
+		}
+	}
+
 	a.xferMu.Lock()
 	if a.xferActive {
 		a.xferMu.Unlock()
@@ -556,7 +569,6 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	a.xferLive = map[string]int64{}
 	a.xferMu.Unlock()
 
-	body := readJSON(r)
 	output, _ := body["output_dir"].(string)
 	if output == "" {
 		output = a.OutputDir
