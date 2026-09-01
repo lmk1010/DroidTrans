@@ -109,6 +109,70 @@ public final class Pairing {
         }
     }
 
+    /**
+     * 对面怎么配对。
+     *
+     * <p>"approve" 表示对面是一台手机：点一下同意就行，不用输码。
+     * 电脑不发这个字段，返回空串 —— 猜错的方向要选安全的那一边，
+     * 也就是「还是要输码」。
+     */
+    public static String pairingMode(String baseUrl) {
+        Request req = new Request.Builder()
+                .url("http://" + normalize(baseUrl) + "/api/wifi/info")
+                .get()
+                .build();
+        try (Response res = CLIENT.newCall(req).execute()) {
+            ResponseBody rb = res.body();
+            if (!res.isSuccessful() || rb == null) {
+                return "";
+            }
+            return new JSONObject(rb.string()).optString("pairing_mode", "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * 敲门：不带码地请求一次，挂在那儿等对面点头。
+     *
+     * <p>用的还是 /api/pair，只是 code 留空 —— 对面认得这个约定，
+     * 会把这条请求挂起来弹个框问它的主人。所以协议一个字节都没改。
+     *
+     * <p>要等人点击，超时给得比常规请求宽得多。
+     */
+    public static boolean knock(Context ctx, String baseUrl) {
+        OkHttpClient patient = CLIENT.newBuilder()
+                .readTimeout(60, TimeUnit.SECONDS)
+                .build();
+        String host = normalize(baseUrl);
+        try {
+            JSONObject body = new JSONObject();
+            body.put("code", "");
+            body.put("device_id", deviceId(ctx));
+            body.put("device_name", android.os.Build.MODEL);
+
+            Request req = new Request.Builder()
+                    .url("http://" + host + "/api/pair")
+                    .post(RequestBody.create(body.toString(),
+                            MediaType.parse("application/json; charset=utf-8")))
+                    .build();
+            try (Response res = patient.newCall(req).execute()) {
+                ResponseBody rb = res.body();
+                if (!res.isSuccessful() || rb == null) {
+                    return false;
+                }
+                String token = new JSONObject(rb.string()).optString("token", "");
+                if (token.isEmpty()) {
+                    return false;
+                }
+                saveToken(ctx, host, token);
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /** 这台电脑是否要求配对；连不上时按「不要求」处理，让原有流程照旧报错。 */
     public static boolean requiresPairing(String baseUrl) {
         Request req = new Request.Builder()

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 卡片按下去要有水波。安卓用户按一张卡没有 ripple 会觉得这东西没反应。 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#334992FF">
+    <item android:id="@android:id/mask">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFFFF" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/card_glass" />
+</ripple>

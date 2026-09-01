@@ -1,0 +1,156 @@
+# Xcode 工程由这个文件生成：xcodegen generate
+#
+# 不把 .xcodeproj 当作要手工维护的东西 —— 那个文件格式改一行就是几十行 diff，
+# 冲突了基本没法读。加文件、加 target、改配置都在这里改，然后重新生成。
+
+name: DroidTrans
+options:
+  bundleIdPrefix: life.mkstore
+  # XcodeGen 会忽略 test 下的 storeKitConfiguration，脚本负责补上去
+  postGenCommand: python3 ../scripts/fix-ios-scheme.py
+  # 主力市场在海外，英文是基准语言；中文跟着系统走。
+  # 少了 developmentLanguage，App Store 会把中文当默认语言展示。
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "15.5"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 24D88Q3K3S
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0.3"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    # 传输的是用户的照片，一律不许出现在崩溃日志/控制台里
+    OTHER_SWIFT_FLAGS: "$(inherited)"
+
+targets:
+  DroidTrans:
+    type: application
+    platform: iOS
+    sources:
+      - path: DroidTrans
+        excludes:
+          # 本地测试用的商品定义，不打进包里
+          - "Resources/Products.storekit"
+    info:
+      path: DroidTrans/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: 卓传
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # ---- 本地网络 ----
+        # 这三项少一个，Bonjour 就是静默扫不到任何东西，不会报错。
+        NSLocalNetworkUsageDescription: 卓传需要在局域网里找到你的电脑，才能直接传文件。
+        NSBonjourServices:
+          - _droidtrans._tcp
+        # 桌面端是 http://192.168.x.x:9500，没有证书也不可能有。
+        # 不开这一项，ATS 会直接掐掉所有请求。
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # ---- 相册与相机 ----
+        NSPhotoLibraryUsageDescription: 选择要传到电脑的照片和视频。
+        NSPhotoLibraryAddUsageDescription: 把电脑传过来的照片保存到相册。
+        NSCameraUsageDescription: 扫描电脑上显示的二维码完成配对。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: life.mkstore.droidtrans
+        CODE_SIGN_ENTITLEMENTS: DroidTrans/DroidTrans.entitlements
+    dependencies:
+      - target: ShareExtension
+        embed: true
+
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+      # 协议和传输不复制，两个 target 编同一批源文件。
+      # 复制一份出来迟早会分叉，而分叉的恰恰是线格式。
+      - path: DroidTrans/Core
+      - path: DroidTrans/App/DesignSystem.swift
+      - path: DroidTrans/App/L10n.swift
+      # 扩展有自己的 bundle，文案和素材得各带一份，
+      # 否则它显示的是 key 本身、图标全是空白
+      - path: DroidTrans/Resources/en.lproj
+      - path: DroidTrans/Resources/zh-Hans.lproj
+      - path: DroidTrans/Resources/Assets.xcassets
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: DroidTrans
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 30
+              NSExtensionActivationSupportsMovieWithMaxCount: 10
+              NSExtensionActivationSupportsFileWithMaxCount: 30
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSBonjourServices:
+          - _droidtrans._tcp
+        NSLocalNetworkUsageDescription: DroidTrans finds your computer on the local network so files can go straight there.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: life.mkstore.droidtrans.share
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
+        SKIP_INSTALL: YES
+
+  DroidTransUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: DroidTransUITests
+      # SKTestSession 要从测试 bundle 里读商品定义
+      - path: DroidTrans/Resources/Products.storekit
+    dependencies:
+      - target: DroidTrans
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: life.mkstore.droidtrans.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: DroidTrans
+
+  DroidTransTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: DroidTransTests
+      - path: DroidTransTests/testdata
+        type: folder
+    dependencies:
+      - target: DroidTrans
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: life.mkstore.droidtrans.tests
+        # 单测只跑纯逻辑（协议编码之类），不需要把宿主 App 拉起来
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  DroidTrans:
+    build:
+      targets:
+        DroidTrans: all
+        DroidTransTests: [test]
+        DroidTransUITests: [test]
+    run:
+      config: Debug
+      # 本地商品定义。没有它，Product.products(for:) 在模拟器上永远返回空数组，
+      # 界面就是一排「—」的价格。
+      storeKitConfiguration: DroidTrans/Resources/Products.storekit
+    test:
+      config: Debug
+      targets:
+        - DroidTransTests
+        - DroidTransUITests
+      storeKitConfiguration: DroidTrans/Resources/Products.storekit

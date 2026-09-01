@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 整个 App 的底。一块死板的深灰显得廉价，压一层很淡的渐变才有纵深。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="@color/bg1"
+        android:endColor="@color/bg0"
+        android:type="linear" />
+</shape>

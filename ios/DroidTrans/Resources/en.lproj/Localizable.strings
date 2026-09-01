@@ -1,0 +1,264 @@
+/* Common */
+"common.cancel" = "Cancel";
+"common.done" = "Done";
+"common.ok" = "OK";
+"common.retry" = "Retry";
+"common.clear" = "Clear";
+"common.copy" = "Copy";
+"common.connect" = "Connect";
+"common.send" = "Send";
+"common.sending" = "Sending…";
+
+/* Connect */
+"connect.title" = "DroidTrans";
+"connect.status.scanning" = "Looking for computers on your Wi-Fi…";
+"connect.status.preparing" = "Getting ready…";
+"connect.status.one" = "Tap to connect";
+"connect.status.many" = "Tap the computer you want";
+"connect.hint" = "DroidTrans must be running on the computer, and both devices on the same Wi-Fi.\nSome routers block discovery — scan the QR code or type the address instead.";
+"connect.scan" = "Scan QR code";
+"connect.manual" = "Enter address";
+"connect.failed" = "Can't connect";
+
+/* Manual address */
+"manual.title" = "Enter address";
+"manual.hint" = "The DroidTrans window on your computer shows this address.";
+"manual.placeholder" = "192.168.1.5";
+
+/* Scanner */
+"scan.title" = "Scan QR code";
+"scan.aim" = "Point at the QR code on your computer";
+"scan.noPermission" = "No camera access";
+"scan.noPermission.hint" = "Turn it on under Settings → DroidTrans → Camera to pair by scanning.\nOr go back and type the address instead.";
+"scan.openSettings" = "Open Settings";
+
+/* Pairing */
+"pair.title" = "Pair with this computer";
+"pair.hint" = "The DroidTrans window on your computer shows a six-digit code.";
+"pair.cancel" = "Cancel, pick another";
+
+/* Home */
+"home.title" = "DroidTrans";
+"home.connected" = "Connected";
+"home.switch" = "Switch";
+"home.send" = "Send to computer";
+"home.send.photos" = "Photos";
+"home.send.files" = "Files";
+"home.send.text" = "Text";
+"home.inbox" = "From your computer";
+"home.transfers" = "Transfers";
+"home.get" = "Get";
+"home.copied" = "Copied";
+"home.savedToFiles" = "Saved to Files";
+"home.sentToClipboard" = "Sent to the computer's clipboard";
+"home.error" = "Something went wrong";
+
+/* Inbox items */
+"item.text" = "Text · tap Copy";
+"item.missing" = "This file is no longer on the computer";
+"item.taken" = "already taken";
+
+/* Transfer states */
+"job.waiting" = "Waiting";
+"job.done" = "Sent";
+"job.skipped" = "Already on the computer, skipped";
+"job.canceled" = "Canceled";
+
+/* Send text */
+"text.title" = "Text or link";
+"text.placeholder" = "Paste or type…";
+"text.hint" = "It goes straight to your computer's clipboard — just paste.";
+"text.failed" = "Couldn't send";
+
+/* History */
+"history.title" = "History";
+"history.empty" = "Nothing transferred yet";
+"history.empty.hint" = "Photos and files you send or receive show up here.";
+"history.clear.confirm" = "Clear all history?";
+"history.clear.hint" = "This only clears the list. Files you've sent or received aren't touched.";
+"history.clear.keep" = "Never mind";
+"history.today" = "Today";
+"history.yesterday" = "Yesterday";
+"history.to" = "to";
+"history.from" = "from";
+
+/* Settings */
+"settings.title" = "Settings";
+"settings.thisPhone" = "This phone";
+"settings.name" = "Name";
+"settings.name.hint" = "Your computer shows this phone under this name.";
+"settings.connection" = "Connection";
+"settings.computer" = "Computer";
+"settings.address" = "Address";
+"settings.channel" = "Channel";
+"settings.disconnect" = "Disconnect";
+"settings.about" = "About";
+"settings.version" = "Version";
+"settings.website" = "Website";
+"settings.help" = "Help";
+"settings.channel.tcp" = "Fast transfer (TCP)";
+"settings.channel.ftp" = "FTP";
+"settings.channel.http" = "HTTP";
+"settings.channel.auto" = "Automatic";
+
+/* Errors */
+"error.unreachable" = "Can't reach the computer. Make sure both are on the same Wi-Fi.";
+"error.timeout" = "The computer didn't respond in time";
+"error.canceled" = "Canceled";
+"error.notDroidTrans" = "DroidTrans isn't running there";
+"error.badAddress" = "Can't make sense of that address: %@";
+"error.noToken" = "The computer didn't return a token";
+"error.gone" = "This file is no longer on the computer";
+"error.notInList" = "That item is no longer in the list";
+"error.refused" = "The computer refused the connection — the fast-transfer port may be closed";
+"error.netUnreachable" = "No route to the computer. Make sure both are on the same Wi-Fi.";
+"error.connReset" = "The computer dropped the connection";
+"error.replyTimeout" = "Timed out waiting for the computer to reply";
+"error.closedNoReply" = "The other side closed the connection without replying";
+"error.cantOpenFile" = "Can't open file: %@";
+
+"item.untitled" = "Untitled";
+
+/* Share extension */
+"share.title" = "Send to computer";
+"share.sending" = "Sending…";
+"share.sent" = "Delivered";
+"share.failed" = "Couldn't send";
+"share.notPaired" = "No computer yet";
+"share.notPaired.hint" = "Open DroidTrans and connect to your computer first. After that, sharing from here sends straight to it.";
+"share.nothing" = "Nothing here that can be sent";
+
+/* Gallery */
+"gallery.title" = "Gallery";
+"gallery.empty" = "Nothing received yet";
+"gallery.empty.hint" = "Photos and files you take from your computer land here. Long-press to delete.";
+"gallery.delete" = "Delete";
+"gallery.delete.confirm" = "Delete from this phone?";
+
+/* License */
+"license.title" = "DroidTrans Pro";
+"license.active" = "Activated";
+"license.attention" = "Needs attention";
+"license.free" = "You're on the free version";
+"license.free.hint" = "Sending photos and files, and resuming interrupted transfers, are always free.\nPro unlocks the advanced features. One code covers macOS, Android and iOS.";
+"license.enterCode" = "Activation code";
+"license.activate" = "Activate";
+"license.activating" = "Activating…";
+"license.buy" = "Don't have a code? See pricing →";
+"license.code" = "Code";
+"license.email" = "Email";
+"license.expires" = "Expires";
+"license.remove" = "Deactivate on this device";
+"license.refresh" = "Renew online";
+"license.failed" = "Activation failed";
+"license.plan.year" = "1 year";
+"license.plan.years3" = "3 years";
+"license.plan.lifetime" = "Lifetime";
+"license.err.malformed" = "The license is malformed";
+"license.err.signature" = "The license signature didn't check out";
+"license.err.product" = "This license isn't for DroidTrans";
+"license.err.expired" = "Your license has expired. Renew to keep using Pro.";
+"license.err.stale" = "It's been a while since this was checked online. Connect once to renew.";
+"license.err.noLicense" = "The server didn't return a license";
+"license.err.notFound" = "No such activation code";
+"license.err.revoked" = "This code has been revoked";
+"license.err.tooMany" = "Too many devices activated. Deactivate one first.";
+"license.err.invalidCode" = "That code doesn't look right";
+
+"license.free.short" = "Free";
+
+/* Me */
+"me.title" = "Me";
+"me.free" = "Free version";
+"me.free.hint" = "Upgrade to Pro for the advanced features";
+"me.upgrade" = "Upgrade";
+"me.device" = "This device";
+"me.validUntil" = "Valid until %@";
+"me.privacy" = "Privacy Policy";
+
+/* Pro */
+"pro.headline" = "Upgrade to DroidTrans Pro";
+"pro.sub" = "Sending photos and files, and resuming transfers, stay free forever.\nPro unlocks the advanced features.";
+"pro.perk.free" = "The basics stay free, with no limits";
+"pro.perk.threePlatforms" = "Buy once — works on macOS, Android and iOS";
+"pro.perk.oneTime" = "A one-time purchase, not a subscription";
+"pro.best" = "BEST VALUE";
+"pro.owned" = "Purchased";
+"pro.buy" = "Buy for %@";
+"pro.buying" = "Processing…";
+"pro.unavailable" = "Products unavailable right now";
+"pro.restore" = "Restore purchases";
+"pro.haveCode" = "I have a code";
+"pro.legal" = "One-time purchase. Nothing renews automatically. You can review it under Me.";
+"license.manage" = "Manage code";
+"iap.pending" = "This purchase is awaiting approval. It'll unlock automatically once approved.";
+"iap.nothingToRestore" = "No purchases found for this Apple ID";
+"iap.err.badTransaction" = "This purchase didn't verify. Please get in touch.";
+"iap.err.unknownProduct" = "Unrecognized product";
+"home.idle" = "Nothing in flight";
+"home.idle.hint" = "Pick photos or files above to send them over.\nDrop files onto DroidTrans on your computer and they'll show up here to grab.";
+
+/* Photo sync */
+"sync.title" = "Photo sync";
+"sync.subtitle" = "Only what's new — already-sent photos are skipped";
+"sync.locked" = "Incremental photo sync";
+"sync.locked.hint" = "Stop keeping track of what you've already sent.\nOpen it, tap once, and only the new shots go over.";
+"sync.perk.incremental" = "Only new photos — the rest are skipped";
+"sync.perk.original" = "Originals, no transcoding or compression";
+"sync.perk.free" = "Picking photos by hand stays free";
+"sync.unlock" = "Unlock Pro";
+"sync.scanning" = "Checking what's new in your library…";
+"sync.found" = "%@ not sent yet";
+"sync.found.hint" = "Anything already sent is skipped. You can stop anytime and pick up later.";
+"sync.start" = "Send these %@";
+"sync.upToDate" = "Everything's over there";
+"sync.upToDate.hint" = "All %@ photos are already on your computer.";
+"sync.keepOpen" = "Keep DroidTrans in the foreground while it transfers";
+"sync.done" = "Sent %@ photos";
+"sync.someFailed" = "%@ didn't go through — they'll be retried next time";
+"sync.denied" = "No photo library access";
+"sync.denied.hint" = "Allow access under Settings → DroidTrans → Photos so it can tell what's new.";
+"sync.failed" = "Sync failed";
+"sync.err.export" = "Couldn't export this photo";
+"sync.forget" = "Clear record";
+"sync.forget.short" = "Reset";
+"sync.forget.confirm" = "Forget what's been sent?";
+"sync.forget.hint" = "This only clears the record of what you've sent. Files already on your computer aren't touched. The next sync will treat the whole library as new.";
+
+/* Start screen: pick who you're sending to */
+"start.subtitle" = "Send to what?";
+"start.desktop" = "A computer";
+"start.desktop.sub" = "Same Wi-Fi, one tap to connect";
+"start.iphone" = "Another iPhone";
+"start.iphone.sub" = "DroidTrans on both, one sends one receives";
+"start.android" = "An Android phone";
+"start.android.sub" = "DroidTrans on the Android, scan to pair";
+"start.settings" = "Settings";
+"peer.title" = "Phone to phone";
+"peer.building" = "This channel is still being built";
+"peer.building.hint" = "Phone-to-phone needs one phone to act as the receiver and announce itself.\nThat part is in progress — use a computer as the go-between for now.";
+"peer.back" = "Back to start";
+"pair.required" = "Pairing required";
+"pair.wrongCode" = "Wrong pairing code";
+"peer.err.truncated" = "File was cut short";
+"peer.role" = "Sending or receiving?";
+"peer.send" = "Send";
+"peer.send.sub" = "Find the other device and send to it";
+"peer.recv" = "Receive";
+"peer.recv.sub" = "Make this device visible to the other one";
+"peer.waiting" = "Waiting for the other device";
+"peer.code" = "Pairing code";
+"peer.addr" = "Or have them type this address";
+"peer.got" = "Received";
+"peer.open" = "Open in Files";
+"peer.stop" = "Stop receiving";
+"peer.needWifi" = "Join a Wi-Fi network first — both devices must be on the same one";
+"approval.waiting" = "Waiting for them to accept";
+"approval.hint" = "A prompt is showing on their phone — once they tap Accept you're connected.";
+"peer.someone" = "Someone";
+"peer.knock.title" = "wants to connect";
+"peer.knock.allow" = "Accept";
+"peer.knock.deny" = "Decline";
+"peer.codeFallback" = "Can't find each other? Have them type this address and code";
+"peer.tapToAccept" = "When they tap this device on their phone, you'll get a prompt here — accept and you're connected.";
+"peer.err.port" = "Port is busy — try again or restart the app";

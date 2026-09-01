@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  深色品牌配色。取值和 iOS 端 App/DesignSystem.swift、桌面端 styles.css 对齐 ——
+  三端的「品牌蓝」必须是同一个蓝，不然摆在官网截图里一眼就散。
+
+  老的 values/colors.xml 是浅色那一套，还给存量页面用着，暂时并存。
+-->
+<resources>
+    <!-- 品牌蓝。就是 app_logo.svg 里那个 #4992FF -->
+    <color name="brand">#4992FF</color>
+    <color name="brand_deep">#2F6FD0</color>
+
+    <!-- 底色。不是纯黑 —— 纯黑上面放半透明卡片会脏，也压不出层次 -->
+    <color name="bg0">#0A0D14</color>
+    <color name="bg1">#111622</color>
+
+    <color name="ink">#F0FFFFFF</color>
+    <color name="ink2">#94FFFFFF</color>
+    <color name="ink3">#5CFFFFFF</color>
+
+    <color name="glass">#0DFFFFFF</color>
+    <color name="glass_stroke">#1AFFFFFF</color>
+
+    <color name="ok">#8EF0C0</color>
+    <color name="danger">#FF7A7A</color>
+</resources>

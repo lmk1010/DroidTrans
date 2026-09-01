@@ -1,0 +1,264 @@
+/* 通用 */
+"common.cancel" = "取消";
+"common.done" = "完成";
+"common.ok" = "知道了";
+"common.retry" = "重试";
+"common.clear" = "清空";
+"common.copy" = "复制";
+"common.connect" = "连接";
+"common.send" = "发送";
+"common.sending" = "发送中…";
+
+/* 连接 */
+"connect.title" = "卓传";
+"connect.status.scanning" = "正在找同一 Wi-Fi 下的电脑…";
+"connect.status.preparing" = "准备中…";
+"connect.status.one" = "点一下就连上";
+"connect.status.many" = "点一下要连的电脑";
+"connect.hint" = "电脑上的卓传要开着，两台设备连同一个 Wi-Fi。\n有些路由器会拦掉自动发现，那就扫码或手输地址。";
+"connect.scan" = "扫码连接";
+"connect.manual" = "手输地址";
+"connect.failed" = "连不上";
+
+/* 手输地址 */
+"manual.title" = "手输地址";
+"manual.hint" = "电脑上的卓传窗口里会显示这个地址。";
+"manual.placeholder" = "192.168.1.5";
+
+/* 扫码 */
+"scan.title" = "扫码连接";
+"scan.aim" = "对准电脑上的二维码";
+"scan.noPermission" = "没有相机权限";
+"scan.noPermission.hint" = "到「设置 → 卓传 → 相机」里打开，就能扫码配对了。\n也可以回上一步手输电脑地址。";
+"scan.openSettings" = "打开设置";
+
+/* 配对 */
+"pair.title" = "和这台电脑配对";
+"pair.hint" = "电脑上的卓传窗口里显示着六位配对码。";
+"pair.cancel" = "取消，换一台";
+
+/* 主界面 */
+"home.title" = "卓传";
+"home.connected" = "已连接";
+"home.switch" = "切换";
+"home.send" = "发送到电脑";
+"home.send.photos" = "照片";
+"home.send.files" = "文件";
+"home.send.text" = "文字";
+"home.inbox" = "电脑发来的";
+"home.transfers" = "传输";
+"home.get" = "取回";
+"home.copied" = "已复制";
+"home.savedToFiles" = "已存到「文件」";
+"home.sentToClipboard" = "已发到电脑剪贴板";
+"home.error" = "出错了";
+
+/* 待取条目 */
+"item.text" = "文字 · 点右边复制";
+"item.missing" = "文件在电脑上已经不在了";
+"item.taken" = "已取过";
+
+/* 传输状态 */
+"job.waiting" = "等待中";
+"job.done" = "已传完";
+"job.skipped" = "电脑上已经有了，跳过";
+"job.canceled" = "已取消";
+
+/* 发文字 */
+"text.title" = "文字或链接";
+"text.placeholder" = "粘贴或输入…";
+"text.hint" = "发过去会直接放进电脑的剪贴板，粘贴就能用。";
+"text.failed" = "没发出去";
+
+/* 历史 */
+"history.title" = "传输记录";
+"history.empty" = "还没有传过东西";
+"history.empty.hint" = "传过的照片、文件都会记在这里。";
+"history.clear.confirm" = "清空所有记录？";
+"history.clear.hint" = "只清掉这份清单，已经传过去和取回来的文件都不会动。";
+"history.clear.keep" = "算了";
+"history.today" = "今天";
+"history.yesterday" = "昨天";
+"history.to" = "发往";
+"history.from" = "来自";
+
+/* 设置 */
+"settings.title" = "设置";
+"settings.thisPhone" = "这台手机";
+"settings.name" = "名字";
+"settings.name.hint" = "电脑上会用这个名字显示这台手机。";
+"settings.connection" = "连接";
+"settings.computer" = "电脑";
+"settings.address" = "地址";
+"settings.channel" = "通道";
+"settings.disconnect" = "断开连接";
+"settings.about" = "关于";
+"settings.version" = "版本";
+"settings.website" = "卓传官网";
+"settings.help" = "使用帮助";
+"settings.channel.tcp" = "快传（TCP）";
+"settings.channel.ftp" = "FTP";
+"settings.channel.http" = "HTTP";
+"settings.channel.auto" = "自动";
+
+/* 错误 */
+"error.unreachable" = "连不上电脑，确认两边在同一个 Wi-Fi 下";
+"error.timeout" = "电脑响应超时";
+"error.canceled" = "已取消";
+"error.notDroidTrans" = "那头没有卓传在跑";
+"error.badAddress" = "地址看不懂：%@";
+"error.noToken" = "电脑没有返回令牌";
+"error.gone" = "这个文件在电脑上已经不在了";
+"error.notInList" = "清单上已经没有这一条了";
+"error.refused" = "电脑拒绝了连接，可能快传端口没开";
+"error.netUnreachable" = "网络不通，确认两边在同一个 Wi-Fi 下";
+"error.connReset" = "连接被电脑中断";
+"error.replyTimeout" = "等待电脑应答超时";
+"error.closedNoReply" = "连接被对方关闭，没有收到应答";
+"error.cantOpenFile" = "打不开文件：%@";
+
+"item.untitled" = "未命名";
+
+/* 分享扩展 */
+"share.title" = "发到电脑";
+"share.sending" = "正在发送…";
+"share.sent" = "已送达";
+"share.failed" = "没发出去";
+"share.notPaired" = "还没连过电脑";
+"share.notPaired.hint" = "先打开卓传连上你的电脑，之后从这里分享就能直接发过去了。";
+"share.nothing" = "这里没有能发的内容";
+
+/* 图库 */
+"gallery.title" = "图库";
+"gallery.empty" = "还没有取回过东西";
+"gallery.empty.hint" = "从电脑取回来的照片和文件会存在这里，长按可以删除。";
+"gallery.delete" = "删除";
+"gallery.delete.confirm" = "从这台手机上删掉？";
+
+/* 授权 */
+"license.title" = "卓传 Pro";
+"license.active" = "已激活";
+"license.attention" = "需要处理一下";
+"license.free" = "现在用的是免费版";
+"license.free.hint" = "传照片、传文件、断点续传这些一直都免费。\nPro 解锁的是高级功能，一个激活码 macOS、Android、iOS 通用。";
+"license.enterCode" = "激活码";
+"license.activate" = "激活";
+"license.activating" = "激活中…";
+"license.buy" = "还没有激活码？去看看定价 →";
+"license.code" = "激活码";
+"license.email" = "邮箱";
+"license.expires" = "到期";
+"license.remove" = "在这台设备上取消激活";
+"license.refresh" = "联网续签";
+"license.failed" = "激活失败";
+"license.plan.year" = "一年";
+"license.plan.years3" = "三年";
+"license.plan.lifetime" = "终身买断";
+"license.err.malformed" = "许可证格式不对";
+"license.err.signature" = "许可证签名验证不通过";
+"license.err.product" = "这份许可证不是给卓传的";
+"license.err.expired" = "授权已过期，续费后可以继续用。";
+"license.err.stale" = "太久没联网校验了，连一次网就好。";
+"license.err.noLicense" = "服务端没有返回许可证";
+"license.err.notFound" = "没有这个激活码";
+"license.err.revoked" = "这个激活码已被吊销";
+"license.err.tooMany" = "激活的设备太多了，先在其他设备上取消激活";
+"license.err.invalidCode" = "激活码格式不对";
+
+"license.free.short" = "免费版";
+
+/* 我的 */
+"me.title" = "我的";
+"me.free" = "免费版";
+"me.free.hint" = "升级 Pro 解锁高级功能";
+"me.upgrade" = "升级";
+"me.device" = "这台设备";
+"me.validUntil" = "有效期至 %@";
+"me.privacy" = "隐私政策";
+
+/* Pro */
+"pro.headline" = "升级到卓传 Pro";
+"pro.sub" = "传照片、传文件、断点续传，这些一直都免费。\nPro 解锁的是高级功能。";
+"pro.perk.free" = "基础功能永久免费，不设限制";
+"pro.perk.threePlatforms" = "一次购买，macOS、Android、iOS 通用";
+"pro.perk.oneTime" = "一次性买断，不是订阅，不会自动续费";
+"pro.best" = "最划算";
+"pro.owned" = "已购买";
+"pro.buy" = "%@ 购买";
+"pro.buying" = "处理中…";
+"pro.unavailable" = "商品暂时取不到";
+"pro.restore" = "恢复购买";
+"pro.haveCode" = "已有激活码";
+"pro.legal" = "一次性付费，不会自动续费。购买后可在「我的」里查看。";
+"license.manage" = "管理激活码";
+"iap.pending" = "这笔购买还在等待确认，完成后会自动开通。";
+"iap.nothingToRestore" = "这个 Apple ID 下没有找到已购买的记录";
+"iap.err.badTransaction" = "这笔购买没通过校验，请联系我们";
+"iap.err.unknownProduct" = "认不出这个商品";
+"home.idle" = "现在没有正在传的东西";
+"home.idle.hint" = "上面选照片或文件就能发到电脑。\n电脑上把文件拖进卓传窗口，这里就会出现，点「取回」拿下来。";
+
+/* 相册同步 */
+"sync.title" = "相册同步";
+"sync.subtitle" = "只传新增的，已传过的自动跳过";
+"sync.locked" = "相册增量同步";
+"sync.locked.hint" = "不用自己记哪些传过了。\n每次打开点一下，只把新拍的传到电脑。";
+"sync.perk.incremental" = "只传新增，已传过的自动跳过";
+"sync.perk.original" = "原图原视频，不转码不压缩";
+"sync.perk.free" = "手动选照片传一直是免费的";
+"sync.unlock" = "解锁 Pro";
+"sync.scanning" = "正在看相册里有什么新的…";
+"sync.found" = "%@ 张还没传过";
+"sync.found.hint" = "传过的会自动跳过。中途可以取消，下次接着来。";
+"sync.start" = "传这 %@ 张";
+"sync.upToDate" = "都已经传过了";
+"sync.upToDate.hint" = "相册里的 %@ 张都在电脑上了。";
+"sync.keepOpen" = "传输期间请让卓传保持在前台";
+"sync.done" = "传完了 %@ 张";
+"sync.someFailed" = "%@ 张没传成功，下次会重试";
+"sync.denied" = "没有相册权限";
+"sync.denied.hint" = "到「设置 → 卓传 → 照片」里允许访问，才能看出哪些是新拍的。";
+"sync.failed" = "同步出错了";
+"sync.err.export" = "这张照片导不出来";
+"sync.forget" = "清空记录";
+"sync.forget.short" = "重置";
+"sync.forget.confirm" = "忘掉已传记录？";
+"sync.forget.hint" = "只清掉「哪些传过了」这份账，电脑上已有的文件不会动。下次同步会把整个相册当成新的。";
+
+/* 主界面：先选跟谁传 */
+"start.subtitle" = "跟谁传？";
+"start.desktop" = "和电脑传";
+"start.desktop.sub" = "同一个 Wi-Fi，点一下就连上";
+"start.iphone" = "和 iPhone 传";
+"start.iphone.sub" = "两台都装卓传，一台发一台收";
+"start.android" = "和安卓机传";
+"start.android.sub" = "安卓那台装卓传，扫一下就通";
+"start.settings" = "设置";
+"peer.title" = "手机互传";
+"peer.building" = "这条通道还在做";
+"peer.building.hint" = "手机之间传东西，要有一台先当「接收方」把自己亮出来。\n这部分正在开发，先用「和电脑传」中转。";
+"peer.back" = "回主界面";
+"pair.required" = "需要先配对";
+"pair.wrongCode" = "配对码不对";
+"peer.err.truncated" = "文件没收全";
+"peer.role" = "这次你是发还是收？";
+"peer.send" = "我要发";
+"peer.send.sub" = "去找对面那台，把东西传过去";
+"peer.recv" = "我要收";
+"peer.recv.sub" = "把这台亮出来，让对面找到";
+"peer.waiting" = "等对面来连";
+"peer.code" = "配对码";
+"peer.addr" = "或让对面手输这个地址";
+"peer.got" = "已收到";
+"peer.open" = "在「文件」里打开";
+"peer.stop" = "停止接收";
+"peer.needWifi" = "先连上 Wi-Fi，两台要在同一个网络里";
+"approval.waiting" = "正在等对方确认";
+"approval.hint" = "对方手机上会弹出一个提示，让他点「同意」就连上了。";
+"peer.someone" = "有人";
+"peer.knock.title" = "想连过来";
+"peer.knock.allow" = "同意";
+"peer.knock.deny" = "拒绝";
+"peer.codeFallback" = "连不上？让对方手输地址和这个码";
+"peer.tapToAccept" = "对方在他那台上点到你，你这边会弹一下，同意就通了。";
+"peer.err.port" = "端口被占用，换个网络或重启 App 再试";

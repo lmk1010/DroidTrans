@@ -22,6 +22,77 @@
 
     <style name="Theme.AndroidTransfer" parent="Base.Theme.AndroidTransfer" />
 
+    <!--
+      深色主题。新做的几屏（主界面、手机互传）用它，和 iOS 端一个调子。
+      存量页面还挂在上面那套浅色主题上，逐屏迁过来。
+
+      状态栏和导航栏都透明，内容自己往里缩 —— 深色底一直铺到屏幕边缘，
+      中间夹一条灰色系统栏会把整屏切成两段。
+    -->
+    <style name="Theme.DroidTrans.Dark" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSurface">@color/bg1</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="android:colorBackground">@color/bg0</item>
+        <item name="colorOnBackground">@color/ink</item>
+        <item name="colorError">@color/danger</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:windowBackground">@drawable/bg_dark</item>
+        <!-- 弹窗跟着一起走深色。不设这一条，AlertDialog 会退回系统默认的
+             浅色卡片，在整屏深色里白得刺眼 —— 一眼就看出是「另一个 App」。 -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.DroidTrans.Dialog</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.DroidTrans.Dialog</item>
+    </style>
+
+    <!--
+      深色弹窗。圆角、玻璃底、品牌蓝的确认键。
+
+      走主题而不是每个弹窗单独打补丁：手输地址、发送文字、敲门确认
+      是三处不同的代码，样式却该是同一套。
+    -->
+    <style name="ThemeOverlay.DroidTrans.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">#1B2130</item>
+        <item name="colorOnSurface">@color/ink</item>
+        <item name="colorOnSurfaceVariant">@color/ink2</item>
+        <item name="colorPrimary">@color/brand</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/ink2</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.DroidTrans.Dialog</item>
+        <item name="materialAlertDialogTitleTextStyle">
+            @style/TextAppearance.DroidTrans.DialogTitle
+        </item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.DroidTrans.Dialog.Positive</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.DroidTrans.Dialog.Negative</item>
+    </style>
+
+    <style name="ShapeAppearance.DroidTrans.Dialog" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">22dp</item>
+    </style>
+
+    <style name="TextAppearance.DroidTrans.DialogTitle"
+        parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 确认键是实心的品牌蓝：同意/连接这类动作要一眼看得出主次，
+         两个一样淡的文字按钮会让人犹豫按哪个 -->
+    <style name="Widget.DroidTrans.Dialog.Positive" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/brand</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="cornerRadius">14dp</item>
+    </style>
+
+    <style name="Widget.DroidTrans.Dialog.Negative" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/ink2</item>
+    </style>
+
     <style name="Widget.AndroidTransfer.FlatCard" parent="Widget.Material3.CardView.Filled">
         <item name="cardElevation">0dp</item>
         <item name="strokeWidth">0dp</item>

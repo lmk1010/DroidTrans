@@ -1,0 +1,221 @@
+/// 找电脑。App 没连上电脑时的整个世界。
+
+import SwiftUI
+
+struct ConnectView: View {
+    @EnvironmentObject private var app: AppState
+    @StateObject private var discovery = DesktopDiscovery()
+
+    @State private var showManual = false
+    @State private var showScanner = false
+
+    var body: some View {
+        ZStack {
+            AppBackground()
+
+            VStack(spacing: 0) {
+                header
+
+                Spacer(minLength: Space.m)
+
+                RadarView(
+                    devices: discovery.found,
+                    scanning: discovery.isBrowsing,
+                    onTap: { d in Task { await app.connect(to: d) } }
+                )
+                .padding(.horizontal, Space.s)
+
+                Spacer(minLength: Space.m)
+
+                footer
+            }
+
+            // 浮在最上层，不挤占标题那一行
+            VStack {
+                HStack {
+                    homeButton
+                    Spacer()
+                }
+                Spacer()
+            }
+            .padding(.leading, Space.gutter - 10)   // 图标在 44 的框里居中，视觉左边缘要补回来
+            .padding(.top, Space.s)
+        }
+        .preferredColorScheme(.dark)
+        .task { discovery.start() }
+        .onDisappear { discovery.stop() }
+        .sheet(isPresented: $showManual) {
+            ManualAddressSheet { address in
+                Task { await app.connect(toAddress: address) }
+            }
+        }
+        .sheet(isPresented: $showScanner) {
+            ScannerSheet { payload in
+                showScanner = false
+                Task { await handleScan(payload) }
+            }
+        }
+        .overlay {
+            if app.busy {
+                ZStack {
+                    Color.black.opacity(0.35).ignoresSafeArea()
+                    ProgressView().controlSize(.large).tint(.white)
+                }
+            }
+        }
+        .alert(L("connect.failed"), isPresented: .constant(app.error != nil)) {
+            Button(L("common.ok")) { app.error = nil }
+        } message: {
+            Text(app.error ?? "")
+        }
+    }
+
+    // MARK: - 头
+
+    private var header: some View {
+        VStack(spacing: Space.s) {
+            Text(L("connect.title"))
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(Color.ink)
+
+            Text(statusText)
+                .font(.system(size: 14.5))
+                .foregroundStyle(Color.ink2)
+                .animation(.default, value: statusText)
+        }
+        .padding(.top, Space.l)
+    }
+
+    /// 左上角的 home 键。
+    ///
+    /// 原来是一颗「‹ 电脑名」的玻璃胶囊，占掉标题上方一整行，
+    /// 名字长一点就把「卓传」顶下去。这里只要一个图标 ——
+    /// 无边框、直接浮在背景上，不参与竖排布局，标题该在哪就在哪。
+    ///
+    /// 没连过任何电脑时它不消失，只是暗下来且点不动：
+    /// 一个会来回出现的按钮，比一个常驻的灰按钮更让人分神。
+    /// 返回主界面。
+    ///
+    /// 只做一件事：把界面切回去。连接一直停在 AppState 里没断过，
+    /// 所以按下去是即时的 —— 不发包、不转圈、不会弹「连不上」。
+    ///
+    /// 左上角的 home 键：回主界面。
+    ///
+    /// 到这一步它才终于是个诚实的返回键 —— 主界面（StartView）现在任何时候都在，
+    /// 所以这里只改一个路由，不发包、不转圈、不会失败、不会变灰。
+    ///
+    /// 之前它试过连上次那台电脑、试过认雷达上的设备，都是在拿「返回」当「重连」用。
+    /// 用户按 home 想看到的是主界面，不是一次网络请求。
+    private var homeButton: some View {
+        HomeButton { app.route = .start }
+    }
+
+    private var statusText: String {
+        if !discovery.found.isEmpty {
+            return discovery.found.count == 1 ? L("connect.status.one") : L("connect.status.many")
+        }
+        return discovery.isBrowsing ? L("connect.status.scanning") : L("connect.status.preparing")
+    }
+
+    // MARK: - 底
+
+    private var footer: some View {
+        VStack(spacing: Space.m) {
+            if discovery.found.isEmpty && discovery.isBrowsing {
+                // 搜不到是有具体原因的，直接把原因和出路说清楚，
+                // 比让用户对着空雷达猜要好
+                Text(L("connect.hint"))
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Color.ink3)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .padding(.horizontal, Space.xl)
+            }
+
+            HStack(spacing: Space.m) {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label(L("connect.scan"), systemImage: "qrcode.viewfinder")
+                }
+                .buttonStyle(GhostButtonStyle())
+
+                Button {
+                    showManual = true
+                } label: {
+                    Label(L("connect.manual"), systemImage: "keyboard")
+                }
+                .buttonStyle(GhostButtonStyle())
+            }
+            .padding(.horizontal, Space.gutter)
+        }
+        .padding(.bottom, Space.xl)
+    }
+
+    // MARK: - 扫码结果
+
+    /// 桌面端二维码里是 http://ip:9500/?c=187931 —— 地址后面挂着配对码，
+    /// 扫一下就能连上并配好，用户不用再手输那六位。
+    private func handleScan(_ payload: String) async {
+        let code = URLComponents(string: payload)?
+            .queryItems?.first(where: { $0.name == "c" })?.value
+        await app.connect(toAddress: payload, pairingCode: code)
+    }
+}
+
+// MARK: - 手输地址
+
+private struct ManualAddressSheet: View {
+    var onSubmit: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack {
+            AppBackground()
+
+            VStack(alignment: .leading, spacing: Space.l) {
+                HStack {
+                    Button(L("common.cancel")) { dismiss() }
+                        .foregroundStyle(Color.ink2)
+                    Spacer()
+                    Text(L("manual.title"))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.ink)
+                    Spacer()
+                    Button(L("common.cancel")) { }.opacity(0).disabled(true)
+                }
+
+                Text(L("manual.hint"))
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(Color.ink2)
+
+                TextField("", text: $text, prompt: Text(L("manual.placeholder")).foregroundColor(Color.ink3))
+                    .font(.system(size: 20, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.ink)
+                    .keyboardType(.numbersAndPunctuation)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .focused($focused)
+                    .padding(Space.l)
+                    .glass(radius: Radius.tile)
+
+                Button(L("common.connect")) {
+                    onSubmit(text)
+                    dismiss()
+                }
+                .buttonStyle(PrimaryButtonStyle(enabled: !trimmed.isEmpty))
+                .disabled(trimmed.isEmpty)
+
+                Spacer()
+            }
+            .padding(Space.gutter)
+        }
+        .preferredColorScheme(.dark)
+        .onAppear { focused = true }
+    }
+
+    private var trimmed: String { text.trimmingCharacters(in: .whitespaces) }
+}

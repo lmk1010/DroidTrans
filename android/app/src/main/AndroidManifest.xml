@@ -52,16 +52,51 @@
         android:theme="@style/Theme.AndroidTransfer"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
+        <!--
+          启动页是 StartActivity：先选跟谁传（电脑 / iPhone / 安卓机），
+          再进对应的流程。DashboardActivity 从此只负责「和电脑传」那一条。
+        -->
         <activity
-            android:name=".DashboardActivity"
+            android:name=".StartActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.DroidTrans.Dark">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 「和电脑传」那条路：找电脑 → 配对 → 主界面 -->
+        <activity
+            android:name=".ConnectActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.DroidTrans.Dark" />
+
+        <activity
+            android:name=".PairActivity"
+            android:exported="false"
+            android:theme="@style/Theme.DroidTrans.Dark"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".HomeActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.DroidTrans.Dark" />
+
+        <activity
+            android:name=".PeerActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.DroidTrans.Dark" />
+
+        <activity
+            android:name=".DashboardActivity"
+            android:exported="true"
+            android:launchMode="singleTop" />
 
         <activity
             android:name=".UsbGuideActivity"

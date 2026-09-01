@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 弹窗里的输入框。系统默认那个在深色底上是白底黑字，得自己给底和描边。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingTop="4dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/inputHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:lineSpacingExtra="2dp"
+        android:textColor="@color/ink2"
+        android:textSize="13.5sp" />
+
+    <EditText
+        android:id="@+id/input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/input_box"
+        android:importantForAutofill="no"
+        android:padding="14dp"
+        android:textColor="@color/ink"
+        android:textColorHint="@color/ink3"
+        android:textSize="16sp" />
+</LinearLayout>

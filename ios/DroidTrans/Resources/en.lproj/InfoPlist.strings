@@ -1,0 +1,5 @@
+"CFBundleDisplayName" = "DroidTrans";
+"NSLocalNetworkUsageDescription" = "DroidTrans finds your computer on the local network so files can go straight there.";
+"NSPhotoLibraryUsageDescription" = "Pick the photos and videos you want to send to your computer.";
+"NSPhotoLibraryAddUsageDescription" = "Save photos your computer sends to your photo library.";
+"NSCameraUsageDescription" = "Scan the QR code shown on your computer to pair.";

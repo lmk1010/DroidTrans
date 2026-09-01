@@ -421,4 +421,67 @@
     <string name="hotspot_open">去开热点</string>
     <string name="hotspot_no_settings">打不开热点设置，请手动到系统设置里开</string>
     <string name="card_receive_pending">%1$d 个文件等着取</string>
+
+    <!-- 主界面：先选跟谁传 -->
+    <string name="start_subtitle">跟谁传？</string>
+    <string name="start_desktop">和电脑传</string>
+    <string name="start_desktop_sub">同一个 Wi-Fi，点一下就连上</string>
+    <string name="start_iphone">和 iPhone 传</string>
+    <string name="start_iphone_sub">两台都装卓传，一台发一台收</string>
+    <string name="start_android">和安卓机传</string>
+    <string name="start_android_sub">两台都装卓传，扫一下就通</string>
+    <string name="start_settings">设置</string>
+
+    <!-- 手机互传 -->
+    <string name="peer_role">这次你是发还是收？</string>
+    <string name="peer_send">我要发</string>
+    <string name="peer_send_sub">去找对面那台，把东西传过去</string>
+    <string name="peer_recv">我要收</string>
+    <string name="peer_recv_sub">把这台亮出来，让对面找到</string>
+    <string name="peer_waiting">等对面来连</string>
+    <string name="peer_code">配对码</string>
+    <string name="peer_addr">或让对面手输这个地址</string>
+    <string name="peer_got">已收到</string>
+    <string name="peer_stop">停止接收</string>
+    <string name="peer_need_wifi">先连上 Wi-Fi，两台要在同一个网络里</string>
+    <string name="peer_back">回主界面</string>
+
+    <!-- 找电脑 -->
+    <string name="connect_status_scanning">正在找同一 Wi-Fi 下的电脑…</string>
+    <string name="connect_status_one">点一下就连上</string>
+    <string name="connect_status_many">点一下要连的电脑</string>
+    <string name="connect_hint">电脑上的卓传要开着，两台设备连同一个 Wi-Fi。\n有些路由器会拦掉自动发现，那就扫码或手输地址。</string>
+    <string name="connect_scan">扫码连接</string>
+    <string name="connect_manual">手输地址</string>
+    <string name="connect_failed">连不上</string>
+
+    <!-- 配对 -->
+    <string name="pair_screen_title">和这台电脑配对</string>
+    <string name="pair_hint">电脑上的卓传窗口里显示着六位配对码。</string>
+    <string name="pair_cancel">取消，换一台</string>
+    <string name="pair_wrong">配对码不对</string>
+
+    <!-- 连上电脑之后 -->
+    <string name="home_switch">切换</string>
+    <string name="home_send">发送</string>
+    <string name="home_sending">正在传</string>
+    <string name="home_photos">照片和视频</string>
+    <string name="home_photos_sub">从相册里挑，直接进电脑</string>
+    <string name="home_files">文件</string>
+    <string name="home_files_sub">任意格式，多选一次传完</string>
+    <string name="home_text">一段文字</string>
+    <string name="home_text_sub">发过去直接进电脑的剪贴板</string>
+    <string name="home_text_sent">已发到电脑剪贴板</string>
+    <string name="home_send_failed">没发出去</string>
+
+    <!-- 手机互传：点头即可，不用输码 -->
+    <string name="peer_knock_title">想连过来</string>
+    <string name="peer_knock_allow">同意</string>
+    <string name="peer_knock_deny">拒绝</string>
+    <string name="approval_waiting">正在等对方确认…</string>
+    <string name="approval_refused">对方没有同意</string>
+    <string name="peer_knock_hint">同意之后，这台手机上的文件会被对方看到吗？不会 —— 对方只能往这里发东西。</string>
+    <string name="connect_manual_hint">电脑上的卓传窗口里显示着它的地址，照着输就行。</string>
+    <string name="common_connect">连接</string>
+    <string name="common_send">发送</string>
 </resources>

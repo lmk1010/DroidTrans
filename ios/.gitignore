@@ -1,0 +1,8 @@
+# 由 project.yml 生成，不进版本库 —— 它一改就是几十行 diff，冲突了没法读
+DroidTrans.xcodeproj/
+
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
