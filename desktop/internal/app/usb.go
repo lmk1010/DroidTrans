@@ -632,6 +632,28 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	if deviceID == "" {
 		deviceID = "usb"
 	}
+	if a.Can(license.FeatureIncrementalSync) && a.Store != nil && a.ADB != nil {
+		var skipped int
+		photos, skipped = filterNewPhotos(
+			photos,
+			a.ADB.FileSize,
+			func(name string, size int64) string {
+				return a.Store.ExistingPathForDevice(deviceID, name, size)
+			},
+		)
+		if len(photos) == 0 {
+			a.xferMu.Lock()
+			a.xferActive = false
+			a.xferRunning = false
+			a.xferMu.Unlock()
+			writeJSON(w, 400, map[string]any{
+				"success": false,
+				"skipped": skipped,
+				"error":   "没有新增照片",
+			})
+			return
+		}
+	}
 	a.devMu.Lock()
 	deviceName := strings.TrimSpace(a.model)
 	a.devMu.Unlock()
@@ -665,6 +687,53 @@ func (a *App) startTransfer(w http.ResponseWriter, r *http.Request) {
 	})
 	go a.runTransfer(ctx, photos, dest, deviceID, batchID)
 	writeJSON(w, 200, map[string]any{"success": true, "total": len(photos), "device_id": deviceID, "batch_id": batchID})
+}
+
+func filterNewPhotos(
+	photos []string,
+	sizeOf func(string) int64,
+	existingPath func(string, int64) string,
+) ([]string, int) {
+	keep := make([]bool, len(photos))
+	for i := range keep {
+		keep[i] = true
+	}
+
+	workers := 8
+	if len(photos) < workers {
+		workers = len(photos)
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				remote := photos[index]
+				size := sizeOf(remote)
+				if size > 0 && existingPath(path.Base(remote), size) != "" {
+					keep[index] = false
+				}
+			}
+		}()
+	}
+	for i := range photos {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+
+	remaining := make([]string, 0, len(photos))
+	skipped := 0
+	for i, remote := range photos {
+		if !keep[i] {
+			skipped++
+			continue
+		}
+		remaining = append(remaining, remote)
+	}
+	return remaining, skipped
 }
 
 func (a *App) runTransfer(ctx context.Context, photos []string, output, deviceID, batchID string) {

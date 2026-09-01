@@ -112,10 +112,25 @@ ON CONFLICT(device_id, batch_id) DO UPDATE SET
 }
 
 func (s *Store) ExistingPath(name string, size int64) string {
+	return s.existingPath("", name, size)
+}
+
+func (s *Store) ExistingPathForDevice(deviceID, name string, size int64) string {
+	return s.existingPath(deviceID, name, size)
+}
+
+func (s *Store) existingPath(deviceID, name string, size int64) string {
 	if name == "" || size <= 0 {
 		return ""
 	}
-	row := s.db.QueryRow(`SELECT path FROM photos WHERE name=? AND size=? ORDER BY id DESC LIMIT 1`, name, size)
+	query := `SELECT path FROM photos WHERE name=? AND size=?`
+	args := []any{name, size}
+	if deviceID != "" {
+		query += ` AND device_id=?`
+		args = append(args, deviceID)
+	}
+	query += ` ORDER BY id DESC LIMIT 1`
+	row := s.db.QueryRow(query, args...)
 	var p string
 	if err := row.Scan(&p); err != nil {
 		return ""

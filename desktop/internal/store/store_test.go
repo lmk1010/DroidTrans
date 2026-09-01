@@ -77,6 +77,28 @@ func TestExistingPathOnlyMatchesRealFile(t *testing.T) {
 	}
 }
 
+func TestExistingPathForDeviceDoesNotCrossDevices(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	real := filepath.Join(dir, "real.jpg")
+	if err := os.WriteFile(real, []byte("0123456789"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.AddPhoto("dev-a", "b1", "same.jpg", real, 10)
+
+	if got := s.ExistingPathForDevice("dev-a", "same.jpg", 10); got != real {
+		t.Errorf("同一设备没有命中: %q", got)
+	}
+	if got := s.ExistingPathForDevice("dev-b", "same.jpg", 10); got != "" {
+		t.Errorf("不同设备不应命中: %q", got)
+	}
+}
+
 func TestClear(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

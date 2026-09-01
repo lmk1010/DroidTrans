@@ -139,6 +139,30 @@ func TestAlbumTransferRequiresPro(t *testing.T) {
 	}
 }
 
+func TestFilterNewPhotos(t *testing.T) {
+	photos, skipped := filterNewPhotos(
+		[]string{"/sdcard/DCIM/Camera/a.jpg", "/sdcard/DCIM/Camera/b.jpg"},
+		func(remote string) int64 {
+			if strings.HasSuffix(remote, "a.jpg") {
+				return 10
+			}
+			return 20
+		},
+		func(name string, size int64) string {
+			if name == "a.jpg" && size == 10 {
+				return "/archive/a.jpg"
+			}
+			return ""
+		},
+	)
+	if skipped != 1 {
+		t.Fatalf("跳过数量 = %d，想要 1", skipped)
+	}
+	if len(photos) != 1 || photos[0] != "/sdcard/DCIM/Camera/b.jpg" {
+		t.Fatalf("保留文件不对: %+v", photos)
+	}
+}
+
 func TestGuardBlocksForeignOrigin(t *testing.T) {
 	a := newTestApp(t)
 	h := a.withGuard(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
