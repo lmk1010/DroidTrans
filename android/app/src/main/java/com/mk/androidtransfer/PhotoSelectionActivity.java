@@ -1032,7 +1032,8 @@ public class PhotoSelectionActivity extends AppCompatActivity {
                 int uploadedCount = 0;
                 
                 for (PhotoInfo photo : allPhotoList) {
-                    if (uploadedPaths.contains(photo.getPath())) {
+                    if (uploadedPaths.contains(photo.getStablePath())
+                            || uploadedPaths.contains(photo.getPath())) {
                         uploadedCount++;
                     }
                 }
