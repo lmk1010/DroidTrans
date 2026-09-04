@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -64,8 +65,15 @@ func Snapshot() Status {
 }
 
 // Check 拉远端清单；失败只记错误，不打扰用户。
+//
+// DROIDTRANS_NO_UPDATE=1 时整个跳过。离线开发、以及录演示视频时用得上 ——
+// 顶上挂一条「有新版本」的横幅会盖住页面标题，而那是要给别人看的画面。
 func Check() Status {
 	st := Status{Current: Current(), CheckedAt: time.Now().UTC().Format(time.RFC3339)}
+	if os.Getenv("DROIDTRANS_NO_UPDATE") == "1" {
+		store(st)
+		return st
+	}
 	client := &http.Client{Timeout: 8 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, ManifestURL, nil)
 	if err != nil {

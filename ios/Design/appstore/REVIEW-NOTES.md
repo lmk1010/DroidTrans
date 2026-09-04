@@ -28,15 +28,26 @@ TO TEST THE MAIN FLOW YOU NEED THE FREE MAC APP:
 6. You are now on the main screen and can send photos, files or text.
 
 IF YOU CANNOT SET UP A MAC:
-A screen recording of the full flow is attached / available at <填视频地址>.
+A 56-second screen recording of the complete flow (Mac app on the left,
+iPhone on the right) is here:
+   https://droidtrans.mkstore.life/review-demo.mp4
+It shows the phone already paired with the Mac, files listed from the
+computer, a 3.15 GB video being pulled down with live progress, the
+received-files gallery, the transfer history, and the paywall.
 
 IN-APP PURCHASE:
-"DroidTrans Pro" is a one-time purchase (also offered as 1-year and 3-year
-non-renewing subscriptions). All basic transfer features are free and
-unlimited — Pro only lifts quotas (single file over 4 GB, unlimited Photos
-library export) and adds incremental library sync and complete Live Photo
-export. The comparison table on the paywall shows exactly what free
-includes. There is no external purchase link anywhere in the app.
+"DroidTrans Pro" is a single non-consumable, one-time purchase. There is
+no subscription of any kind.
+
+All transfer features are free and unlimited in count. Pro only lifts two
+quotas — the 4 GB per-file size limit and the 1,000-item photo library
+export limit — and adds incremental library sync and complete Live Photo
+(photo + paired video) export. The comparison table on the paywall lists
+exactly what the free tier includes.
+
+To reach the paywall: open the app, tap the account icon in the top right,
+then "DroidTrans Pro". No account or login is required to purchase.
+There is no external purchase link anywhere in the app.
 
 PERMISSIONS:
 - Local Network: required to find the computer. The app does nothing

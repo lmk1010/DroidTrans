@@ -1323,6 +1323,13 @@ main { padding: 52px 40px 40px; overflow: auto; }
   nav { flex-direction: row; gap: 2px; overflow-x: auto; scrollbar-width: none; }
   nav::-webkit-scrollbar { display: none; }
   nav button { padding: 8px 10px; }
+  /* 横条模式下只留主标题。
+     副标题（数据线·仅安卓 / 无线·双向…）和分组标题（手机 / 这台电脑）
+     在竖排侧边栏里是有用的，横过来就变成一堆挤在一起互相重叠的碎字 ——
+     窗口一窄，导航就糊成一团。 */
+  nav .nav-copy small { display: none; }
+  nav .nav-group { display: none; }
+  nav button { white-space: nowrap; }
   .rail-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; gap: 4px; }
   .rail-foot .lic-btn, .rail-foot .lang-btn { width: auto; }
   .rail-foot .hint { display: none; }   /* 设备名在主界面里已经有了 */
