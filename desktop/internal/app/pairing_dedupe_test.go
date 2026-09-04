@@ -7,6 +7,7 @@ package app
 // 而实际只有一部 iPhone。用户看到这个数字只会觉得有人偷偷连了他的电脑。
 
 import (
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -83,5 +84,40 @@ func TestLoadCleansUpExistingDuplicates(t *testing.T) {
 	}
 	if !again.Valid(newest) {
 		t.Error("留下的不是最新那条，手机会被迫重新配对")
+	}
+}
+
+// 任何一次带令牌的请求都要把设备标成在线。
+//
+// 手机只在连接那一刻上报过一次身份，之后取文件的请求都不带设备标识 ——
+// 于是它正在下载一个 3 GB 的文件，电脑端却还写着「还没有手机连过来」。
+// 演示视频里就是这么录出来的：手机显示「已连接 · 61%」，Mac 显示
+// 「No phone yet」，两边自相矛盾。
+func TestAuthenticatedRequestMarksDeviceOnline(t *testing.T) {
+	a := newTestApp(t)
+	a.Pair = LoadPairing(filepath.Join(t.TempDir(), "pair.json"))
+	tok, ok := a.Pair.Pair(a.Pair.Code, "iphone-1", "iPhone 16 Pro")
+	if !ok {
+		t.Fatal("配对失败")
+	}
+
+	if _, seen := a.devices["iphone-1"]; seen {
+		t.Fatal("还没发过请求就已经在线了")
+	}
+
+	// 取文件那类请求只带令牌，不带 device_id
+	req := httptest.NewRequest("GET", "/api/outbox/file/abc", nil)
+	req.RemoteAddr = "192.168.1.50:51000"
+	req.Header.Set("X-DT-Token", tok)
+	if !a.allowRequest(req) {
+		t.Fatal("带着有效令牌却被拒了")
+	}
+
+	d, seen := a.devices["iphone-1"]
+	if !seen {
+		t.Fatal("认证通过了，设备却没被标成在线 —— 电脑端会一直显示「还没有手机连过来」")
+	}
+	if d.Name != "iPhone 16 Pro" {
+		t.Errorf("设备名不对：%q", d.Name)
 	}
 }

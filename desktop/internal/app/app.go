@@ -1182,9 +1182,13 @@ func (a *App) touchDevice(id, name string) {
 	if name != "" {
 		d.Name = name
 	}
+	name = d.Name
 	d.LastHeartbeat = now
 	a.mu.Unlock()
-	a.Store.UpsertDevice(id, d.Name)
+	// Store 可能没接（测试里就没有）。少一行持久化不该让整条请求崩掉。
+	if a.Store != nil {
+		a.Store.UpsertDevice(id, name)
+	}
 }
 
 func shortID(id string) string {

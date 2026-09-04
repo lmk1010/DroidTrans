@@ -180,6 +180,24 @@ func (p *Pairing) Valid(token string) bool {
 	return true
 }
 
+// PeerOf 这个令牌属于哪台设备。
+//
+// 用来在任何一次带令牌的请求上刷新「在线」状态：手机只在连接那一刻
+// 上报过一次身份，之后取文件的请求都不带设备标识 —— 于是它正在下载
+// 一个 3 GB 的文件，电脑端却还写着「还没有手机连过来」。
+func (p *Pairing) PeerOf(token string) (id, name string, ok bool) {
+	if token == "" {
+		return "", "", false
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	peer, found := p.Tokens[token]
+	if !found || peer.DeviceID == "" {
+		return "", "", false
+	}
+	return peer.DeviceID, peer.Name, true
+}
+
 func (p *Pairing) Revoke(hint string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -234,7 +252,15 @@ func (a *App) allowRequest(r *http.Request) bool {
 	if isLoopback(r) {
 		return true
 	}
-	return a.Pair.Valid(r.Header.Get("X-DT-Token"))
+	tok := r.Header.Get("X-DT-Token")
+	if !a.Pair.Valid(tok) {
+		return false
+	}
+	// 认得出是谁，就顺手把它标成在线
+	if id, name, ok := a.Pair.PeerOf(tok); ok {
+		a.touchDevice(id, name)
+	}
+	return true
 }
 
 func (a *App) pairHandler(w http.ResponseWriter, r *http.Request) {
