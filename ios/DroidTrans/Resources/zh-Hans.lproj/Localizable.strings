@@ -16,6 +16,7 @@
 "connect.status.one" = "点一下就连上";
 "connect.status.many" = "点一下要连的电脑";
 "connect.hint" = "电脑上的卓传要开着，两台设备连同一个 Wi-Fi。\n有些路由器会拦掉自动发现，那就扫码或手输地址。";
+"connect.getDesktop" = "电脑上还没装？去下载 →";
 "connect.scan" = "扫码连接";
 "connect.manual" = "手输地址";
 "connect.failed" = "连不上";
@@ -148,11 +149,13 @@
 "license.enterCode" = "激活码";
 "license.activate" = "激活";
 "license.activating" = "激活中…";
-"license.buy" = "还没有激活码？去看看定价 →";
+"license.buy" = "还没有激活码？看看 Pro 档位 →";
 "license.code" = "激活码";
 "license.email" = "邮箱";
 "license.expires" = "到期";
 "license.remove" = "在这台设备上取消激活";
+"license.remove.confirm" = "在这台设备上取消激活？";
+"license.remove.hint" = "这台设备会回到免费版。激活码本身仍然有效，可以在别的设备上继续用。";
 "license.refresh" = "联网续签";
 "license.failed" = "激活失败";
 "license.plan.year" = "一年";
@@ -183,18 +186,20 @@
 
 /* Pro */
 "pro.headline" = "升级到卓传 Pro";
-"pro.sub" = "传照片、传文件、断点续传，这些一直都免费。\nPro 解锁的是高级功能。";
-"pro.perk.free" = "基础功能永久免费，不设限制";
-"pro.perk.threePlatforms" = "一次购买，macOS、Android、iOS 通用";
-"pro.perk.oneTime" = "一次性买断，不是订阅，不会自动续费";
-"pro.best" = "最划算";
+"pro.sub" = "照片传输、文件传输、断点续传始终免费。
+Pro 解锁以下功能。";
+"pro.perYear" = "约 %@ / 年";
+"pro.forever" = "一次买断，无后续费用";
+"pro.best" = "推荐";
 "pro.owned" = "已购买";
-"pro.buy" = "%@ 购买";
+"pro.buy" = "以 %@ 购买";
 "pro.buying" = "处理中…";
-"pro.unavailable" = "商品暂时取不到";
+"pro.unavailable" = "暂时无法获取商品信息";
 "pro.restore" = "恢复购买";
-"pro.haveCode" = "已有激活码";
-"pro.legal" = "一次性付费，不会自动续费。购买后可在「我的」里查看。";
+"pro.haveCode" = "使用激活码";
+"pro.legal" = "一次性付费，不会自动续费或自动扣款。";
+"pro.terms" = "服务条款";
+"pro.privacy" = "隐私政策";
 "license.manage" = "管理激活码";
 "iap.pending" = "这笔购买还在等待确认，完成后会自动开通。";
 "iap.nothingToRestore" = "这个 Apple ID 下没有找到已购买的记录";
@@ -215,6 +220,7 @@
 "sync.scanning" = "正在看相册里有什么新的…";
 "sync.found" = "%@ 张还没传过";
 "sync.found.hint" = "传过的会自动跳过。中途可以取消，下次接着来。";
+"sync.overQuota" = "%@ 项超过 4 GB，免费版传不了。升级 Pro 后可传任意大小。";
 "sync.start" = "传这 %@ 张";
 "sync.upToDate" = "都已经传过了";
 "sync.upToDate.hint" = "相册里的 %@ 张都在电脑上了。";
@@ -269,3 +275,43 @@
 "peer.codeFallback" = "连不上？让对方手输地址和这个码";
 "peer.tapToAccept" = "对方在他那台上点到你，你这边会弹一下，同意就通了。";
 "peer.err.port" = "端口被占用，换个网络或重启 App 再试";
+
+/* Pro 对比表 */
+"pro.compare.free" = "免费";
+"pro.limit.title" = "文件超过免费额度";
+"pro.limit.body" = "免费版单个文件最大 4 GB。升级 Pro 后不限大小。";
+"pro.limit.upgrade" = "升级 Pro";
+"pro.compare.pro" = "Pro";
+"pro.compare.mine" = "Pro · 你的";
+"pro.owned.summary" = "已解锁 %@ 项能力，额度全部解除";
+"pro.compare.yes" = "✓";
+"pro.compare.no" = "—";
+"pro.compare.unlimited" = "不限";
+"pro.section.phone" = "手机";
+"pro.section.mac" = "电脑端 · 同一激活码";
+"pro.row.lan" = "局域网互传";
+"pro.row.lan.both" = "不限量";
+"pro.row.filesize" = "单个文件大小";
+"pro.row.filesize.free" = "4 GB";
+"pro.row.sync" = "相册增量同步";
+"pro.row.live" = "实况照片导出";
+"pro.row.live.free" = "仅静态图";
+"pro.row.live.pro" = "含动态";
+"pro.row.resume" = "断点续传";
+"pro.row.export" = "照片图库导出";
+"pro.row.export.free" = "1000 项/次";
+"pro.row.usb" = "USB 整册导入";
+"pro.row.dedupe" = "跨批次去重";
+"pro.compare.note" = "基础传输永远免费。Pro 只解除额度上限，不锁基础功能。";
+
+/* 连不上时的排查页。没有路由器的场合（在车上、在外面）只能靠热点 */
+"trouble.link" = "连不上？看这里";
+"trouble.title" = "连不上怎么办";
+"trouble.same.title" = "1. 两台连的是同一个网络吗";
+"trouble.same.body" = "手机连的是 5G 频段、电脑连的是 2.4G，在有些路由器上是互相看不见的。换成同一个 Wi-Fi 名字再试。";
+"trouble.guest.title" = "2. 是不是连的访客网络";
+"trouble.guest.body" = "公司、酒店、咖啡馆的 Wi-Fi 大多开了「设备隔离」，同一个网络里的设备之间也不让通。这种网络下只能用下面的热点办法。";
+"trouble.hotspot.title" = "3. 没有路由器：开个人热点";
+"trouble.hotspot.body" = "让其中一台开热点，另一台连上去，两台就在同一个网络里了，而且走的是直连，速度通常比公共 Wi-Fi 还快。\n\niPhone：设置 → 个人热点 → 打开「允许其他人加入」。\n安卓：设置 → 便携式热点 → 打开。\n\n开热点这台不用连 Wi-Fi，用流量也行 —— 文件不走流量，只在两台之间传。";
+"trouble.manual.title" = "4. 还是搜不到：手输地址";
+"trouble.manual.body" = "有些路由器会把自动发现的组播包拦掉，但直接连是通的。在对方那台上看地址和六位配对码，回上一页点「手输地址」填进去。";

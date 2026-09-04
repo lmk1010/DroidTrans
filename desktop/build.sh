@@ -93,7 +93,37 @@ PY
 </dict>
 </plist>
 PLIST
-  codesign --force --deep -s - "$APP" >/dev/null 2>&1 || true
+  # 签名。
+  #
+  # 找得到 Developer ID 证书就正式签，否则退回 ad-hoc（-s -）。
+  # ad-hoc 只能让程序在本机跑起来，对 Gatekeeper 完全无效 ——
+  # 用户下载后照样会看到「无法验证开发者」。
+  #
+  # 要正式签名需要先在本机装好证书：
+  #   Xcode → Settings → Accounts → Manage Certificates → + → Developer ID Application
+  # 装好之后 `security find-identity -v -p codesigning` 能看到它。
+  # 注意末尾的 || true：没有证书时 grep 返回 1，而 VAR="$(...)" 这种赋值
+  # 会继承命令替换的退出码，在 set -e 下会让整个脚本在这一行静默退出 ——
+  # 表现是构建到一半就没了，连 dmg 都不生成。
+  SIGN_ID="${MACOS_SIGN_IDENTITY:-}"
+  if [[ -z "$SIGN_ID" ]]; then
+    SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+      | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/' || true)"
+  fi
+
+  if [[ -n "$SIGN_ID" ]]; then
+    echo "codesign  $SIGN_ID"
+    # --options runtime 是公证的硬性前提，少了它 notarytool 会直接拒收
+    codesign --force --deep --timestamp --options runtime \
+      -s "$SIGN_ID" "$APP"
+    codesign --verify --deep --strict "$APP" && echo "  签名校验通过"
+    SIGNED=1
+  else
+    codesign --force --deep -s - "$APP" >/dev/null 2>&1 || true
+    echo "codesign  未找到 Developer ID 证书，退回 ad-hoc 签名"
+    echo "          用户下载后仍会遇到「无法验证开发者」"
+    SIGNED=0
+  fi
   echo "app $APP"
 
   STAGE="/tmp/droidtrans-dmg"
@@ -101,14 +131,44 @@ PLIST
   mkdir -p "$STAGE"
   cp -R "$APP" "$STAGE/DroidTrans.app"
   ln -s /Applications "$STAGE/Applications"
-  cat > "$STAGE/先看这里.txt" <<'EOF'
+  # 签过名并公证的包，用户双击就能开；只有未签名的产物才需要教人绕过 Gatekeeper。
+  if [[ "${SIGNED:-0}" == "1" ]]; then
+    cat > "$STAGE/先看这里.txt" <<'EOF'
 把 DroidTrans 拖进 Applications，推出磁盘后再打开。
 
-若提示已损坏，终端执行：
+本应用已通过 Apple 签名与公证，双击即可运行。
+EOF
+  else
+    cat > "$STAGE/先看这里.txt" <<'EOF'
+把 DroidTrans 拖进 Applications，推出磁盘后再打开。
+
+这是一个未签名的开发构建。若提示已损坏，终端执行：
 xattr -cr /Applications/DroidTrans.app
 EOF
+  fi
   DMG="$OUT/DroidTrans-${VERSION}-macos-arm64.dmg"
   rm -f "$DMG"
   hdiutil create -volname "DroidTrans ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
   echo "dmg $DMG ($(du -h "$DMG" | awk '{print $1}'))"
+
+  # 公证。
+  #
+  # 签名只证明「是谁做的」，公证才让 Gatekeeper 放行 ——
+  # 少了这一步，用户下载后依然要手动 xattr。
+  #
+  # 需要先存一份凭据（只需做一次）：
+  #   xcrun notarytool store-credentials droidtrans \\
+  #     --apple-id <你的 Apple ID> --team-id 24D88Q3K3S \\
+  #     --password <App 专用密码，appleid.apple.com 生成>
+  if [[ "${SIGNED:-0}" == "1" ]] && xcrun notarytool history --keychain-profile "${NOTARY_PROFILE:-droidtrans}" >/dev/null 2>&1; then
+    echo "notarize  提交中（几分钟）…"
+    if xcrun notarytool submit "$DMG" --keychain-profile "${NOTARY_PROFILE:-droidtrans}" --wait; then
+      # stapler 把公证票据钉进 DMG，用户首次打开就不需要联网核验
+      xcrun stapler staple "$DMG" && echo "notarize  已公证并装订"
+    else
+      echo "notarize  失败，产出的包仍需用户手动 xattr"
+    fi
+  elif [[ "${SIGNED:-0}" == "1" ]]; then
+    echo "notarize  跳过：没有名为 ${NOTARY_PROFILE:-droidtrans} 的公证凭据"
+  fi
 fi

@@ -181,10 +181,27 @@ final class AppState: ObservableObject {
     /// 全程不弹错也不转菊花：连不上（电脑关了、换了网络）就静静留在雷达页，
     /// 用户会看到扫描在跑，该点哪台点哪台 —— 一个「上次的电脑连不上」的
     /// 弹窗在这里只会碍事。
+    /// 测试专用：跳过发现，直接连一台指定的电脑。
+    ///
+    ///     -uitest-desktop 192.168.1.5
+    ///
+    /// 模拟器上的 Bonjour 不可靠（本地网络权限、mDNS 都可能拦住），
+    /// 结果是绝大多数界面在 CI 上根本走不到，等于没有验收。
+    /// 这个开关只在带 -uitest-fresh 时生效，正式包里没有任何入口。
+    private func connectForTesting() async {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-uitest-desktop"),
+              i + 1 < args.count else { return }
+        let host = args[i + 1]
+        guard let desktop = try? await DesktopDiscovery.verify(host) else { return }
+        await connect(to: desktop)
+    }
+
     func restoreLastSession() async {
         // UI 测试要从干净状态起步，自动重连会让雷达页整个跳过去
         if ProcessInfo.processInfo.arguments.contains("-uitest-fresh") {
             store.resetForTesting()
+            await connectForTesting()
             return
         }
         guard case .disconnected = phase,

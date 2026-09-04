@@ -78,7 +78,10 @@ final class PeerServer: ObservableObject {
     var deviceName: String { Store.shared.deviceName }
 
     /// 收到的东西放这儿。Documents 下面，「文件」App 里能直接看到。
-    var inboxDir: URL {
+    ///
+    /// nonisolated：它只碰 FileManager，不读任何 actor 状态。
+    /// 连接那一侧要在非主线程上算分片路径，隔一次 MainActor 跳转没必要。
+    nonisolated var inboxDir: URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("Inbox", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -242,8 +245,25 @@ final class PeerServer: ObservableObject {
         received.append(f)
     }
 
-    /// 本机在当前 Wi-Fi 下的地址。手输地址那条路要用它。
+    /// 本机在当前局域网下的地址。手输地址那条路要用它。
     var localIP: String? { Self.wifiAddress() }
+
+    /// 这个网卡有多值得报出去，数字越小越优先；nil = 别用。
+    ///
+    /// **热点必须排在 Wi-Fi 前面。** 这台手机自己开个人热点时，
+    /// 对方是连到 bridge100（172.20.10.1）上的，不是 en0 ——
+    /// 而热点常常是在没有 Wi-Fi 的场合开的（在外面、没路由器），
+    /// 那时 en0 干脆没有地址。只认 en0 的话，用户开了热点、对面也连上了，
+    /// 这边却显示「先连上 Wi-Fi」，手输地址那条兜底路直接断掉。
+    ///
+    /// pdp_ip* 是蜂窝，对面连不过来，不要。
+    nonisolated static func interfaceRank(_ name: String) -> Int? {
+        if name.hasPrefix("bridge") { return 0 } // 个人热点：这台是热点主人
+        if name == "ap1" { return 1 }            // 部分机型的热点接口
+        if name == "en0" { return 2 }            // Wi-Fi
+        if name == "en1" { return 3 }
+        return nil
+    }
 
     private static func wifiAddress() -> String? {
         var head: UnsafeMutablePointer<ifaddrs>?
@@ -251,19 +271,19 @@ final class PeerServer: ObservableObject {
         defer { freeifaddrs(head) }
 
         var out: String?
+        var bestRank = Int.max
         for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
             let flags = Int32(ptr.pointee.ifa_flags)
             guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0 else { continue }
             guard ptr.pointee.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
             let name = String(cString: ptr.pointee.ifa_name)
-            // en0 是 Wi-Fi；pdp_ip* 是蜂窝，对面连不过来
-            guard name == "en0" || name == "en1" else { continue }
+            guard let rank = interfaceRank(name), rank < bestRank else { continue }
 
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             if getnameinfo(ptr.pointee.ifa_addr, socklen_t(ptr.pointee.ifa_addr.pointee.sa_len),
                            &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
                 out = String(cString: host)
-                if name == "en0" { break }
+                bestRank = rank
             }
         }
         return out

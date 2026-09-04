@@ -119,6 +119,9 @@ final class PeerConnection {
             try await sendJSON(200, ["success": true, "items": [],
                                      "count": 0, "total_size": 0])
 
+        case ("GET", "/api/fast/offset"):
+            try await sendJSON(200, resumeOffset(h))
+
         case ("PUT", "/api/fast/put"):
             try await receiveFile(h)
 
@@ -163,43 +166,100 @@ final class PeerConnection {
     }
 
     /// 收文件。一边收一边落盘，不在内存里攒。
+    /// 这台手机已经收到多少字节了。
+    ///
+    /// 发送方在开传之前先问一次，断了重来就只补剩下的。
+    /// 手机互传原来是 HTTP PUT 从头写、断了就把半个文件删掉重来 ——
+    /// 而对比表、官网、README 都写着「断点续传」，那条承诺在这条路上不成立。
+    private func resumeOffset(_ h: Head) -> [String: Any] {
+        guard let server else { return ["success": false] }
+        let name = sanitize((h.query("name") ?? "").removingPercentEncoding ?? "")
+        let size = Int64(h.query("size") ?? "") ?? 0
+        guard !name.isEmpty, size > 0 else {
+            return ["success": true, "offset": 0, "complete": false]
+        }
+        let dir = server.inboxDir
+        // 已经有一份完整的同名同大小文件，就不用再传了
+        let done = dir.appendingPathComponent(name)
+        if let a = try? FileManager.default.attributesOfItem(atPath: done.path),
+           (a[.size] as? NSNumber)?.int64Value == size {
+            return ["success": true, "offset": size, "complete": true]
+        }
+        let part = Self.partPath(in: dir, name: name, size: size)
+        let have = (try? FileManager.default.attributesOfItem(atPath: part.path))
+            .flatMap { ($0[.size] as? NSNumber)?.int64Value } ?? 0
+        return ["success": true, "offset": min(have, size), "complete": false]
+    }
+
+    /// 分片路径。大小写进文件名 —— 同名但不是同一个文件不会互相续错，
+    /// 相册里同名文件遍地都是。和桌面端 fast.PartPath 是同一套规矩。
+    static func partPath(in dir: URL, name: String, size: Int64) -> URL {
+        dir.appendingPathComponent(".\(name).\(size).dtpart")
+    }
+
     private func receiveFile(_ h: Head) async throws {
         guard let server else { return }
 
         let raw = h.header("X-Relative-Path") ?? h.header("X-Filename") ?? "file"
         let name = sanitize(raw.removingPercentEncoding ?? raw)
         let total = Int64(h.header("X-File-Size") ?? "") ?? h.contentLength
+        let offset = max(0, Int64(h.header("X-Start-Offset") ?? "") ?? 0)
 
         let dir = await MainActor.run { server.inboxDir }
-        let dest = uniquePath(in: dir, name: name)
+        // 没传完的字节一律待在分片里，绝不出现在收件箱里 ——
+        // 半个文件比传输失败更糟，用户不知道它是坏的。
+        let part = Self.partPath(in: dir, name: name, size: total)
 
-        FileManager.default.createFile(atPath: dest.path, contents: nil)
-        guard let fh = try? FileHandle(forWritingTo: dest) else {
+        if !FileManager.default.fileExists(atPath: part.path) {
+            FileManager.default.createFile(atPath: part.path, contents: nil)
+        }
+        guard let fh = try? FileHandle(forWritingTo: part) else {
             try await sendJSON(500, ["success": false, "error": "cannot open file"])
             return
         }
         defer { try? fh.close() }
 
-        var written: Int64 = 0
+        // 截到 offset 再写：多出来的必须丢掉，否则文件中间会留一段重复字节
+        try fh.truncate(atOffset: UInt64(offset))
+        try fh.seek(toOffset: UInt64(offset))
+
+        // 这次请求实际带了多少字节，按 Content-Length 算，不是按 X-File-Size。
+        //
+        // 两者是两回事：X-File-Size 是整个文件多大（决定分片名和什么时候转正），
+        // Content-Length 是这一次要发的量（续传时只是剩下的那一段）。
+        // 按 X-File-Size 读的话，客户端声明 4 GB 却只发一半，服务端会一直等到
+        // 超时才罢休 —— 测试里实测卡了 60 秒。
+        let bodyLen = h.contentLength > 0 ? h.contentLength : max(0, total - offset)
+        var body: Int64 = 0
+
         // 头读完时 buf 里往往已经躺着 body 的开头，先把它写掉
         if !buf.isEmpty {
-            let take = min(Int64(buf.count), total)
-            try fh.write(contentsOf: buf.prefix(Int(take)))
-            buf.removeFirst(Int(take))
-            written += take
+            let take = min(Int64(buf.count), bodyLen)
+            if take > 0 {
+                try fh.write(contentsOf: buf.prefix(Int(take)))
+                buf.removeFirst(Int(take))
+                body += take
+            }
         }
-        while written < total {
+        while body < bodyLen {
             guard let chunk = try await recv() else { break }
-            let take = min(Int64(chunk.count), total - written)
+            let take = min(Int64(chunk.count), bodyLen - body)
             try fh.write(contentsOf: chunk.prefix(Int(take)))
-            written += take
+            body += take
         }
+        let written = offset + body
+        try? fh.close()
 
         guard written == total else {
-            try? FileManager.default.removeItem(at: dest)
+            // 分片留着不删 —— 那正是下次续传的起点
             try await sendJSON(400, ["success": false, "error": L("peer.err.truncated")])
             return
         }
+
+        // 写满了才转正。同名的别的文件还在的话换个名字，不覆盖。
+        let dest = uniquePath(in: dir, name: name)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: part, to: dest)
 
         let done = PeerServer.ReceivedFile(name: dest.lastPathComponent, size: written, url: dest)
         await MainActor.run { server.note(done) }
@@ -309,6 +369,9 @@ struct Head {
     let method: String
     let path: String
     private let fields: [String: String]
+    private var params: [String: String] = [:]
+
+    func query(_ name: String) -> String? { params[name] }
 
     init(raw: Data) {
         let text = String(decoding: raw, as: UTF8.self)
@@ -317,9 +380,21 @@ struct Head {
         let parts = request.split(separator: " ", maxSplits: 2).map(String.init)
 
         method = parts.first ?? ""
-        // 查询串这边一个口都用不上，切掉，路由只看路径
+        // 路由只看路径，但查询串要留着 —— /api/fast/offset 靠它带文件名和大小
         let target = parts.count > 1 ? parts[1] : "/"
-        path = target.split(separator: "?", maxSplits: 1).first.map(String.init) ?? "/"
+        let cut = target.split(separator: "?", maxSplits: 1).map(String.init)
+        path = cut.first ?? "/"
+
+        var q: [String: String] = [:]
+        if cut.count > 1 {
+            for pair in cut[1].split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                guard let k = kv.first, !k.isEmpty else { continue }
+                let v = kv.count > 1 ? kv[1] : ""
+                q[k] = v.replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? v
+            }
+        }
+        params = q
 
         var f: [String: String] = [:]
         for line in lines {

@@ -325,7 +325,26 @@ public class UploadProgressActivity extends AppCompatActivity {
         }
     }
 
+    /** 这一批里已经提示过额度了。几十个大文件不该弹几十个框。 */
+    private boolean proLimitShown = false;
+
+    private void showProLimitDialog() {
+        if (proLimitShown || isFinishing()) {
+            return;
+        }
+        proLimitShown = true;
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.pro_limit_title)
+                .setMessage(R.string.pro_limit_body)
+                .setPositiveButton(R.string.pro_limit_upgrade, (d, w) ->
+                        startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://droidtrans.mkstore.life/pricing.html"))))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void startUpload() {
+        proLimitShown = false;
         if (isUploading || fileList.isEmpty()) {
             return;
         }
@@ -491,6 +510,14 @@ public class UploadProgressActivity extends AppCompatActivity {
                 }
             });
 
+        } catch (FastTransferClient.NeedsProException e) {
+            // 超出免费额度是一种「知道怎么办」的失败，和网络出错不是一回事。
+            // 服务端专门回了一个状态字就是为了走到这里 ——
+            // 混进普通错误里，用户只会看到一句「上传失败」，不知道下一步做什么。
+            uploadingFiles.remove(index);
+            uploadingCount.decrementAndGet();
+            onFileUploadFailed(index, e.getMessage());
+            mainHandler.post(this::showProLimitDialog);
         } catch (Exception e) {
             uploadingFiles.remove(index);
             uploadingCount.decrementAndGet();

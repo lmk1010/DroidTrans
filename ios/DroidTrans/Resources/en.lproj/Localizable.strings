@@ -16,6 +16,7 @@
 "connect.status.one" = "Tap to connect";
 "connect.status.many" = "Tap the computer you want";
 "connect.hint" = "DroidTrans must be running on the computer, and both devices on the same Wi-Fi.\nSome routers block discovery — scan the QR code or type the address instead.";
+"connect.getDesktop" = "Not installed on the computer yet? Download →";
 "connect.scan" = "Scan QR code";
 "connect.manual" = "Enter address";
 "connect.failed" = "Can't connect";
@@ -148,11 +149,13 @@
 "license.enterCode" = "Activation code";
 "license.activate" = "Activate";
 "license.activating" = "Activating…";
-"license.buy" = "Don't have a code? See pricing →";
+"license.buy" = "No code yet? See Pro plans →";
 "license.code" = "Code";
 "license.email" = "Email";
 "license.expires" = "Expires";
 "license.remove" = "Deactivate on this device";
+"license.remove.confirm" = "Deactivate on this device?";
+"license.remove.hint" = "This device returns to the free version. Your licence key stays valid and can be used on another device.";
 "license.refresh" = "Renew online";
 "license.failed" = "Activation failed";
 "license.plan.year" = "1 year";
@@ -183,18 +186,20 @@
 
 /* Pro */
 "pro.headline" = "Upgrade to DroidTrans Pro";
-"pro.sub" = "Sending photos and files, and resuming transfers, stay free forever.\nPro unlocks the advanced features.";
-"pro.perk.free" = "The basics stay free, with no limits";
-"pro.perk.threePlatforms" = "Buy once — works on macOS, Android and iOS";
-"pro.perk.oneTime" = "A one-time purchase, not a subscription";
-"pro.best" = "BEST VALUE";
+"pro.sub" = "Photo transfer, file transfer and resumable transfers are always free.
+Pro unlocks the following.";
+"pro.perYear" = "about %@ / year";
+"pro.forever" = "One-time purchase, no further charges";
+"pro.best" = "RECOMMENDED";
 "pro.owned" = "Purchased";
 "pro.buy" = "Buy for %@";
 "pro.buying" = "Processing…";
-"pro.unavailable" = "Products unavailable right now";
+"pro.unavailable" = "Product information unavailable";
 "pro.restore" = "Restore purchases";
-"pro.haveCode" = "I have a code";
-"pro.legal" = "One-time purchase. Nothing renews automatically. You can review it under Me.";
+"pro.haveCode" = "Use a licence key";
+"pro.legal" = "A one-time payment. No automatic renewal or recurring charges.";
+"pro.terms" = "Terms of Use";
+"pro.privacy" = "Privacy Policy";
 "license.manage" = "Manage code";
 "iap.pending" = "This purchase is awaiting approval. It'll unlock automatically once approved.";
 "iap.nothingToRestore" = "No purchases found for this Apple ID";
@@ -215,6 +220,7 @@
 "sync.scanning" = "Checking what's new in your library…";
 "sync.found" = "%@ not sent yet";
 "sync.found.hint" = "Anything already sent is skipped. You can stop anytime and pick up later.";
+"sync.overQuota" = "%@ items are over 4 GB and cannot be sent on the free plan. Pro removes the size limit.";
 "sync.start" = "Send these %@";
 "sync.upToDate" = "Everything's over there";
 "sync.upToDate.hint" = "All %@ photos are already on your computer.";
@@ -269,3 +275,43 @@
 "peer.codeFallback" = "Can't find each other? Have them type this address and code";
 "peer.tapToAccept" = "When they tap this device on their phone, you'll get a prompt here — accept and you're connected.";
 "peer.err.port" = "Port is busy — try again or restart the app";
+
+/* Pro comparison */
+"pro.compare.free" = "Free";
+"pro.limit.title" = "File exceeds the free limit";
+"pro.limit.body" = "The free plan allows up to 4 GB per file. Pro removes the limit.";
+"pro.limit.upgrade" = "Upgrade to Pro";
+"pro.compare.pro" = "Pro";
+"pro.compare.mine" = "Pro · yours";
+"pro.owned.summary" = "%@ capabilities unlocked, all limits removed";
+"pro.compare.yes" = "✓";
+"pro.compare.no" = "—";
+"pro.compare.unlimited" = "Unlimited";
+"pro.section.phone" = "On this phone";
+"pro.section.mac" = "On your computer · same licence";
+"pro.row.lan" = "Local network transfer";
+"pro.row.lan.both" = "Unlimited";
+"pro.row.filesize" = "Single file size";
+"pro.row.filesize.free" = "4 GB";
+"pro.row.sync" = "Incremental library sync";
+"pro.row.live" = "Live Photo export";
+"pro.row.live.free" = "Still only";
+"pro.row.live.pro" = "With video";
+"pro.row.resume" = "Resumable transfers";
+"pro.row.export" = "Photos library export";
+"pro.row.export.free" = "1000 per run";
+"pro.row.usb" = "Whole-album USB import";
+"pro.row.dedupe" = "Cross-batch deduplication";
+"pro.compare.note" = "Basic transfer is always free. Pro lifts the limits; it does not lock basic features.";
+
+/* Troubleshooting. With no router around, a hotspot is the only way */
+"trouble.link" = "Can't connect?";
+"trouble.title" = "If nothing shows up";
+"trouble.same.title" = "1. Are both on the same network?";
+"trouble.same.body" = "If the phone is on the 5 GHz band and the computer on 2.4 GHz, some routers keep them apart. Join the same Wi-Fi name on both.";
+"trouble.guest.title" = "2. Is it a guest network?";
+"trouble.guest.body" = "Office, hotel and cafe networks usually turn on client isolation, which blocks devices from reaching each other. On those, use the hotspot method below.";
+"trouble.hotspot.title" = "3. No router: use a personal hotspot";
+"trouble.hotspot.body" = "Turn on the hotspot on one device and join it from the other. Both are then on the same network, over a direct link that is usually faster than public Wi-Fi.\n\niPhone: Settings → Personal Hotspot → Allow Others to Join.\nAndroid: Settings → Hotspot & tethering → turn it on.\n\nThe device sharing the hotspot doesn't need Wi-Fi. Nothing goes over cellular data — files travel only between the two devices.";
+"trouble.manual.title" = "4. Still nothing: type the address";
+"trouble.manual.body" = "Some routers drop the multicast used for discovery even though a direct connection works. Read the address and 6-digit code off the other device and enter them under \"Enter address\".";

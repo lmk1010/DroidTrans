@@ -1,11 +1,26 @@
 // 由 window_darwin.go 的 cgo 前导代码拆分而来：
 // 同一个文件里既有 //export 又有 C 实现时，cgo 会把实现编译两遍导致重复符号。
 #import "window_darwin.h"
+#include "menubar_icon.h"
 
 #include <stdlib.h>
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #import <UserNotifications/UserNotifications.h>
+
+// 由 Go 侧实现（//export），菜单每次弹出时问一遍当前状态。
+// 返回的是 Go 分配的 C 字符串，用完要 free —— 下面两个包装函数负责这件事。
+extern char *dtStatusLine(void);
+extern char *dtAddressLine(void);
+extern void dtPickFilesFromMenu(void);
+extern void dtOpenOutputFolder(void);
+
+static NSString *DTTakeGoString(char *s) {
+  if (s == NULL) return @"";
+  NSString *out = [NSString stringWithUTF8String:s];
+  free(s);
+  return out ?: @"";
+}
 #import <dispatch/dispatch.h>
 
 static NSString *gURL;
@@ -64,7 +79,7 @@ extern void dtFilesPicked(char *paths);
 - (BOOL)isOpaque { return NO; }
 @end
 
-@interface DTApp : NSObject <NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate>
+@interface DTApp : NSObject <NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate, NSMenuDelegate>
 @property(strong) NSWindow *window;
 @property(strong) NSStatusItem *statusItem;
 @end
@@ -132,21 +147,117 @@ extern void dtFilesPicked(char *paths);
   });
 }
 - (void)setupStatusItem {
-  self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
-  NSImage *img = [[NSApp applicationIconImage] copy];
-  img.size = NSMakeSize(18, 18);
+  self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+
+  // 菜单栏图标要用模板图：系统按深浅色自动着色，和旁边的系统图标一个调子。
+  //
+  // 之前直接拿 App 图标缩到 18×18 —— 那张图是满幅圆角方块，
+  // 缩完四周还剩一圈留白，视觉重量比邻居轻一截，看着就是「小」。
+  // 后来换成 SF Symbol 的 arrow.triangle.2.circlepath，大小对了，
+  // 但那是系统的通用刷新符号，不是我们的 logo。
+  //
+  // 现在用 logo 里的双箭头本身（menubar_icon.h，已去掉圆角方形底并裁掉留白），
+  // 形状是自己的，重量和邻居一致。
+  NSImage *img = nil;
+  NSData *iconData =
+      [[NSData alloc] initWithBase64EncodedString:@(kMenuBarIconPNGBase64)
+                                          options:0];
+  if (iconData != nil) {
+    img = [[NSImage alloc] initWithData:iconData];
+    // 位图是 36px，按 18pt 摆，retina 上正好 1:1。
+    img.size = NSMakeSize(18, 18);
+  }
+  if (img == nil) {
+    // 内嵌数据坏了才会走到这里，退回系统符号总比没有图标强。
+    if (@available(macOS 11.0, *)) {
+      img = [NSImage imageWithSystemSymbolName:@"arrow.triangle.2.circlepath"
+                      accessibilityDescription:@"DroidTrans"];
+      NSImageSymbolConfiguration *cfg =
+          [NSImageSymbolConfiguration configurationWithPointSize:16
+                                                          weight:NSFontWeightSemibold
+                                                           scale:NSImageSymbolScaleLarge];
+      img = [img imageWithSymbolConfiguration:cfg];
+    } else {
+      img = [[NSApp applicationIconImage] copy];
+      img.size = NSMakeSize(18, 18);
+    }
+  }
+  img.accessibilityDescription = @"DroidTrans";
+  img.template = YES;
   self.statusItem.button.image = img;
-  self.statusItem.button.toolTip = @"DroidTrans";
+  self.statusItem.button.imagePosition = NSImageLeft;
+  self.statusItem.button.toolTip = @"DroidTrans 卓传";
+
   NSMenu *menu = [NSMenu new];
-  NSMenuItem *open = [[NSMenuItem alloc] initWithTitle:@"打开窗口" action:@selector(showMainWindow) keyEquivalent:@""];
+  menu.delegate = self;   // 每次打开前刷新状态，见 menuNeedsUpdate:
+  self.statusItem.menu = menu;
+  [self rebuildMenu];
+}
+
+/// 菜单每次弹出前重建。
+///
+/// 状态（连了几台手机、有多少件待取）是会变的，
+/// 建一次就不管的话，用户看到的是打开 App 那一刻的快照。
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+  [self rebuildMenu];
+}
+
+- (void)rebuildMenu {
+  NSMenu *menu = self.statusItem.menu;
+  [menu removeAllItems];
+
+  // 顶部一行只读状态。让人瞟一眼菜单栏就知道现在通不通，
+  // 不用为了确认「手机连上没有」去把窗口翻出来。
+  NSString *summary = DTTakeGoString(dtStatusLine());
+  NSMenuItem *status = [[NSMenuItem alloc] initWithTitle:(summary ?: @"") action:nil keyEquivalent:@""];
+  status.enabled = NO;
+  [menu addItem:status];
+
+  NSString *addr = DTTakeGoString(dtAddressLine());
+  if (addr.length > 0) {
+    NSMenuItem *addrItem = [[NSMenuItem alloc] initWithTitle:addr action:@selector(copyAddress) keyEquivalent:@""];
+    addrItem.target = self;
+    addrItem.toolTip = @"点一下复制地址";
+    [menu addItem:addrItem];
+  }
+
+  [menu addItem:[NSMenuItem separatorItem]];
+
+  NSMenuItem *open = [[NSMenuItem alloc] initWithTitle:@"打开卓传" action:@selector(showMainWindow) keyEquivalent:@"o"];
   open.target = self;
   [menu addItem:open];
+
+  NSMenuItem *send = [[NSMenuItem alloc] initWithTitle:@"发文件到手机…" action:@selector(pickFilesFromMenu) keyEquivalent:@"f"];
+  send.target = self;
+  [menu addItem:send];
+
+  NSMenuItem *folder = [[NSMenuItem alloc] initWithTitle:@"打开保存位置" action:@selector(openOutputFolder) keyEquivalent:@""];
+  folder.target = self;
+  [menu addItem:folder];
+
   [menu addItem:[NSMenuItem separatorItem]];
+
   NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"退出卓传" action:@selector(quitApp) keyEquivalent:@"q"];
   quit.target = self;
   [menu addItem:quit];
-  self.statusItem.menu = menu;
 }
+
+- (void)copyAddress {
+  NSString *addr = DTTakeGoString(dtAddressLine());
+  if (addr.length == 0) return;
+  NSPasteboard *pb = [NSPasteboard generalPasteboard];
+  [pb clearContents];
+  [pb setString:addr forType:NSPasteboardTypeString];
+}
+
+- (void)pickFilesFromMenu {
+  dtPickFilesFromMenu();
+}
+
+- (void)openOutputFolder {
+  dtOpenOutputFolder();
+}
+
 - (void)showMainWindow {
   [self.window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];

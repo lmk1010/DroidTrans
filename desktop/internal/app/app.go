@@ -69,9 +69,12 @@ type App struct {
 
 	settingsPath string
 
-	mu          sync.Mutex
-	devices     map[string]*deviceInfo
-	sessions    map[string]*uploadSession
+	mu       sync.Mutex
+	devices  map[string]*deviceInfo
+	sessions map[string]*uploadSession
+	// photos 「从照片图库救数据」的扫描结果和导出任务
+	photos      photosState
+	settingsMu  sync.Mutex
 	wifiOut     string
 	inbox       inboxState
 	OnAttention func()
@@ -333,6 +336,15 @@ func New() (*App, error) {
 	a.Pair = LoadPairing(filepath.Join(out, "pairing.json"))
 	// 授权在本机读一次就够了，之后全程离线判断
 	a.LoadLicense()
+
+	// 单文件免费额度。回调而不是快照：用户当场激活就该立刻生效，
+	// 不该等重启。
+	a.Fast.SetMaxFileSize(func() int64 {
+		if a.Can(license.FeatureLargeFiles) {
+			return 0
+		}
+		return FreeMaxFileSize
+	})
 	if saved := loadSettings(a.settingsPath); saved.OutputDir != "" {
 		if err := os.MkdirAll(saved.OutputDir, 0o755); err == nil {
 			a.OutputDir = saved.OutputDir
@@ -343,8 +355,22 @@ func New() (*App, error) {
 	return a, nil
 }
 
+// FreeMaxFileSize 免费版单个文件的上限。
+//
+// 4 GB = 10 分钟 4K60 视频（iPhone 约 400 MB/分钟）。日常照片和短视频
+// 完全碰不到；碰到的是长录像、录屏、电影、整包备份 —— 那才是付费人群。
+const FreeMaxFileSize = 4 << 30
+
 type settings struct {
 	OutputDir string `json:"output_dir"`
+	// 「Mac 照片」那一屏上次用的图库和目标目录。
+	// 每次打开都要用户重新指定一遍源和目标，是同类工具评论区里
+	// 被点名最多的小毛病之一 —— 便宜得几乎不要钱，不做没道理。
+	PhotosLibrary string `json:"photos_library,omitempty"`
+	PhotosOut     string `json:"photos_out,omitempty"`
+	// 导出时把扩展名统一成小写。.JPG 和 .jpg 混着，
+	// 跨平台同步和查重工具都会当成两个文件。
+	PhotosLowerExt bool `json:"photos_lower_ext,omitempty"`
 }
 
 func loadSettings(path string) settings {
@@ -359,14 +385,36 @@ func loadSettings(path string) settings {
 
 // saveSettings 把用户选的输出目录写盘，下次启动直接用。
 func (a *App) saveSettings(outputDir string) {
-	if a.settingsPath == "" || outputDir == "" {
+	a.updateSettings(func(s *settings) {
+		if outputDir != "" {
+			s.OutputDir = outputDir
+		}
+	})
+}
+
+// updateSettings 读—改—写。
+//
+// 必须先把盘上那份读回来再改：直接 Marshal 一个新结构体会把
+// 别的字段全抹成空，用户在另一屏上的选择就莫名其妙丢了。
+func (a *App) updateSettings(fn func(*settings)) {
+	if a.settingsPath == "" {
 		return
 	}
-	b, err := json.MarshalIndent(settings{OutputDir: outputDir}, "", "  ")
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+	cur := loadSettings(a.settingsPath)
+	fn(&cur)
+	b, err := json.MarshalIndent(cur, "", "  ")
 	if err != nil {
 		return
 	}
 	_ = os.WriteFile(a.settingsPath, b, 0o644)
+}
+
+func (a *App) readSettings() settings {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+	return loadSettings(a.settingsPath)
 }
 
 func defaultOutputDir() string {
@@ -549,7 +597,7 @@ func computerName() string {
 }
 
 func (a *App) advertiseBonjour() {
-	stop, err := bonjour.Advertise(computerName(), HTTPPort)
+	stop, err := bonjour.Advertise(computerName(), HTTPPort, LanIPs())
 	if err != nil {
 		fmt.Println("bonjour:", err)
 		return
@@ -786,6 +834,16 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/wifi/delete_batch", a.wifiDeleteBatch)
 	mux.HandleFunc("POST /api/wifi/check_files", a.wifiCheckFiles)
 	mux.HandleFunc("GET /api/fast/caps", a.fastCaps)
+	mux.HandleFunc("GET /api/fast/offset", a.fastOffset)
+	mux.HandleFunc("GET /api/photoslib/scan", a.photosScan)
+	mux.HandleFunc("POST /api/photoslib/export", a.photosExport)
+	mux.HandleFunc("GET /api/photoslib/status", a.photosStatus)
+	mux.HandleFunc("POST /api/photoslib/cancel", a.photosCancel)
+	mux.HandleFunc("GET /api/photoslib/items", a.photosItems)
+	mux.HandleFunc("GET /api/photoslib/thumb", a.photosThumb)
+	mux.HandleFunc("GET /api/photoslib/libraries", a.photosLibraries)
+	mux.HandleFunc("POST /api/photoslib/reveal", a.photosReveal)
+	mux.HandleFunc("POST /api/photoslib/open_privacy", a.photosOpenPrivacySettings)
 	mux.HandleFunc("PUT /api/fast/put", a.fastPut)
 	mux.HandleFunc("POST /api/fast/put", a.fastPut)
 	mux.HandleFunc("POST /api/upload/init", a.uploadInit)
@@ -1000,11 +1058,25 @@ func (a *App) clientError(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"success": true})
 }
 
+// freeMaxFileSize 当前的单文件免费上限，0 表示不限。
+func (a *App) freeMaxFileSize() int64 {
+	if a.Can(license.FeatureLargeFiles) {
+		return 0
+	}
+	return FreeMaxFileSize
+}
+
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
+	// 免费额度一并告诉手机。手机连上就会查这个接口，拿到上限之后
+	// 就能在「开始传」之前把超额的文件挑出来提醒 ——
+	// 等传到一半被服务端拒掉，用户已经白等了。
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "app": "droidtrans", "engine": "go",
 		"version": update.Current(),
-		"root": a.OutputDir, "name": computerName(),
+		"root":    a.OutputDir, "name": computerName(),
+		// 0 表示不限
+		"max_file_size": a.freeMaxFileSize(),
+		"pro":           a.Can(license.FeatureLargeFiles),
 	})
 }
 
@@ -1073,9 +1145,13 @@ func (a *App) wifiInfo(w http.ResponseWriter, r *http.Request) {
 		"name":             computerName(),
 		"pairing_required": pairRequired,
 		"success":          true, "ip": ip, "ips": ips, "port": HTTPPort,
-		"url":               fmt.Sprintf("http://%s:%d", ip, HTTPPort),
-		"urls":              urls,
-		"apk_url":           APKDownloadURL,
+		"url":     fmt.Sprintf("http://%s:%d", ip, HTTPPort),
+		"urls":    urls,
+		"apk_url": APKDownloadURL,
+		// 免费额度。手机拿到之后就能在「开始传」之前把超额的文件挑出来，
+		// 不必等传到一半被服务端拒掉 —— 那时候用户已经白等了。
+		// 0 表示不限。
+		"max_file_size":     a.freeMaxFileSize(),
 		"outbox_count":      outCount,
 		"outbox_size":       outSize,
 		"hotspot_urls":      hotspots,
@@ -1479,6 +1555,35 @@ func (a *App) fastCaps(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, a.Fast.Caps(LanIP(), HTTPPort))
 }
 
+// fastOffset 告诉手机「这个文件我这儿已经有多少字节了」。
+//
+// HTTP 这条路上没有 ATF3 那样的握手，客户端只能先问一次。
+// 大文件才值得多这一个来回，小文件直接整份发更快。
+func (a *App) fastOffset(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	rel := q.Get("name")
+	size, _ := strconv.ParseInt(q.Get("size"), 10, 64)
+	deviceID := q.Get("device_id")
+	if deviceID == "" {
+		deviceID = "bench"
+	}
+	a.mu.Lock()
+	base := a.wifiOut
+	sess := a.sessions[deviceID]
+	a.mu.Unlock()
+	destDir := filepath.Join(base, deviceID)
+	if sess != nil && sess.BatchID != "" {
+		destDir = filepath.Join(base, deviceID, sess.BatchID)
+	}
+	dest, err := fast.SafeJoin(destDir, rel)
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	offset, done := fast.ResumeOffset(dest, size)
+	writeJSON(w, 200, map[string]any{"success": true, "offset": offset, "complete": done})
+}
+
 func (a *App) fastPut(w http.ResponseWriter, r *http.Request) {
 	filename := r.Header.Get("X-Filename")
 	if filename == "" {
@@ -1521,18 +1626,49 @@ func (a *App) fastPut(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"success": true, "skipped": true, "bytes": sz, "path": dest, "protocol": "http_put"})
 		return
 	}
-	f, err := os.Create(dest)
+
+	// HTTP 是 TCP 9501 被占时的回退路径，落盘纪律得和快传一致：
+	// 先写分片、写满才 rename。少了这一条，端口一被占，
+	// 「输出目录里不会出现半个文件」这个保证就破了。
+	//
+	// 客户端先问过 /api/fast/offset 的话会带上 X-Start-Offset，
+	// 那它发来的就是从该处开始的剩余部分；没带就是整份重发。
+	offset, _ := strconv.ParseInt(r.Header.Get("X-Start-Offset"), 10, 64)
+	if offset < 0 || expected <= 0 || offset > expected {
+		offset = 0
+	}
+	// TCP 被占时会走到这里，额度检查得跟着，否则换条路就绕过去了
+	if !a.Can(license.FeatureLargeFiles) && expected > FreeMaxFileSize {
+		writeJSON(w, http.StatusPaymentRequired, map[string]any{
+			"success": false,
+			"feature": string(license.FeatureLargeFiles),
+			"error":   "单个文件超过 4 GB 需要 Pro",
+		})
+		return
+	}
+	if err := fast.EnsureSpace(filepath.Dir(dest), expected-offset); err != nil {
+		writeJSON(w, 507, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	f, err := fast.OpenPart(dest, expected, offset)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	pw := &progressWriter{w: f, app: a, name: filepath.Base(dest), total: expected}
+	pw := &progressWriter{w: f, app: a, name: filepath.Base(dest), total: expected, n: offset}
 	n, copyErr := io.Copy(pw, r.Body)
 	_ = f.Close()
-	a.noteLive(filepath.Base(dest), n)
+	a.noteLive(filepath.Base(dest), offset+n)
 	if copyErr != nil {
+		// 分片留着，下次接着传
 		writeJSON(w, 500, map[string]any{"success": false, "error": copyErr.Error()})
 		return
+	}
+	if expected > 0 {
+		if err := fast.CommitPart(dest, expected); err != nil {
+			writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
 	}
 	if sess != nil && sess.BatchID != "" {
 		a.recordFile(deviceID, sess.BatchID, filepath.Base(dest), n, dest)

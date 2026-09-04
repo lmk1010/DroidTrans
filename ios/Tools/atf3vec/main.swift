@@ -1,9 +1,9 @@
-/// 生成 ATF2 帧的跨语言对拍向量。
+/// 生成 ATF3 帧的跨语言对拍向量。
 ///
 ///   cd ios/Tools/atf2vec && ./run.sh
 ///
-/// 输出落到 desktop/internal/fast/testdata/atf2_vectors.json，
-/// 由 Go 端的 TestATF2VectorsFromSwift 用真正的 readHeader 解析回来。
+/// 输出落到 desktop/internal/fast/testdata/atf3_vectors.json，
+/// 由 Go 端的 TestATF3VectorsFromSwift 用真正的 readHeader 解析回来。
 ///
 /// 为什么要这么绕：Swift 的测试断言只能证明「Swift 和 Swift 自己一致」。
 /// 真正要保证的是 Swift 发出的字节，Go 服务端能原样读回来 ——
@@ -27,7 +27,7 @@ var vectors: [Vector] = []
 
 func add(_ desc: String, name: String, size: Int64, token: String) {
     do {
-        let h = try buildATF2Header(name: name, size: size, token: token)
+        let h = try buildATF3Header(name: name, size: size, token: token)
         vectors.append(Vector(desc: desc, name: name, size: size, token: token, hex: hex(h)))
     } catch {
         FileHandle.standardError.write("生成失败 [\(desc)]: \(error)\n".data(using: .utf8)!)
@@ -50,13 +50,13 @@ add("文件名 4096 字节（上限）", name: String(repeating: "n", count: 409
 
 // 超限的必须在客户端就被拒，不能让它发出去
 do {
-    _ = try buildATF2Header(name: "a.txt", size: 1, token: String(repeating: "k", count: 513))
+    _ = try buildATF3Header(name: "a.txt", size: 1, token: String(repeating: "k", count: 513))
     FileHandle.standardError.write("令牌 513 字节竟然通过了\n".data(using: .utf8)!)
     exit(1)
 } catch {}
 
 do {
-    _ = try buildATF2Header(name: String(repeating: "n", count: 4097), size: 1, token: "t")
+    _ = try buildATF3Header(name: String(repeating: "n", count: 4097), size: 1, token: "t")
     FileHandle.standardError.write("文件名 4097 字节竟然通过了\n".data(using: .utf8)!)
     exit(1)
 } catch {}

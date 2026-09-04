@@ -86,7 +86,26 @@ func (a *App) listDevices(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"success": false, "error": err.Error(), "devices": []any{}})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"success": true, "devices": ready, "unauthorized": unauth, "offline": offline})
+	// 序列号对用户没意义 —— 插着两台机器时，一串 10AECF1LTK0028N
+	// 和一串 emulator-5554 分不出哪台是自己手里那部。带上型号再给前端。
+	list := make([]map[string]any, 0, len(ready))
+	for _, d := range ready {
+		brand := a.ADB.PropOf(d.Serial, "ro.product.brand")
+		model := a.ADB.PropOf(d.Serial, "ro.product.model")
+		name := strings.TrimSpace(brand + " " + model)
+		if name == "" {
+			name = d.Serial
+		}
+		list = append(list, map[string]any{
+			"serial": d.Serial,
+			"name":   name,
+			"state":  d.State,
+		})
+	}
+	writeJSON(w, 200, map[string]any{
+		"success": true, "devices": list, "selected": a.ADB.Serial(),
+		"unauthorized": unauth, "offline": offline,
+	})
 }
 
 func (a *App) selectDevice(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +114,25 @@ func (a *App) selectDevice(w http.ResponseWriter, r *http.Request) {
 	if serial == "" {
 		serial, _ = body["device"].(string)
 	}
-	a.ADB.SetSerial(serial)
+	// 别的地方（比如 startTransfer）也是这么判的，保持一致；
+	// 顺带让这条路在没有 ADB 的环境里可测。
+	if a.ADB != nil {
+		a.ADB.SetSerial(serial)
+	}
+
+	// 换了设备就把上一台的扫描结果扔掉。
+	//
+	// 不清的话，界面上还挂着上一台手机的相册；用户直接点「开始传输」，
+	// 拉的是旧设备上的路径 —— 轻则一片失败，重则从新设备上取到同名的
+	// 别的文件。切设备本来就意味着「重新看一遍」。
+	a.scanMu.Lock()
+	a.albums = map[string]Album{}
+	a.scanning = false
+	a.scanStage = ""
+	a.scanErr = ""
+	a.scanID++
+	a.scanMu.Unlock()
+
 	writeJSON(w, 200, map[string]any{"success": true, "serial": serial})
 }
 

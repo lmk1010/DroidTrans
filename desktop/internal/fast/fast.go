@@ -20,8 +20,6 @@ const (
 	Chunk   = 1024 * 1024
 )
 
-var magic = []byte("ATF1")
-
 type FileHandler func(name string, size int64, dest string)
 type ProgressHandler func(name string, written, total int64)
 
@@ -34,6 +32,27 @@ type Server struct {
 	tcpUp      bool
 	ftpUp      bool
 	auth       func(token string) bool
+	maxFile    func() int64
+}
+
+// SetMaxFileSize 单个文件的免费上限。fn 返回 0 表示不限。
+//
+// 用回调而不是一个数：授权状态随时会变（用户当场激活），
+// 存成快照的话得等重启才生效。
+func (s *Server) SetMaxFileSize(fn func() int64) {
+	s.mu.Lock()
+	s.maxFile = fn
+	s.mu.Unlock()
+}
+
+func (s *Server) fileLimit() int64 {
+	s.mu.RLock()
+	fn := s.maxFile
+	s.mu.RUnlock()
+	if fn == nil {
+		return 0
+	}
+	return fn()
 }
 
 // SetAuth 设置令牌校验。返回 nil 表示不需要配对。
@@ -198,49 +217,154 @@ func (s *Server) handleTCP(conn net.Conn) {
 	}
 	name, size, token, err := readHeader(conn)
 	if err != nil {
-		_, _ = conn.Write([]byte("ERR " + err.Error() + "\n"))
+		writeReject(conn, err.Error())
 		return
 	}
 	if !s.checkToken(token) {
 		// 高速通道也要认令牌，否则配对形同虚设
-		_, _ = conn.Write([]byte("ERR pairing required\n"))
+		writeReject(conn, "pairing required")
 		return
 	}
+	// 大小在头里就有，所以能在客户端发出任何一个字节之前拒绝。
+	// 传到 3 GB 才说「太大了」是最糟的做法。
+	if limit := s.fileLimit(); limit > 0 && size > limit {
+		writeUpgrade(conn, fmt.Sprintf("单个文件超过 %s 需要 Pro（这个文件 %s）",
+			humanBytes(limit), humanBytes(size)))
+		return
+	}
+
 	dest, err := SafeJoin(s.OutputDir(), name)
 	if err != nil {
-		_, _ = conn.Write([]byte("ERR " + err.Error() + "\n"))
+		writeReject(conn, err.Error())
 		return
 	}
-	if err := writeStream(conn, dest, size, func(n int64) {
-		s.progress(name, n, size)
-	}); err != nil {
-		_, _ = conn.Write([]byte("ERR " + err.Error() + "\n"))
+
+	// 已经有多少可以不用再传。这一步必须在客户端发任何文件字节之前完成，
+	// 否则「续传」就退化成「传完再丢掉重复的部分」，一点带宽都省不下来。
+	offset, done := ResumeOffset(dest, size)
+	if done {
+		// 目标文件已经完整。告诉客户端「你不用发了」，它就直接收尾。
+		if err := writeAccept(conn, size); err != nil {
+			return
+		}
+		s.progress(name, size, size)
+		s.emit(dest)
+		writeDone(conn)
 		return
+	}
+
+	if err := EnsureSpace(filepath.Dir(dest), size-offset); err != nil {
+		writeReject(conn, err.Error())
+		return
+	}
+
+	f, err := OpenPart(dest, size, offset)
+	if err != nil {
+		writeReject(conn, err.Error())
+		return
+	}
+
+	if err := writeAccept(conn, offset); err != nil {
+		_ = f.Close()
+		return
+	}
+
+	// 客户端从 offset 开始发，所以这里只等剩下的那些字节。
+	remaining := int64(-1)
+	if size > 0 {
+		remaining = size - offset
+	}
+	err = writeInto(f, conn, remaining, offset, func(n int64) {
+		s.progress(name, n, size)
+	})
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		// 分片留着不删 —— 那正是下次续传的起点。
+		writeReject(conn, err.Error())
+		return
+	}
+
+	if size > 0 {
+		if err := CommitPart(dest, size); err != nil {
+			writeReject(conn, err.Error())
+			return
+		}
 	}
 	s.emit(dest)
-	_, _ = conn.Write([]byte("OK\n"))
+	writeDone(conn)
+}
+
+// ---- 应答 ----
+//
+// 应答一律是二进制，不再是以前的 "OK\n" / "ERR ...\n" 文本。
+// 因为现在中途要回一个 u64 偏移量，二进制数字和换行分隔的文本混在一条流上，
+// 解析起来极易出错（偏移量里恰好有 0x0A 就会被当成行尾）。
+
+const (
+	statusGo   byte = 0x00 // 继续，后面跟 u64 偏移量
+	statusErr  byte = 0x01 // 拒绝，后面跟 u32 长度 + utf8 原因
+	statusDone byte = 0x02 // 收完了，落盘成功
+	// statusUpgrade 超出免费额度。格式和 statusErr 一样，但分开一个状态字，
+	// 客户端才能给出「升级」入口 —— 混在普通错误里，用户只会以为传输坏了。
+	statusUpgrade byte = 0x03
+)
+
+// writeAccept 告诉客户端「从第 offset 字节开始发」。
+func writeAccept(w io.Writer, offset int64) error {
+	buf := make([]byte, 9)
+	buf[0] = statusGo
+	binary.BigEndian.PutUint64(buf[1:], uint64(offset))
+	_, err := w.Write(buf)
+	return err
+}
+
+func writeReject(w io.Writer, msg string) {
+	writeStatusMsg(w, statusErr, msg)
+}
+
+func writeStatusMsg(w io.Writer, status byte, msg string) {
+	b := []byte(msg)
+	if len(b) > 4096 {
+		b = b[:4096]
+	}
+	buf := make([]byte, 5, 5+len(b))
+	buf[0] = status
+	binary.BigEndian.PutUint32(buf[1:], uint32(len(b)))
+	_, _ = w.Write(append(buf, b...))
+}
+
+// writeUpgrade 超出免费额度。和 writeReject 同样的帧，只是状态字不同。
+func writeUpgrade(w io.Writer, msg string) {
+	writeStatusMsg(w, statusUpgrade, msg)
+}
+
+func writeDone(w io.Writer) {
+	_, _ = w.Write([]byte{statusDone})
 }
 
 // readHeader 读传输头。
 //
-//	ATF1: magic | nameLen | name | size            （旧版，无令牌）
-//	ATF2: magic | tokenLen | token | nameLen | name | size
+//	ATF3: magic | tokenLen | token | nameLen | name | size(u64)
 //
-// 加 ATF2 是因为原来的 TCP 通道谁都能连、直接往电脑上写文件。
+// 读完头之后服务端必须先回一个偏移量应答，客户端才会开始发文件字节 ——
+// 这一次往返就是断点续传的全部代价，换来的是不用重传已经落盘的部分。
+//
+// ATF1（无令牌）和 ATF2（无偏移协商）都已经删掉。发布之前没有存量客户端，
+// 留着两套解析分支只会让线格式长期背着包袱。
 func readHeader(r io.Reader) (name string, size int64, token string, err error) {
 	head := make([]byte, 4)
 	if _, err = io.ReadFull(r, head); err != nil {
 		return "", 0, "", err
 	}
-	magic := string(head)
-	if magic != "ATF1" && magic != "ATF2" {
+	if string(head) != "ATF3" {
 		return "", 0, "", fmt.Errorf("bad magic")
 	}
-	if magic == "ATF2" {
-		token, err = readStr(r, 512)
-		if err != nil {
-			return "", 0, "", err
-		}
+	token, err = readStr(r, 512)
+	if err != nil {
+		return "", 0, "", err
 	}
 	name, err = readStr(r, 4096)
 	if err != nil {
@@ -249,6 +373,9 @@ func readHeader(r io.Reader) (name string, size int64, token string, err error) 
 	var raw uint64
 	if err = binary.Read(r, binary.BigEndian, &raw); err != nil {
 		return "", 0, "", err
+	}
+	if int64(raw) < 0 {
+		return "", 0, "", fmt.Errorf("bad size")
 	}
 	return name, int64(raw), token, nil
 }
@@ -288,15 +415,17 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func writeStream(r io.Reader, dest string, size int64, report func(int64)) error {
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cw := &countWriter{w: f, report: report}
-	if size > 0 {
-		_, err = io.CopyN(cw, r, size)
+// writeInto 把 r 的内容写进已经定位好的 f。
+//
+// base 是这个文件此前已经落盘的字节数 —— 进度要从它接着报，
+// 否则续传时进度条会从 0 重新爬一遍，用户会以为又从头传了。
+//
+// remaining < 0 表示大小未知（FTP 那条老路），一直读到 EOF。
+func writeInto(f io.Writer, r io.Reader, remaining, base int64, report func(int64)) error {
+	cw := &countWriter{w: f, n: base, report: report}
+	var err error
+	if remaining >= 0 {
+		_, err = io.CopyN(cw, r, remaining)
 	} else {
 		_, err = io.Copy(cw, r)
 	}
@@ -304,6 +433,32 @@ func writeStream(r io.Reader, dest string, size int64, report func(int64)) error
 		report(cw.n)
 	}
 	return err
+}
+
+// writeStreamAtomic 大小未知时的落盘（FTP）。
+//
+// 即使不能续传，也绝不把没写完的东西留在目标路径上 —— 先写临时文件，
+// 干净结束才 rename。半个文件躺在输出目录里比传输失败更糟：
+// 用户不知道它是坏的。
+func writeStreamAtomic(r io.Reader, dest string, report func(int64)) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".*"+partSuffix)
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if err := writeInto(tmp, r, -1, 0, report); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	return os.Rename(name, dest)
 }
 
 func (s *Server) serveFTP() {
@@ -408,7 +563,7 @@ func (s *Server) handleFTP(conn net.Conn) {
 			}
 			dest, err := SafeJoin(s.OutputDir(), filename)
 			if err == nil {
-				_ = writeStream(dataConn, dest, 0, func(n int64) {
+				_ = writeStreamAtomic(dataConn, dest, func(n int64) {
 					s.progress(filename, n, 0)
 				})
 				s.emit(dest)

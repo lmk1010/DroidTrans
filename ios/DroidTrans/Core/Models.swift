@@ -39,6 +39,17 @@ struct Desktop: Identifiable, Equatable {
     /// 这台电脑是通过手机热点连上的
     var onHotspot: Bool
 
+    /// 对面免费额度下的单文件上限，0 表示不限。
+    ///
+    /// 拿到它是为了在「开始传」之前就把超额的文件挑出来告诉用户 ——
+    /// 等传到一半被服务端拒掉，用户已经白等了一场。
+    var maxFileSize: Int64 = 0
+
+    /// 这个文件超没超对面的免费额度
+    func exceedsQuota(_ bytes: Int64) -> Bool {
+        maxFileSize > 0 && bytes > maxFileSize
+    }
+
     init(
         host: String,
         port: Int = Ports.http,
@@ -51,7 +62,8 @@ struct Desktop: Identifiable, Equatable {
         ftpPort: Int? = nil,
         outboxCount: Int = 0,
         outboxSize: Int64 = 0,
-        onHotspot: Bool = false
+        onHotspot: Bool = false,
+        maxFileSize: Int64 = 0
     ) {
         self.host = host
         self.port = port
@@ -65,6 +77,7 @@ struct Desktop: Identifiable, Equatable {
         self.outboxCount = outboxCount
         self.outboxSize = outboxSize
         self.onHotspot = onHotspot
+        self.maxFileSize = maxFileSize
     }
 
     /// 对面是台手机，连过去只要它点头，不用输码
@@ -122,7 +135,8 @@ struct Desktop: Identifiable, Equatable {
             ftpPort: intOf(j["ftp_port"]),
             outboxCount: intOf(j["outbox_count"]) ?? 0,
             outboxSize: int64Of(j["outbox_size"]) ?? 0,
-            onHotspot: j["on_hotspot"] as? Bool ?? false
+            onHotspot: j["on_hotspot"] as? Bool ?? false,
+            maxFileSize: int64Of(j["max_file_size"]) ?? 0
         )
     }
 }

@@ -116,3 +116,7 @@ pairing.json
 
 # 出图服务凭据等本地机密
 .secrets/
+
+# 工具的本机状态，不进版本库
+.claude/
+.neox/

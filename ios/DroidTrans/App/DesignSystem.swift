@@ -116,6 +116,8 @@ enum Art: String {
     case sync
     /// 空箱子。「电脑那边还没放东西」
     case dropbox
+    /// 完成。和桌面端用同一张，两端的「done」得是同一个东西
+    case done
 }
 
 struct ArtIcon: View {

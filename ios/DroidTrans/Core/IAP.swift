@@ -56,6 +56,20 @@ final class IAP: ObservableObject {
 
     @Published private(set) var products: [Product] = []
     @Published private(set) var owned: Set<String> = []
+
+    /// 测试要从「还没买过」开始时，连 StoreKit 已持有的交易也当作没有。
+    ///
+    /// -uitest-no-license 原来只清许可证文件，但 isPro 还看 localPurchase ——
+    /// 而 StoreKit 测试环境里的交易是跨次持久的。上一轮跑过购买用例之后，
+    /// 下一轮的「免费版应该被挡住」就会失败，报的是「门禁没生效」，
+    /// 看着像产品 bug，其实是上一轮的状态没清干净。
+    ///
+    /// 只作用于启动时恢复历史交易那一步。**当次购买必须照常走完** ——
+    /// 在购买回调里提前 return 会跳过兑换和 t.finish()，
+    /// 交易不 finish 就会一直重放，而且「购买能换到通用许可证」也就测不了了。
+    private var pretendNotPurchased: Bool {
+        ProcessInfo.processInfo.arguments.contains("-uitest-no-license")
+    }
     @Published private(set) var loading = false
     @Published var error: String?
 
@@ -105,6 +119,13 @@ final class IAP: ObservableObject {
             if redeemJWS == nil || plan == .lifetime {
                 redeemJWS = result.jwsRepresentation
             }
+        }
+        if pretendNotPurchased {
+            // 假装没买过：本机权益和后续的兑换都跳过，
+            // 不然 isPro 还是 true，「免费版该被挡住」的用例就永远过不了。
+            owned = []
+            LicenseStore.shared.setLocalPurchase(false)
+            return
         }
         owned = found
         LicenseStore.shared.setLocalPurchase(!found.isEmpty)

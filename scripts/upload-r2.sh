@@ -61,12 +61,17 @@ s3 = boto3.client(
 
 uploads = [
     (os.environ['DMG'], f'DroidTrans-{version}-macos-arm64.dmg', 'application/x-apple-diskimage'),
+    # latest.dmg 是个不带版本号的固定地址，和 latest.apk 对称。
+    # 官网在拿不到 latest.json 时要有地方兜底，否则 macOS 的下载按钮只能置灰。
+    (os.environ['DMG'], 'latest.dmg', 'application/x-apple-diskimage'),
     (os.environ['APK_VER'], f'DroidTrans-{version}.apk', 'application/vnd.android.package-archive'),
     (os.environ['APK_LATEST'], 'latest.apk', 'application/vnd.android.package-archive'),
 ]
 digests = {}
+sizes = {}
 for path, key, ctype in uploads:
     digests[key] = sha256(path)
+    sizes[key] = os.path.getsize(path)
     print(f'upload s3://{bucket}/{key}  ({os.path.getsize(path)} bytes)')
     extra = {'ContentType': ctype, 'CacheControl': 'public, max-age=60'}
     s3.upload_file(path, bucket, key, ExtraArgs=extra)
@@ -78,10 +83,13 @@ manifest = {
     'macos_arm64': {
         'url': f'{base}/DroidTrans-{version}-macos-arm64.dmg',
         'sha256': digests[f'DroidTrans-{version}-macos-arm64.dmg'],
+        # size 给官网显示「24.6 MB」用，也让人下载前知道要花多少流量
+        'size': sizes[f'DroidTrans-{version}-macos-arm64.dmg'],
     },
     'android': {
         'url': f'{base}/latest.apk',
         'sha256': digests['latest.apk'],
+        'size': sizes['latest.apk'],
     },
 }
 body = json.dumps(manifest, ensure_ascii=False, indent=2).encode()

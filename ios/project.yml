@@ -45,6 +45,9 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # 只有 Curve25519 验签（数字签名/鉴权），属出口管制豁免。
+        # 不写这一条，每次上传都要在 App Store Connect 手工回答一遍。
+        ITSAppUsesNonExemptEncryption: false
         # ---- 本地网络 ----
         # 这三项少一个，Bonjour 就是静默扫不到任何东西，不会报错。
         NSLocalNetworkUsageDescription: 卓传需要在局域网里找到你的电脑，才能直接传文件。
@@ -61,6 +64,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: life.mkstore.droidtrans
+        # 只做 iPhone。XcodeGen 默认给 iOS target 写 "1,2"，
+        # 那样 App Store Connect 会强制要一套 iPad 截图，审核也会在
+        # iPad 上跑这个竖屏手机界面。要支持 iPad 得认真做，不是改个数字。
+        TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_ENTITLEMENTS: DroidTrans/DroidTrans.entitlements
     dependencies:
       - target: ShareExtension
@@ -81,6 +88,7 @@ targets:
       - path: DroidTrans/Resources/en.lproj
       - path: DroidTrans/Resources/zh-Hans.lproj
       - path: DroidTrans/Resources/Assets.xcassets
+      - path: DroidTrans/Resources/PrivacyInfo.xcprivacy
     info:
       path: ShareExtension/Info.plist
       properties:
@@ -105,6 +113,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: life.mkstore.droidtrans.share
+        # 只做 iPhone。XcodeGen 默认给 iOS target 写 "1,2"，
+        # 那样 App Store Connect 会强制要一套 iPad 截图，审核也会在
+        # iPad 上跑这个竖屏手机界面。要支持 iPad 得认真做，不是改个数字。
+        TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
         SKIP_INSTALL: YES
 

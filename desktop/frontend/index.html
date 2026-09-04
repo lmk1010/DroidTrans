@@ -32,26 +32,56 @@
           <span>卓传</span>
         </div>
       </div>
+      <!-- 按「跟谁打交道」分组，不按传输方式罗列。
+           USB 和 Wi-Fi 是手段不是任务，用户想的是「把手机里的东西弄到电脑上」，
+           不该由他来判断该走哪条线路 —— 所以每一项都标出适用场景。 -->
       <nav>
         <button type="button" data-view="home" class="active">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
           <span data-i18n="navHome">总览</span>
         </button>
+
+        <p class="nav-group" data-i18n="navGroupPhone">手机</p>
         <button type="button" data-view="usb">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4.5v12"/><path d="M9.2 7.5h5.6"/><circle cx="12" cy="4.2" r="1.35" fill="currentColor" stroke="none"/></svg>
-          USB
+          <span class="nav-copy">
+            <span data-i18n="navUsb">USB 导入</span>
+            <small data-i18n="navUsbHint">数据线 · 仅安卓</small>
+          </span>
         </button>
         <button type="button" data-view="wifi">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.4a9 9 0 0 1 14 0"/><path d="M8.2 15.5a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.4" r="1.15" fill="currentColor" stroke="none"/></svg>
-          Wi-Fi
+          <span class="nav-copy">
+            <span data-i18n="navWifi">Wi-Fi 传输</span>
+            <small data-i18n="navWifiHint">无线 · 双向</small>
+          </span>
+        </button>
+
+        <p class="nav-group" data-i18n="navGroupMac">这台电脑</p>
+        <button type="button" data-view="photoslib">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.2"/><path d="M3 16.2l4.6-4.2 3.4 3 3.2-2.6 6.8 5.4"/><circle cx="8.6" cy="9.4" r="1.35"/></svg>
+          <span class="nav-copy">
+            <span data-i18n="navPhotosLib">照片图库</span>
+            <small data-i18n="navPhotosLibHint">导出原始文件</small>
+          </span>
         </button>
         <button type="button" data-view="history">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.6 1.6"/></svg>
-          <span data-i18n="navHist">图库</span>
+          <span class="nav-copy">
+            <span data-i18n="navHist">已接收</span>
+            <small data-i18n="navHistHint">传过来的文件</small>
+          </span>
         </button>
       </nav>
       <div class="rail-foot">
-        <button type="button" id="langBtn" class="lang-btn">EN</button>
+        <button type="button" id="licBtn" class="lic-btn" title="">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8 4.6 5.9v5.6c0 4.3 3 8.3 7.4 9.7 4.4-1.4 7.4-5.4 7.4-9.7V5.9L12 2.8Z"/><path d="M9 12.1l2.1 2.1 4-4.2"/></svg>
+          <span id="licBtnText">Pro</span>
+        </button>
+        <button type="button" id="langBtn" class="lang-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.2 12h17.6"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z"/></svg>
+          <span id="langBtnText">EN</span>
+        </button>
         <p id="adbHint" class="hint" title=""></p>
       </div>
     </aside>
@@ -59,24 +89,38 @@
     <main>
       <section id="view-home" class="view active">
         <header class="page-head">
-          <h1 data-i18n="homeTitle">把手机里的照片，搬到这台电脑</h1>
+          <h1 data-i18n="homeTitle">把照片和文件集中到这台电脑</h1>
           <p id="homeNext"></p>
         </header>
+        <!-- 顺序和分组必须和侧栏一致，否则用户在两处看到的心智模型不一样 -->
+        <p class="nav-group tiles-group" data-i18n="navGroupPhone">手机</p>
         <div class="tiles">
           <button type="button" class="tile" data-go="usb">
-            <svg class="tile-icon" viewBox="6 2 12 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11v5a4 4 0 0 0 8 0v-5"/><path d="M12 4.5v12"/><path d="M9.2 7.5h5.6"/><circle cx="12" cy="4.2" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <img class="tile-icon art" src="/art/usb.png" alt="" width="56" height="56">
             <span class="tile-copy">
-              <em>USB</em>
-              <h2 data-i18n="usbTile">有线快传</h2>
+              <em data-i18n="navUsbHint">数据线 · 仅安卓</em>
+              <h2 data-i18n="usbTile">USB 导入</h2>
               <p id="homeUsb">未连接</p>
             </span>
           </button>
           <button type="button" class="tile" data-go="wifi">
-            <svg class="tile-icon" viewBox="3.5 8 17 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.4a9 9 0 0 1 14 0"/><path d="M8.2 15.5a5 5 0 0 1 7.6 0"/><circle cx="12" cy="18.6" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <img class="tile-icon art" src="/art/wifi.png" alt="" width="56" height="56">
             <span class="tile-copy">
-              <em>Wi-Fi</em>
-              <h2 data-i18n="wifiTile">手机直传</h2>
+              <em data-i18n="navWifiHint">无线 · 双向</em>
+              <h2 data-i18n="wifiTile">Wi-Fi 传输</h2>
               <p id="homeWifi">—</p>
+            </span>
+          </button>
+        </div>
+
+        <p class="nav-group tiles-group" data-i18n="navGroupMac">这台电脑</p>
+        <div class="tiles">
+          <button type="button" class="tile" data-go="photoslib">
+            <img class="tile-icon art" src="/art/photoslib.png" alt="" width="56" height="56">
+            <span class="tile-copy">
+              <em data-i18n="homeTilePhotosKicker">照片图库</em>
+              <h2 data-i18n="homeTilePhotos">导出原始文件</h2>
+              <p id="homePhotos" data-i18n="homeTilePhotosHint">按拍摄日期整理为标准文件夹</p>
             </span>
           </button>
         </div>
@@ -90,7 +134,7 @@
         </section>
         <section id="homeRecent" class="home-recent hidden">
           <div class="sub-row">
-            <h3 data-i18n="batches">最近图库</h3>
+            <h3 data-i18n="batches">最近接收</h3>
             <button type="button" class="linkish" data-go="history" data-i18n="seeAll">全部</button>
           </div>
           <div id="homeGallery" class="gallery compact"></div>
@@ -100,11 +144,16 @@
       <section id="view-usb" class="view">
         <header class="page-head row usb-head">
           <div class="usb-head-copy">
-            <h1>USB</h1>
-            <p class="usb-device-line">
+            <h1 data-i18n="usbTile">USB 导入</h1>
+            <!-- 插着两台机器时必须能切。后端一直支持（/api/devices、
+                 /api/select_device），但前端从来没调过 —— 用户只能看到
+                 当前那台的名字，另一台等于不存在。 -->
+            <button type="button" id="usbDeviceBtn" class="usb-device-line">
               <span class="usb-device-dot" aria-hidden="true"></span>
               <span id="usbDevice" data-i18n="waiting">等待设备</span>
-            </p>
+              <svg id="usbDeviceCaret" class="usb-caret hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div id="usbDeviceMenu" class="usb-device-menu" hidden></div>
           </div>
           <div class="actions">
             <button type="button" id="scanBtn" class="icon-btn" disabled data-i18n-title="scan" title="扫描相册" aria-label="扫描相册">
@@ -155,18 +204,26 @@
           <span data-i18n="save">保存到</span>
           <input id="usbOut" type="text" spellcheck="false" />
           <button type="button" id="openUsbOut" class="linkish" data-i18n="openShort">打开</button>
+          <small class="path-note" data-i18n="saveShared">USB 与 Wi-Fi 共用此位置</small>
         </div>
-        <footer class="xfer-bar hidden" id="xferBar">
-          <span id="xferText">准备传输</span>
-          <span class="xfer-acts">
+        <!-- 传输过程有自己的一屏，不再是底部一条悬浮 bar。
+             一次导几百张要跑好几分钟，那期间用户盯着的就是这里，
+             值得给张图、一个大数字和明确的速度/剩余时间。 -->
+        <div class="xfer-panel hidden" id="xferBar">
+          <img class="xfer-art" id="xferArt" src="/art/transfer.png" alt="">
+          <p class="xfer-count" id="xferCount">—</p>
+          <p class="xfer-sub" id="xferText">准备传输</p>
+          <div class="bar"><i id="xferFill"></i></div>
+          <p class="xfer-file" id="xferFile"></p>
+          <div class="xfer-acts">
             <button type="button" id="xferPause" class="ghost hidden" data-i18n="pause">暂停</button>
             <button type="button" id="xferStop" class="ghost danger hidden" data-i18n="stop">停止</button>
             <button type="button" id="xferRetry" class="ghost hidden" data-i18n="retryFailed">重试失败的</button>
-            <button type="button" id="xferSee" class="ghost hidden" data-i18n="seeGallery">查看</button>
+            <button type="button" id="xferSee" class="primary hidden" data-i18n="seeGallery">查看</button>
             <button type="button" id="xferImport" class="ghost hidden" data-i18n="toPhotos">导入照片</button>
-          </span>
-          <div class="bar"><i id="xferFill"></i></div>
-        </footer>
+            <button type="button" id="xferBack" class="ghost hidden" data-i18n="xferBack">返回</button>
+          </div>
+        </div>
       </section>
 
       <section id="view-wifi" class="view">
@@ -249,9 +306,105 @@
         </div>
       </section>
 
+      <section id="view-photoslib" class="view">
+        <header class="page-head">
+          <h1 data-i18n="plTitle">照片图库导出</h1>
+          <p data-i18n="plSub">直接读取「照片」图库，以原始文件名按拍摄日期导出为标准文件夹。</p>
+        </header>
+
+        <!-- 未扫描 -->
+        <div id="plIdle" class="pl-idle">
+          <div id="plLibs" class="pl-libs" hidden></div>
+          <div class="empty with-art">
+            <img class="empty-art" src="/art/photoslib.png" alt="">
+            <div data-i18n="plIdleEmpty">尚未扫描</div>
+            <small data-i18n="plIdleHint">扫描后可查看本机可导出的项目数量。</small>
+          </div>
+          <div class="pl-actions">
+            <button type="button" id="plScan" class="primary" data-i18n="plScan">扫描图库</button>
+          </div>
+        </div>
+
+        <!-- 扫描结果。分三段：概览 / 导出设置 / 选择项目，
+             一段一个标题，别把所有控件堆成一坨。 -->
+        <div id="plResult" class="pl-result" hidden>
+          <div class="pl-stats">
+            <div class="pl-stat">
+              <span class="pl-num" id="plExportable">—</span>
+              <span class="pl-lab" data-i18n="plExportable">可导出</span>
+            </div>
+            <div class="pl-stat warn">
+              <span class="pl-num" id="plCloud">—</span>
+              <span class="pl-lab" data-i18n="plCloud">仅在 iCloud</span>
+            </div>
+            <div class="pl-stat">
+              <span class="pl-num" id="plLive">—</span>
+              <span class="pl-lab" data-i18n="plLive">实况照片</span>
+            </div>
+            <div class="pl-stat">
+              <span class="pl-num" id="plSize">—</span>
+              <span class="pl-lab" data-i18n="plSize">总大小</span>
+            </div>
+          </div>
+
+          <p id="plCloudWarn" class="pl-warn" hidden></p>
+
+          <section class="pl-section">
+            <div class="sub-row"><h3 data-i18n="plSectionOut">导出设置</h3></div>
+            <div class="path-row">
+              <label data-i18n="plOutLabel">导出到</label>
+              <input id="plOut" type="text" spellcheck="false" placeholder="~/Pictures/DroidTrans" />
+            </div>
+            <label class="pl-check">
+              <input id="plLowerExt" type="checkbox" />
+              <span data-i18n="plLowerExt">扩展名转为小写（.JPG → .jpg）</span>
+            </label>
+          </section>
+
+          <section class="pl-section">
+            <div id="plPickbar" class="sub-row">
+              <h3 data-i18n="plSectionPick">选择项目</h3>
+              <div class="sub-acts">
+                <span id="plPickCount" class="pl-count"></span>
+                <button type="button" id="plAll" class="linkish" data-i18n="plAll">全选</button>
+                <button type="button" id="plNone" class="linkish" data-i18n="plNone">取消全选</button>
+                <button type="button" id="plToggleGrid" class="linkish" data-i18n="plShowGrid">逐项选择</button>
+              </div>
+            </div>
+            <!-- 超额提示。扫描完就能算出来，不必等跑完 -->
+            <p id="plQuota" class="pl-quota" hidden></p>
+            <div id="plGrid" class="pl-grid" hidden></div>
+            <button type="button" id="plMore" class="ghost pl-more" hidden data-i18n="plMore">加载更多</button>
+          </section>
+
+          <div class="pl-actions">
+            <button type="button" id="plExport" class="primary" data-i18n="plExport">开始导出</button>
+            <button type="button" id="plRescan" class="ghost" data-i18n="plRescan">重新扫描</button>
+            <button type="button" id="plReveal" class="ghost" hidden data-i18n="plReveal">在访达中显示</button>
+            <button type="button" id="plQuotaUp" class="ghost" hidden data-i18n="plQuotaUpgrade">升级 Pro</button>
+          </div>
+          <p id="plPath" class="pl-note"></p>
+        </div>
+
+        <!-- 导出中 -->
+        <div id="plRunning" class="pl-running" hidden>
+          <p id="plProgress" class="pl-progress"></p>
+          <div class="pl-bar"><div id="plBarFill"></div></div>
+          <p id="plCurrent" class="pl-current"></p>
+          <div class="pl-actions">
+            <button type="button" id="plCancel" class="ghost" data-i18n="plCancel">取消</button>
+          </div>
+        </div>
+
+        <p id="plMsg" class="pl-msg" hidden></p>
+        <div class="pl-actions">
+          <button type="button" id="plGrant" class="ghost" hidden data-i18n="plGrant">前往「完全磁盘访问权限」</button>
+        </div>
+      </section>
+
       <section id="view-history" class="view">
         <header class="page-head row">
-          <h1 data-i18n="histTitle">图库</h1>
+          <h1 data-i18n="histTitle">已接收</h1>
           <button type="button" id="clearHist" class="ghost danger" data-i18n="clear">清空</button>
         </header>
         <div id="histList" class="gallery"></div>
@@ -282,7 +435,7 @@
   <div id="viewer" class="viewer hidden">
     <div class="viewer-bar">
       <button type="button" id="viewerBack" class="ghost">返回</button>
-      <h2 id="viewerTitle">图库</h2>
+      <h2 id="viewerTitle">已接收</h2>
       <button type="button" id="viewerOpen" class="ghost" data-i18n="open">打开文件夹</button>
     </div>
     <div id="viewerGrid" class="viewer-grid"></div>
@@ -296,6 +449,69 @@
     <button type="button" id="lbNext" class="lightbox-nav next" aria-label="下一张">›</button>
   </div>
   <script src="/qrcode.min.js"></script>
+  <!-- 弹层必须在 app.js 之前：顶层的 addEventListener 在脚本执行时
+       就要能拿到这些元素，放在 script 之后拿到的是 null。 -->
+  <div id="confirmModal" class="lic-modal" hidden>
+    <div class="lic-backdrop" id="confirmBackdrop"></div>
+    <div class="lic-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <header class="lic-head">
+        <span class="lic-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 19h16"/></svg>
+        </span>
+        <div>
+          <h3 id="confirmTitle" data-i18n="confirmTitle">开始导入</h3>
+          <p id="confirmSub" class="lic-state"></p>
+        </div>
+      </header>
+      <ul id="confirmRows" class="confirm-list" hidden></ul>
+      <p id="confirmNote" class="lic-hint"></p>
+      <div class="lic-foot">
+        <button type="button" id="confirmCancel" class="ghost" data-i18n="cancel">取消</button>
+        <button type="button" id="confirmGo" class="primary">开始导入</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="licModal" class="lic-modal" hidden>
+    <div class="lic-backdrop" id="licBackdrop"></div>
+    <div class="lic-card" role="dialog" aria-modal="true" aria-labelledby="licTitle">
+      <!-- 顺序是有讲究的：先说解锁什么、多少钱，最后才是「已经有激活码？」。
+           反过来的话，新用户开门见山看到的是一个自己填不出来的输入框。 -->
+      <header class="lic-head">
+        <span class="lic-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8 4.6 5.9v5.6c0 4.3 3 8.3 7.4 9.7 4.4-1.4 7.4-5.4 7.4-9.7V5.9L12 2.8Z"/><path d="M9 12.1l2.1 2.1 4-4.2"/></svg>
+        </span>
+        <div>
+          <h3 id="licTitle" data-i18n="licTitle">卓传 Pro</h3>
+          <p id="licState" class="lic-state"></p>
+        </div>
+      </header>
+
+      <!-- 未激活时给免费 / Pro 两列对照：光罗列 Pro 有什么，
+           用户没有参照系，判断不了值不值。已激活之后换成解锁清单。 -->
+      <p id="licOwned" class="lic-owned" hidden></p>
+      <div id="licCompare" class="lic-compare" hidden></div>
+      <ul id="licFeatures" class="lic-features" hidden></ul>
+
+      <div id="licPlans" class="lic-plans"></div>
+
+      <p id="licCodeHint" class="lic-hint" data-i18n="licHaveCode">已经有激活码？</p>
+      <div id="licInputRow" class="lic-row">
+        <input id="licCode" type="text" spellcheck="false" autocomplete="off"
+               maxlength="20" data-i18n-ph="licPlaceholder" placeholder="DT-XXXX-XXXX-XXXX" />
+        <button type="button" id="licActivate" class="primary" data-i18n="licActivate">激活</button>
+      </div>
+      <p id="licMsg" class="lic-msg" hidden></p>
+
+      <div class="lic-foot">
+        <button type="button" id="licBuy" class="link-btn" data-i18n="licBuy">在网页上查看</button>
+        <button type="button" id="licRemove" class="ghost" data-i18n="licRemove" hidden>注销这台设备</button>
+        <button type="button" id="licClose" class="ghost" data-i18n="licClose">关闭</button>
+      </div>
+    </div>
+  </div>
   <script src="/app.js"></script>
+  <!-- 开始传输前的二次确认。之前点一下就开跑，用户没机会核对
+       要导多少、导到哪里 —— 一跑就是几分钟，跑错了只能等它结束。 -->
 </body>
 </html>

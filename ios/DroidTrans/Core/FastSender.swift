@@ -1,7 +1,11 @@
-/// ATF2 快传：直连桌面端 TCP 9501，把文件裸流推过去。
+/// ATF3 快传：直连桌面端 TCP 9501，把文件裸流推过去。
 ///
 /// 走这条路而不是 HTTP multipart，是因为大文件（几十 GB 的视频）
 /// 在 multipart 上会多一层编码和内存拷贝，速度差得很明显。
+///
+/// ATF3 比上一版多了一次握手：发完文件头之后先等服务端回一个偏移量，
+/// 再从那里开始发。多这一个来回，换来的是「传到 99GB 断网，重连只补最后 1GB」。
+/// 导一半卡住、只能从头再来，正是用户抛弃系统自带导入工具的头号原因。
 
 import Foundation
 import Network
@@ -17,8 +21,14 @@ struct SendProgress {
 
 struct FastSendError: Error, LocalizedError {
     let message: String
+    /// 是不是「超出免费额度」。界面据此把付费页直接推出来，
+    /// 而不是只弹一句错误让用户自己去猜。
+    let needsPro: Bool
     var errorDescription: String? { message }
-    init(_ m: String) { message = m }
+    init(_ m: String, needsPro: Bool = false) {
+        message = m
+        self.needsPro = needsPro
+    }
 }
 
 /// 一次传输占一个实例，不复用 —— 连接状态和应答缓冲都是一次性的。
@@ -51,34 +61,47 @@ actor FastSender {
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
         let name = remoteName ?? fileURL.lastPathComponent
 
-        let header = try buildATF2Header(name: name, size: size, token: token)
+        let header = try buildATF3Header(name: name, size: size, token: token)
 
         let conn = try await connect()
         // 无论成败都要关，不然连接会挂到超时
         defer { conn.cancel() }
 
-        let reply = ReplyWatcher()
-        // 应答要在写之前就开始收：服务端校验失败时会立刻回 ERR 并关连接，
+        let reply = ReplyStream()
+        // 应答要在写之前就开始收：服务端校验失败时会立刻回错误并关连接，
         // 等写完再读的话，这中间的写入会先炸成 broken pipe，真正的原因就丢了。
         startReceiving(conn, into: reply)
 
         try await send(conn, data: header)
 
+        // ---- 握手：服务端说从哪儿接着发 ----
+        let offset = try await readAccept(reply)
+        if offset >= size {
+            // 电脑上已经有一份完整的了，一个字节都不用发
+            onProgress?(SendProgress(sent: size, total: size))
+            try await readFinal(reply)
+            return
+        }
+
         guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
             throw FastSendError(L("error.cantOpenFile", name))
         }
         defer { try? handle.close() }
+        if offset > 0 {
+            try handle.seek(toOffset: UInt64(offset))
+        }
 
-        var sent: Int64 = 0
-        onProgress?(SendProgress(sent: 0, total: size))
+        var sent = offset
+        // 进度从 offset 起报。从 0 重新爬一遍的话，用户会以为又从头传了。
+        onProgress?(SendProgress(sent: sent, total: size))
 
-        while true {
+        while sent < size {
             try Task.checkCancellation()
 
-            // 服务端在传输中途回话只有一种情况：它拒绝了（令牌不对、路径非法…）。
-            // 它回完就关连接，这时候继续写只会拿到 broken pipe，
-            // 把真正的原因盖掉。停下来去读那句 ERR。
-            if await reply.hasReply { break }
+            // 服务端在传输中途主动说话只有一种情况：它出问题了（磁盘写不下、
+            // 路径不对…）。它说完就关连接，这时候继续写只会拿到 broken pipe，
+            // 把真正的原因盖掉。停下来去读那句话。
+            if await reply.hasBytes { break }
 
             let chunk = handle.readData(ofLength: Self.chunkSize)
             if chunk.isEmpty { break }
@@ -87,17 +110,55 @@ actor FastSender {
                 try await send(conn, data: chunk)
             } catch {
                 // 连接已经断了。服务端在断开前说过话的话，那句话才是真原因。
-                if await reply.hasReply { break }
+                if await reply.hasBytes { break }
                 throw error
             }
             sent += Int64(chunk.count)
             onProgress?(SendProgress(sent: sent, total: size))
         }
 
-        let raw = try await reply.wait(timeout: 30)
-        if let err = parseATFReply(raw) {
-            throw FastSendError(err)
+        try await readFinal(reply)
+    }
+
+    /// 读握手应答，返回该从第几个字节开始发。
+    private func readAccept(_ reply: ReplyStream) async throws -> Int64 {
+        let status = try await reply.take(1, timeout: 30)
+        switch ATFStatus(rawValue: status[status.startIndex]) {
+        case .go:
+            return u64be(from: try await reply.take(8, timeout: 30))
+        case .error:
+            throw FastSendError(try await readErrorMessage(reply))
+        case .upgrade:
+            throw FastSendError(try await readErrorMessage(reply), needsPro: true)
+        case .done:
+            // 服务端不该在这一步说「收完了」，但真发生了也当成功，
+            // 总比把一次成功的传输报成失败强。
+            return .max
+        case nil:
+            throw FastSendError(L("error.closedNoReply"))
         }
+    }
+
+    /// 读收尾应答。
+    private func readFinal(_ reply: ReplyStream) async throws {
+        let status = try await reply.take(1, timeout: 30)
+        switch ATFStatus(rawValue: status[status.startIndex]) {
+        case .done:
+            return
+        case .error:
+            throw FastSendError(try await readErrorMessage(reply))
+        case .upgrade:
+            throw FastSendError(try await readErrorMessage(reply), needsPro: true)
+        default:
+            throw FastSendError(L("error.closedNoReply"))
+        }
+    }
+
+    private func readErrorMessage(_ reply: ReplyStream) async throws -> String {
+        let len = u32be(from: try await reply.take(4, timeout: 10))
+        guard len > 0, len <= 4096 else { return L("error.closedNoReply") }
+        let body = try await reply.take(Int(len), timeout: 10)
+        return String(data: body, encoding: .utf8) ?? L("error.closedNoReply")
     }
 
     // MARK: - 连接
@@ -146,7 +207,7 @@ actor FastSender {
         }
     }
 
-    private nonisolated func startReceiving(_ conn: NWConnection, into reply: ReplyWatcher) {
+    private nonisolated func startReceiving(_ conn: NWConnection, into reply: ReplyStream) {
         func loop() {
             conn.receive(minimumIncompleteLength: 1, maximumLength: 512) { data, _, isComplete, error in
                 if let data, !data.isEmpty {
@@ -217,40 +278,41 @@ actor FastSender {
 
 // MARK: - 辅助
 
-/// 服务端的应答。收到换行就算一条完整的回复。
-private actor ReplyWatcher {
+/// 服务端应答的字节流。
+///
+/// ATF3 的应答是二进制、长度不定（状态字节 + 可选的偏移量或错误文本），
+/// 所以这里按「等够 n 个字节」来取，而不是像以前那样等一个换行 ——
+/// 偏移量里出现 0x0A 是完全正常的，按换行切会把一个数字劈成两半。
+private actor ReplyStream {
     private var buffer = Data()
-    private var done = false
-    private var waiters: [CheckedContinuation<String, Never>] = []
+    private var closed = false
+    /// 每个等待者要多少字节
+    private var waiters: [(need: Int, k: CheckedContinuation<Data, Error>)] = []
 
-    var hasReply: Bool { done || buffer.contains(0x0A) }
+    var hasBytes: Bool { closed || !buffer.isEmpty }
 
     func append(_ d: Data) {
-        guard !done else { return }
+        guard !closed else { return }
         buffer.append(d)
-        if buffer.contains(0x0A) { flush() }
+        serve()
     }
 
     func finish() {
-        guard !done else { return }
-        flush()
+        guard !closed else { return }
+        closed = true
+        serve()
     }
 
-    private func flush() {
-        done = true
-        let text = String(data: buffer, encoding: .utf8) ?? ""
-        for w in waiters { w.resume(returning: text) }
-        waiters.removeAll()
-    }
+    /// 取 n 个字节，不够就等。连接关了还不够就抛错。
+    func take(_ n: Int, timeout: TimeInterval) async throws -> Data {
+        if buffer.count >= n { return consume(n) }
+        if closed { throw FastSendError(L("error.closedNoReply")) }
 
-    func wait(timeout: TimeInterval) async throws -> String {
-        if done { return String(data: buffer, encoding: .utf8) ?? "" }
-
-        let watcher = self
-        return try await withThrowingTaskGroup(of: String.self) { group in
+        let stream = self
+        return try await withThrowingTaskGroup(of: Data.self) { group in
             group.addTask {
-                await withCheckedContinuation { (k: CheckedContinuation<String, Never>) in
-                    Task { await watcher.enqueue(k) }
+                try await withCheckedThrowingContinuation { k in
+                    Task { await stream.enqueue(need: n, k: k) }
                 }
             }
             group.addTask {
@@ -265,12 +327,29 @@ private actor ReplyWatcher {
         }
     }
 
-    private func enqueue(_ k: CheckedContinuation<String, Never>) {
-        if done {
-            k.resume(returning: String(data: buffer, encoding: .utf8) ?? "")
-        } else {
-            waiters.append(k)
+    private func enqueue(need: Int, k: CheckedContinuation<Data, Error>) {
+        waiters.append((need, k))
+        serve()
+    }
+
+    private func serve() {
+        while let w = waiters.first {
+            if buffer.count >= w.need {
+                waiters.removeFirst()
+                w.k.resume(returning: consume(w.need))
+            } else if closed {
+                waiters.removeFirst()
+                w.k.resume(throwing: FastSendError(L("error.closedNoReply")))
+            } else {
+                return
+            }
         }
+    }
+
+    private func consume(_ n: Int) -> Data {
+        let out = buffer.prefix(n)
+        buffer.removeFirst(min(n, buffer.count))
+        return Data(out)
     }
 }
 

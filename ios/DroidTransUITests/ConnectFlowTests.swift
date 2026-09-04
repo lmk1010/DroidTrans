@@ -30,6 +30,16 @@ final class ConnectFlowTests: XCTestCase {
         // 会让 App 直接连回电脑、跳过雷达页，用例会以「没找到电脑」假失败
         app.launchArguments = ["-uitest-fresh"]
         app.launch()
+
+        // 先在启动选择页说明「要跟电脑传」，才会进雷达。
+        //
+        // 加了这一屏之后这几个用例就一直红着 —— 它们启动完直接找 radar-node，
+        // 而 App 还停在选择页。报出来的是「雷达上没出现电脑」，
+        // 看着像网络问题，其实一步都没走到雷达。
+        let pick = app.buttons["start-desktop"]
+        if pick.waitForExistence(timeout: 8) {
+            pick.tap()
+        }
     }
 
     /// 雷达要能在合理时间内把电脑扫出来。
@@ -114,6 +124,12 @@ final class ReconnectTests: XCTestCase {
 
         let home = first.buttons["send-photos"]
         if !home.waitForExistence(timeout: 4) {
+            // 先过启动选择页。少了这一步就直接去找雷达，
+            // 结果是「雷达上没出现电脑」，看着像网络问题，
+            // 其实一步都没走到雷达 —— 加了这一屏之后这个用例就一直在跳过。
+            let pick = first.buttons["start-desktop"]
+            if pick.waitForExistence(timeout: 8) { pick.tap() }
+
             let node = first.buttons["radar-node"].firstMatch
             guard node.waitForExistence(timeout: 25) else {
                 throw XCTSkip("雷达上没出现电脑")

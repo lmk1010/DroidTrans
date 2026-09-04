@@ -392,6 +392,22 @@ func (c *Client) ExecOut(timeout time.Duration, args ...string) ([]byte, error) 
 	return stdout.Bytes(), nil
 }
 
+// PropOf 读指定设备的属性，不改变当前选中的设备。
+//
+// 设备选择器要在切换之前就显示每台的型号 —— 拿 Prop 挨个问的话得先
+// SetSerial，那会把用户正在用的选择改掉；插着两台机器时表现为
+// 「点开列表，当前设备就被换了」。
+func (c *Client) PropOf(serial, name string) string {
+	if serial == "" {
+		return c.Prop(name)
+	}
+	out, _, err := c.run(3*time.Second, "-s", serial, "shell", "getprop "+name)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 func (c *Client) Prop(name string) string {
 	out, err := c.Shell(3*time.Second, "getprop "+name)
 	if err != nil {

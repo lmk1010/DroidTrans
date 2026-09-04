@@ -85,18 +85,18 @@ enum ATFError: Error, LocalizedError {
 /// 头之后紧跟 size 字节的文件内容，服务端回 "OK\n" 或 "ERR <原因>\n"。
 ///
 /// 只发 ATF2：ATF1 没有令牌，等于谁都能往电脑上写文件。
-func buildATF2Header(name: String, size: Int64, token: String) throws -> Data {
+func buildATF3Header(name: String, size: Int64, token: String) throws -> Data {
     let nameBytes = Array(name.utf8)
     let tokenBytes = Array(token.utf8)
 
     // 服务端 readStr 的上限：token 512、name 4096，超了直接判 "field too long"。
-    // 在这里拦下来，比让用户等到传输中途才收到一句 ERR 要好。
+    // 在这里拦下来，比让用户等到传输中途才收到一句错误要好。
     guard tokenBytes.count <= 512 else { throw ATFError.tokenTooLong(tokenBytes.count) }
     guard nameBytes.count <= 4096 else { throw ATFError.nameTooLong(name) }
     guard size >= 0 else { throw ATFError.negativeSize(size) }
 
     var out = Data()
-    out.append(contentsOf: Array("ATF2".utf8))
+    out.append(contentsOf: Array("ATF3".utf8))
     out.append(u32be(UInt32(tokenBytes.count)))
     out.append(contentsOf: tokenBytes)
     out.append(u32be(UInt32(nameBytes.count)))
@@ -115,13 +115,35 @@ private func u64be(_ v: UInt64) -> Data {
     return Data(bytes: &b, count: 8)
 }
 
-/// 解析服务端应答。成功返回 nil，失败返回原因。
-func parseATFReply(_ raw: String) -> String? {
-    let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    if line == "OK" { return nil }
-    if line.hasPrefix("ERR ") { return String(line.dropFirst(4)) }
-    if line.isEmpty { return L("error.closedNoReply") }
-    return line
+// MARK: - 应答
+
+/// 服务端应答的状态字节。与 desktop/internal/fast/fast.go 里的常量一一对应。
+///
+/// ATF3 之前应答是 "OK\n" / "ERR ...\n" 这样的文本，现在改成二进制 ——
+/// 因为握手阶段要回一个 u64 偏移量，二进制数字和换行分隔的文本混在同一条流上，
+/// 偏移量里恰好出现 0x0A 就会被当成行尾，这类 bug 只在特定文件大小下复现。
+enum ATFStatus: UInt8 {
+    /// 继续，后面跟 8 字节大端偏移量：从第几个字节开始发
+    case go = 0x00
+    /// 拒绝，后面跟 4 字节长度 + UTF-8 原因
+    case error = 0x01
+    /// 收完了，落盘成功
+    case done = 0x02
+    /// 超出免费额度。和 error 同样的帧格式，但分开一个状态字 ——
+    /// 混在普通错误里，用户只会以为传输坏了，看不到升级这条路。
+    case upgrade = 0x03
+}
+
+func u64be(from data: Data) -> Int64 {
+    var v: UInt64 = 0
+    for b in data.prefix(8) { v = (v << 8) | UInt64(b) }
+    return Int64(bitPattern: v)
+}
+
+func u32be(from data: Data) -> UInt32 {
+    var v: UInt32 = 0
+    for b in data.prefix(4) { v = (v << 8) | UInt32(b) }
+    return v
 }
 
 // MARK: - 地址

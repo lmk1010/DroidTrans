@@ -78,9 +78,32 @@ button:focus-visible, input:focus-visible {
 }
 .brand span { color: var(--muted); font-size: 13px; }
 nav { display: flex; flex-direction: column; gap: 2px; }
+
+/* 分组标题。把「手机」和「这台电脑」两类分开 ——
+   照片图库导出是唯一一个不涉及手机的功能，和传输并排会让人以为是同一类。 */
+.nav-group {
+  margin: 16px 0 4px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(242, 243, 245, 0.34);
+}
+.nav-group:first-of-type { margin-top: 14px; }
+
+/* 主标题下面一行适用场景。USB 只支持安卓、Wi-Fi 才是双向，
+   这些约束不写出来，用户只能点进去试。 */
+.nav-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.nav-copy small {
+  font-size: 11px;
+  line-height: 1.3;
+  color: rgba(242, 243, 245, 0.34);
+}
+nav button.active .nav-copy small { color: rgba(242, 243, 245, 0.5); }
 nav button {
   display: flex;
   align-items: center;
+  min-height: 40px;
   gap: 10px;
   white-space: nowrap;
   border: 0;
@@ -99,18 +122,37 @@ nav button.active {
   color: var(--text);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
-.rail-foot { margin-top: auto; padding: 0 8px; }
+/* 侧栏底部的三行（授权 / 语言 / 设备状态）沿用导航的那套几何：
+   左内边距 12、图标占 22 宽的槽、文字从 44 起 —— 上下两组才在一条竖线上。
+   之前这里是 padding 0 8px + 各写各的 padding，三行左边缘差 4px，
+   加上 .hint 是个 <p>、带浏览器默认的 1em 上下边距，看着就是散的。 */
+.rail-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .lang-btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 4px 0 8px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 11px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.lang-btn:hover { color: var(--text); }
+.lang-btn:hover { background: var(--glass); color: var(--text); }
+/* 22 宽的槽 + 16 高的图形：槽和导航图标同宽，图形按 12px 正文的分量缩小居中 */
+.lang-btn svg { width: 22px; height: 16px; flex: none; }
 .hint {
+  margin: 6px 0 0;
+  padding: 0 12px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
@@ -1281,7 +1323,8 @@ main { padding: 52px 40px 40px; overflow: auto; }
   nav { flex-direction: row; gap: 2px; overflow-x: auto; scrollbar-width: none; }
   nav::-webkit-scrollbar { display: none; }
   nav button { padding: 8px 10px; }
-  .rail-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; gap: 10px; }
+  .rail-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; gap: 4px; }
+  .rail-foot .lic-btn, .rail-foot .lang-btn { width: auto; }
   .rail-foot .hint { display: none; }   /* 设备名在主界面里已经有了 */
   main { padding: 24px 22px 32px; }
   .tiles { grid-template-columns: 1fr; }
@@ -1291,6 +1334,7 @@ main { padding: 52px 40px 40px; overflow: auto; }
   .fatal { left: 16px; }
   .listen { flex-wrap: wrap; }
   .gallery.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #view-usb .usb-head { gap: 14px; }
 }
 
 /* 更窄时只留图标，文字藏起来 */
@@ -1587,3 +1631,630 @@ main { padding: 52px 40px 40px; overflow: auto; }
 #scanBtn svg { width: 17px; height: 17px; }
 #scanBtn.spinning svg { animation: spin 1s linear infinite; }
 #scanBtn:disabled { opacity: 0.35; }
+
+/* ==========================================================================
+   授权
+   --------------------------------------------------------------------------
+   入口放在侧栏底部而不是导航里：激活是一次性的事，
+   占一个常驻导航位不值得，但状态又需要随时能看到。
+   ========================================================================== */
+
+.lic-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.lic-btn:hover { background: var(--glass); color: var(--text); }
+.lic-btn svg { width: 22px; height: 16px; flex: none; }
+/* 已激活时点亮，让人一眼看到自己是 Pro */
+.lic-btn.on { color: var(--accent); }
+
+.lic-modal { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; }
+.lic-modal[hidden] { display: none; }
+.lic-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(3px); }
+.lic-card {
+  position: relative;
+  width: min(460px, calc(100vw - 48px));
+  padding: 24px 24px 20px;
+  border-radius: 18px;
+  background: #1a1c22;
+  border: 1px solid var(--glass-strong);
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.7);
+  font-family: var(--sans);
+}
+
+/* 标题区。图标 + 标题 + 状态一行摆平，比孤零零一个「授权」有分量 */
+.lic-head { display: flex; align-items: center; gap: 12px; }
+.lic-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  color: var(--accent);
+  background: rgba(76, 141, 255, 0.14);
+}
+.lic-mark svg { width: 22px; height: 22px; }
+.lic-card h3 { margin: 0; font-size: 18px; font-family: var(--font); }
+.lic-state { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.lic-state.on { color: var(--ok); }
+.lic-state.warn { color: var(--danger); }
+
+/* [hidden] 的默认样式是 display:none，但任何显式的 display 声明都会压过它 ——
+   写成 .lic-row { display: flex } 之后，激活成功输入框也不会消失。
+   这是 HTML/CSS 里最容易中招的一处。 */
+.lic-row { display: flex; gap: 8px; }
+.lic-row[hidden] { display: none; }
+.lic-row input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--glass-strong);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13.5px;
+  /* 激活码是大写的，输入时直接转换，省得用户以为自己打错了 */
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.lic-row input:focus { outline: none; border-color: var(--accent); }
+.lic-row button { height: 38px; padding: 0 16px; white-space: nowrap; }
+.lic-row button:disabled { opacity: 0.5; pointer-events: none; }
+
+.lic-msg { margin: 10px 0 0; font-size: 12.5px; color: var(--danger); }
+.lic-msg.ok { color: var(--ok); }
+
+/* 权益。之前是灰点 + 灰字，看着像脚注 —— 但这几行才是掏钱的理由，
+   所以给足对比度，用勾而不是圆点。 */
+/* 免费 / Pro 对照。两列宽度定死，各行的数字才对得齐 —— 不齐一眼就显得糙 */
+.lic-compare { margin: 20px 0 0; }
+.lic-compare[hidden] { display: none; }
+.lic-cmp-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--glass);
+}
+.lic-cmp-row:last-child { border-bottom: 0; }
+.lic-cmp-row > span { flex: 1; min-width: 0; }
+.lic-cmp-row > b {
+  width: 84px;
+  flex: none;
+  text-align: center;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+/* 免费那一列压暗、Pro 那一列加重，差额自己跳出来 */
+.lic-cmp-row > b.free { color: var(--muted); }
+.lic-cmp-row > b.pro { color: var(--text); font-weight: 600; }
+.lic-cmp-head {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--glass-strong);
+  font-size: 11.5px;
+}
+.lic-cmp-head > b.free { color: var(--muted); font-weight: 500; }
+.lic-cmp-head > b.pro { color: var(--accent); font-weight: 600; }
+
+.lic-features { list-style: none; margin: 20px 0 0; padding: 0; }
+.lic-features[hidden] { display: none; }
+.lic-features li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.lic-features li::before {
+  content: '';
+  flex: none;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: rgba(76, 141, 255, 0.16) center / 11px 11px no-repeat
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234c8dff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+.lic-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass);
+}
+.lic-foot a { color: var(--accent); font-size: 13px; text-decoration: none; margin-right: auto; }
+.lic-foot a:hover { text-decoration: underline; }
+.lic-foot button { height: 32px; padding: 0 12px; font-size: 12.5px; }
+
+/* 套餐。三个横排，终生档点亮 —— 客户端里就能看到买什么、多少钱，
+   不用先跳去网页再找一遍。 */
+.lic-plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 18px; }
+.lic-plans[hidden] { display: none; }
+.lic-plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 12px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-strong);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-family: var(--sans);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+}
+.lic-plan:hover { border-color: var(--accent); background: rgba(76, 141, 255, 0.09); }
+.lic-plan:active { transform: translateY(1px); }
+.lic-plan.featured { border-color: rgba(76, 141, 255, 0.6); background: rgba(76, 141, 255, 0.13); }
+/* 「最划算」角标。终生档要一眼能挑出来，否则三个格子权重一样，用户就挑最便宜的 */
+.lic-plan .p-badge {
+  position: absolute;
+  top: -8px; right: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+.lic-plan .p-name { font-size: 11.5px; color: var(--muted); }
+.lic-plan .p-price { font-size: 21px; font-weight: 620; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.lic-plan .p-price i { font-size: 12px; font-style: normal; opacity: 0.7; margin-right: 1px; }
+.lic-plan .p-hint { font-size: 10.5px; color: var(--muted); min-height: 14px; }
+
+.lic-hint { margin: 20px 0 8px; font-size: 12px; color: var(--muted); }
+.lic-hint[hidden] { display: none; }
+
+/* 「在网页上查看」做成按钮而不是链接：WebView 里 <a target="_blank"> 是死的 */
+.link-btn {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-family: var(--sans);
+  padding: 0;
+  margin-right: auto;
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+
+/* --------------------------------------------------------------------------
+   3D 素材
+   和 iOS 端同一套图。三端摆在一起要像一个产品，而不是三套各自的图标。
+   -------------------------------------------------------------------------- */
+
+.tile-icon.art {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  /* 它自己带光影，别再套 currentColor 那一套线性图标的规则 */
+  color: initial;
+  filter: drop-shadow(0 4px 10px rgba(73, 146, 255, 0.28));
+}
+
+/* 空态插画。比一行灰字有力，也比一个 18px 的小图标像样 */
+.empty-art {
+  display: block;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 10px;
+  object-fit: contain;
+  opacity: 0.95;
+  filter: drop-shadow(0 6px 14px rgba(73, 146, 255, 0.22));
+}
+.empty.with-art {
+  display: block;
+  text-align: center;
+  padding: 26px 16px;
+}
+
+.out-empty.with-art {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+  padding: 30px 16px;
+}
+.out-empty.with-art .empty-art { margin-bottom: 6px; }
+
+/* ==========================================================================
+   照片图库
+   --------------------------------------------------------------------------
+   跟 Wi-Fi / USB 页一样是全平的：不套卡片、不加边框、不投影。
+   这套界面刻意压平过（.path-row / .listen 都显式关掉 background、
+   border-radius、box-shadow，border: 0 是全局规则），加新页面先看隔壁怎么摆。
+
+   内容分成三段（概览 / 导出设置 / 选择项目），每段一个 .sub-row 标题。
+   所有块左边缘对齐到同一条线上，别让控件横向散开。
+   ========================================================================== */
+
+.pl-idle { margin-top: var(--gap-head); }
+
+/* 空态跟着页头左对齐。.empty.with-art 默认是居中的，在这个宽度下
+   会跑到标题右边很远的地方，整页就没有一条统一的左边线了。 */
+.pl-idle .empty.with-art {
+  text-align: left;
+  padding: 0;
+}
+.pl-idle .empty-art { margin: 0 0 14px; }
+.pl-idle .empty small { display: block; margin-top: 4px; }
+.pl-section { margin-top: 28px; }
+
+/* 四个数并排。不是四张卡片，就是四组数字 ——
+   「仅在 iCloud」靠颜色跳出来，不靠盒子。 */
+.pl-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 40px;
+  margin: var(--gap-head) 0 0;
+}
+.pl-stat { display: flex; flex-direction: column; gap: 3px; }
+.pl-num {
+  font-family: var(--font);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  /* 扫描结果出来时逐个升起，和 .view 的 rise 是同一套动作 */
+  animation: rise 0.34s ease both;
+}
+.pl-stat:nth-child(2) .pl-num { animation-delay: 0.04s; }
+.pl-stat:nth-child(3) .pl-num { animation-delay: 0.08s; }
+.pl-stat:nth-child(4) .pl-num { animation-delay: 0.12s; }
+.pl-stat.warn .pl-num { color: #ffb052; }
+.pl-lab { font-size: 12px; color: var(--muted); }
+
+/* 提示是一段字，不是一个框 */
+.pl-warn {
+  margin: 18px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #ffcf9a;
+  max-width: 64ch;
+}
+.pl-warn[hidden] { display: none; }
+
+.pl-check {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 6px;
+  font-size: 12.5px; color: var(--muted); cursor: pointer;
+}
+.pl-check input { accent-color: var(--accent); }
+
+.pl-count {
+  font-size: 12.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  /* 和右边那组按钮拉开，别让计数和操作粘成一串 */
+  margin-right: 6px;
+}
+
+/* 图库选择。只有一个库时整块不显示 —— 多一步选择对大多数人是纯负担 */
+.pl-libs { display: grid; gap: 2px; margin-bottom: 18px; }
+.pl-libs[hidden] { display: none; }
+.pl-libs-title { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.pl-lib {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.pl-lib:hover { background: var(--glass); }
+.pl-lib.on { background: var(--glass); }
+.pl-lib.on .pl-lib-name { color: var(--accent); }
+.pl-lib-name { font-size: 13.5px; font-weight: 560; }
+.pl-lib-meta { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+
+.pl-actions { display: flex; gap: 10px; margin-top: var(--gap-block); }
+
+.pl-actions button[hidden] { display: none; }
+.pl-note { margin: 12px 0 0; font-size: 12px; color: var(--muted); }
+
+/* 显式的 display 会压过 [hidden] 的 display:none —— 这个文件上面
+   .lic-row 那里已经栽过一次。 */
+.pl-idle[hidden], .pl-result[hidden], .pl-running[hidden] { display: none; }
+
+.pl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+  max-height: 396px;
+  overflow-y: auto;
+}
+.pl-grid[hidden] { display: none; }
+.pl-cell {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--glass);
+  cursor: pointer;
+  /* 没选中的压暗并去色，一眼能扫出哪些被排除了 */
+  opacity: 0.3;
+  filter: grayscale(1);
+  transition: opacity 0.16s ease, filter 0.16s ease, transform 0.12s ease;
+  animation: rise 0.3s ease both;
+}
+.pl-cell:hover { transform: translateY(-1px); }
+.pl-cell.on { opacity: 1; filter: none; }
+.pl-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pl-badge {
+  position: absolute; left: 5px; bottom: 5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.pl-more { margin-top: 12px; }
+.pl-more[hidden] { display: none; }
+
+.pl-running { margin-top: var(--gap-head); }
+.pl-bar {
+  height: 4px; border-radius: 999px; overflow: hidden;
+  background: var(--glass-strong);
+}
+.pl-bar > div { height: 100%; width: 0; background: var(--accent); transition: width 0.3s ease; }
+.pl-progress {
+  margin: 0 0 10px;
+  font-family: var(--font);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.pl-current {
+  margin: 10px 0 0; font-size: 12.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.pl-msg { margin: var(--gap-block) 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+.pl-msg.ok { color: var(--ok); }
+.pl-msg.err { color: var(--danger); }
+.pl-msg[hidden] { display: none; }
+
+@media (max-width: 720px) {
+  .pl-stats { gap: 24px; }
+}
+
+/* 总览的分组标题。和侧栏用同一套式样，两处的分类才是一回事 */
+.tiles-group { margin: var(--gap-block) 0 2px; padding: 0 10px; }
+.tiles-group:first-of-type { margin-top: var(--gap-head); }
+.tiles + .tiles-group { margin-top: 20px; }
+
+/* 「接收位置」在 USB 和 Wi-Fi 两页都出现，但它是同一个设置
+   （wifiSetOut 同时写 wifiOut 和 OutputDir）。不点破的话，
+   用户会以为是两个互不相干的选项。 */
+.path-note {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: rgba(242, 243, 245, 0.34);
+  padding-left: 0;
+}
+.path-row { flex-wrap: wrap; }
+.path-bar { flex-wrap: wrap; }
+
+/* 超额提示。和 iCloud 那条警告同一个色系 —— 都是「有一部分拿不到」 */
+.pl-quota {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #ffcf9a;
+  max-width: 64ch;
+}
+.pl-quota[hidden] { display: none; }
+
+
+/* ==========================================================================
+   传输过程
+   --------------------------------------------------------------------------
+   一次导几百张要跑好几分钟，那期间用户盯着的就是这一屏。
+   原来只有底部一条悬浮 bar，信息挤在一行里，也没有任何进展感。
+   ========================================================================== */
+
+.xfer-panel {
+  margin-top: var(--gap-head);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 520px;
+  animation: rise 0.32s ease both;
+}
+.xfer-panel.hidden { display: none !important; }
+
+.xfer-art {
+  width: 96px; height: 96px;
+  object-fit: contain;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 8px 18px rgba(73, 146, 255, 0.28));
+}
+/* 传输中让插画轻轻浮动。不是装饰 —— 静止的画面配上一个几分钟不动的
+   进度条，用户会怀疑是不是卡住了。 */
+.xfer-art.busy { animation: xferFloat 2.4s ease-in-out infinite; }
+@keyframes xferFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.xfer-count {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.xfer-sub { margin: 6px 0 16px; font-size: 13.5px; color: var(--muted); }
+.xfer-panel .bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--glass-strong);
+}
+.xfer-panel .bar i {
+  display: block; height: 100%; width: 0;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.xfer-file {
+  margin: 10px 0 0;
+  width: 100%;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.xfer-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: var(--gap-block); }
+.xfer-acts button.hidden { display: none; }
+
+/* 二次确认里的两行事实 */
+.confirm-list { list-style: none; margin: 20px 0 0; padding: 0; }
+.confirm-list li {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 9px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--glass);
+}
+.confirm-list li:last-child { border-bottom: 0; }
+.confirm-list span { color: var(--muted); }
+.confirm-list strong {
+  margin-left: auto;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* 传输中只留进度。选片那一套这时候没用，留着只会把进度挤到屏幕外面 */
+#view-usb.xfer-running #usbChips,
+#view-usb.xfer-running #albumGrid,
+#view-usb.xfer-running #photoGrid,
+#view-usb.xfer-running #usbEmpty,
+#view-usb.xfer-running .path-bar,
+#view-usb.xfer-running .usb-head .actions { display: none !important; }
+#view-usb.xfer-running .xfer-panel { margin-top: 40px; }
+
+/* 已激活时的对比表。
+   Pro 那一列点亮成「你的」—— 付了钱的人打开这里，看到的应该是
+   「免费只有 4 GB，我不限；免费 1000 项，我不限」，而不是一排孤零零的勾。 */
+.lic-owned {
+  margin: 18px 0 0;
+  font-size: 12.5px;
+  color: var(--ok);
+}
+.lic-owned[hidden] { display: none; }
+
+.lic-compare.owned .lic-cmp-row > b.pro {
+  color: var(--ok);
+}
+.lic-compare.owned .lic-cmp-head > b.pro { color: var(--ok); }
+/* 免费列在已激活时更暗一点：那是「你已经不受的限制」 */
+.lic-compare.owned .lic-cmp-row > b.free {
+  color: rgba(242, 243, 245, 0.3);
+  text-decoration: line-through;
+  text-decoration-color: rgba(242, 243, 245, 0.22);
+}
+/* 免费和 Pro 一样的行没有差额，别划掉 */
+.lic-compare.owned .lic-cmp-row:not(.gain) > b.free {
+  text-decoration: none;
+  color: var(--muted);
+}
+
+/* 破坏性确认的主按钮转红。同一个弹层既用来确认「开始导入」也用来确认
+   「永久删除」，不换颜色的话两者看起来一样，手快就点错了。 */
+.lic-foot .primary.danger {
+  background: var(--danger);
+  color: #1a0a0a;
+}
+.lic-foot .primary.danger:hover { filter: brightness(1.08); }
+.confirm-list[hidden] { display: none; }
+
+/* 确认弹层永远压在其他弹层上面。
+   两个都是 z-index: 200 的话由 DOM 顺序决定，而在授权弹层里点「注销」
+   弹出的确认框会被压在下面 —— 用户点不到，看起来就是按钮失灵。 */
+#confirmModal { z-index: 300; }
+
+/* 设备切换。只有一台时不显示箭头 —— 多一个点不动的箭头是纯噪音 */
+.usb-device-line {
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+  transition: background 0.15s ease;
+}
+.usb-device-line.switchable { cursor: pointer; }
+.usb-device-line.switchable:hover { background: var(--glass); }
+.usb-caret { width: 14px; height: 14px; opacity: 0.5; flex: none; }
+.usb-caret.hidden { display: none; }
+
+.usb-device-menu {
+  position: absolute;
+  z-index: 60;
+  margin-top: 4px;
+  min-width: 260px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #1a1c22;
+  border: 1px solid var(--glass-strong);
+  box-shadow: 0 20px 44px -14px rgba(0, 0, 0, 0.7);
+}
+.usb-device-menu[hidden] { display: none; }
+.usb-device-item {
+  /* 全局那条 border: 0 只覆盖固定几个选择器，新加的类不在里面，
+     不写的话会带上浏览器默认按钮边框，菜单里每一项都描一圈白边。 */
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+.usb-device-item:hover { background: var(--glass); }
+.usb-device-item.on .d-name { color: var(--accent); }
+.usb-device-item .d-name { font-size: 13.5px; font-weight: 560; }
+/* 型号可能重名（两台同款手机），序列号是唯一能区分的 */
+.usb-device-item .d-serial { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }

@@ -16,3 +16,6 @@ func notifyUser(title, body string) {}
 func pickFiles() {}
 
 func setFilesPickedHandler(fn func([]string)) {}
+
+// 只有 macOS 有菜单栏，其他平台什么都不用做
+func setMenuHandlers(status, address func() string, openOutput func()) {}

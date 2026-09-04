@@ -121,3 +121,20 @@ cd ../desktop && go test ./internal/license/
 签名覆盖的是 base64 那串字符本身，不是解码后的 JSON。
 两端只要有一端理解错，客户端就永远验不过线上签发的许可证 ——
 而这种错只有等第一个用户投诉才会暴露。
+
+## 本机装一份开发许可证
+
+验证 Pro 功能的完整路径（付费墙、导出、恢复购买…）不用真买一个码：
+
+```bash
+cd licensing
+node --experimental-strip-types src/devlicense.ts lifetime   # 或 year / years3
+```
+
+它会向桌面端要许可证路径和 device id（`go run ./cmd/licpath`），签一份绑到
+这台机器的许可证并直接装好。撤销就是删掉那个文件再重启桌面端。
+
+路径和 device id 都问桌面端自己要，不在这边另写一份 —— 分叉的结果是
+「装了却不生效」，查起来很费时间。
+
+和 `mktoken.ts` 别搞混：那个是给 Go 端做跨语言对拍的裸串，不绑设备、不落盘。

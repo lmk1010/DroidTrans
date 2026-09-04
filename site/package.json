@@ -1,0 +1,25 @@
+{
+  "name": "droidtrans-site",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "卓传官网。构建产物是纯静态文件，传 R2 即可，不需要运行时。",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b --noEmit && vite build && node prerender.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "devices.css": "^0.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

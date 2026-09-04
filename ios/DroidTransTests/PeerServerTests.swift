@@ -159,6 +159,97 @@ final class PeerServerTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(got?.url)), payload)
     }
 
+    /// 收件箱是模拟器里真实的目录，跨次运行不会清。
+    ///
+    /// 固定文件名的话，上一轮留下的那份完整文件会让这一轮一开始就被判成
+    /// 「已经收全了」—— 报出来的是「续传偏移量不对」，看着像产品坏了，
+    /// 其实是上一轮的残留。所以每次跑都用一个新名字，跑完删掉。
+    private func uniqueName(_ stem: String) -> String {
+        let name = "t-\(UUID().uuidString.prefix(8))-\(stem)"
+        addTeardownBlock { [server] in
+            guard let dir = await server?.inboxDir else { return }
+            for f in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+            where f.contains(name) {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(f))
+            }
+        }
+        return name
+    }
+
+    /// 手机互传也要能断点续传。
+    ///
+    /// 这条路走的是 HTTP PUT，原来每次从头写、断了就把半个文件删掉重来 ——
+    /// 而对比表、官网、README 都写着「断点续传」，那条承诺在这条路上不成立。
+    func testPutResumesFromOffset() async throws {
+        let (pj, _) = try await pair(code: server.pairingCode)
+        let token = pj["token"] as? String ?? ""
+
+        let payload = Data((0..<(200 * 1024)).map { UInt8($0 % 251) })
+        let name = uniqueName("resume.bin")
+        let half = payload.count / 2
+
+        // 第一段：只发前一半，声明的总大小是完整的 —— 服务端应当认定没收全
+        var first = URLRequest(url: URL(string: base + "/api/fast/put")!)
+        first.httpMethod = "PUT"
+        first.setValue(token, forHTTPHeaderField: kTokenHeader)
+        first.setValue(name, forHTTPHeaderField: "X-Relative-Path")
+        first.setValue("\(payload.count)", forHTTPHeaderField: "X-File-Size")
+        let (d1, r1) = try await URLSession.shared.upload(for: first, from: payload.prefix(half))
+        XCTAssertEqual((r1 as? HTTPURLResponse)?.statusCode, 400,
+                       "只发了一半却报成功：\(String(decoding: d1, as: UTF8.self))")
+
+        // 收件箱里绝不能出现半个文件
+        let inbox = server.inboxDir
+        let visible = (try? FileManager.default.contentsOfDirectory(atPath: inbox.path)) ?? []
+        XCTAssertFalse(visible.contains(name),
+                       "传了一半，收件箱里却已经有这个文件了 —— 用户会以为它是好的")
+
+        // 问一下已经收到多少
+        let q = base + "/api/fast/offset?name=\(name)&size=\(payload.count)"
+        var ask = URLRequest(url: URL(string: q)!)
+        ask.setValue(token, forHTTPHeaderField: kTokenHeader)
+        let (d2, _) = try await URLSession.shared.data(for: ask)
+        let oj = (try? JSONSerialization.jsonObject(with: d2)) as? [String: Any] ?? [:]
+        XCTAssertEqual((oj["offset"] as? NSNumber)?.intValue, half,
+                       "续传偏移量不对，会从头重传")
+
+        // 第二段：只补剩下的
+        var second = URLRequest(url: URL(string: base + "/api/fast/put")!)
+        second.httpMethod = "PUT"
+        second.setValue(token, forHTTPHeaderField: kTokenHeader)
+        second.setValue(name, forHTTPHeaderField: "X-Relative-Path")
+        second.setValue("\(payload.count)", forHTTPHeaderField: "X-File-Size")
+        second.setValue("\(half)", forHTTPHeaderField: "X-Start-Offset")
+        let (_, r2) = try await URLSession.shared.upload(for: second, from: payload.suffix(from: half))
+        XCTAssertEqual((r2 as? HTTPURLResponse)?.statusCode, 200)
+
+        let got = server.received.last
+        XCTAssertEqual(got?.size, Int64(payload.count))
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(got?.url)), payload,
+                       "续出来的内容和原文件对不上")
+    }
+
+    /// 已经完整收过的文件，再问偏移量应当直接说「不用传了」。
+    func testOffsetReportsCompleteFile() async throws {
+        let (pj, _) = try await pair(code: server.pairingCode)
+        let token = pj["token"] as? String ?? ""
+        let payload = Data(repeating: 7, count: 4096)
+        let name = uniqueName("already.bin")
+
+        var req = URLRequest(url: URL(string: base + "/api/fast/put")!)
+        req.httpMethod = "PUT"
+        req.setValue(token, forHTTPHeaderField: kTokenHeader)
+        req.setValue(name, forHTTPHeaderField: "X-Relative-Path")
+        req.setValue("\(payload.count)", forHTTPHeaderField: "X-File-Size")
+        _ = try await URLSession.shared.upload(for: req, from: payload)
+
+        var ask = URLRequest(url: URL(string: base + "/api/fast/offset?name=\(name)&size=\(payload.count)")!)
+        ask.setValue(token, forHTTPHeaderField: kTokenHeader)
+        let (d, _) = try await URLSession.shared.data(for: ask)
+        let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+        XCTAssertEqual(j["complete"] as? Bool, true, "同一个文件已经收全了，不该再传一遍")
+    }
+
     /// 对面传 "../../x" 过来，不拦的话就写到 Inbox 外面去了
     func testPathTraversalIsFlattened() async throws {
         let (pj, _) = try await pair(code: server.pairingCode)
@@ -211,5 +302,34 @@ final class PeerServerTests: XCTestCase {
         let (data, resp) = try await URLSession.shared.data(for: req)
         let j = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         return (j, (resp as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+}
+
+// MARK: - 报哪个网卡的地址
+
+/// 开了个人热点时，对方连的是 bridge100（172.20.10.1），不是 en0。
+///
+/// 而热点恰恰是在没有 Wi-Fi 的场合开的 —— 那时 en0 干脆没地址。
+/// 只认 en0 的话，用户开了热点、对面也连上了，这边却显示「先连上 Wi-Fi」，
+/// 手输地址那条兜底路直接断掉，而且不会有任何报错。
+final class InterfaceRankTests: XCTestCase {
+
+    func testHotspotOutranksWiFi() throws {
+        let bridge = try XCTUnwrap(PeerServer.interfaceRank("bridge100"))
+        let wifi = try XCTUnwrap(PeerServer.interfaceRank("en0"))
+        XCTAssertLessThan(bridge, wifi, "同时开着热点和 Wi-Fi 时，报出去的必须是热点那个地址")
+    }
+
+    func testCellularIsNeverReported() {
+        // 蜂窝地址对面根本连不过来，报出去等于给用户一个死地址
+        XCTAssertNil(PeerServer.interfaceRank("pdp_ip0"))
+        XCTAssertNil(PeerServer.interfaceRank("utun0"))
+        XCTAssertNil(PeerServer.interfaceRank("lo0"))
+    }
+
+    func testWiFiStillPreferredOverSecondary() throws {
+        let en0 = try XCTUnwrap(PeerServer.interfaceRank("en0"))
+        let en1 = try XCTUnwrap(PeerServer.interfaceRank("en1"))
+        XCTAssertLessThan(en0, en1)
     }
 }

@@ -43,6 +43,8 @@ const state = {
   lang: localStorage.getItem('droidtrans.lang') || 'zh',
   view: 'home',
   albums: {},
+  deviceName: '',
+  usbSelected: '',
   selectedAlbums: new Set(),
   currentAlbum: null,
   albumPhotos: [],
@@ -60,20 +62,106 @@ let lastXfer = { device: '', batch: '', folder: '' };
 
 const I18N = {
   zh: {
-    navHome: '总览', navHist: '图库',
-    homeTitle: '把手机里的照片，搬到这台电脑',
-    usbTile: '有线快传', wifiTile: '手机直传',
-    scan: '扫描相册', scanning: '扫描中…', xfer: '开始传输', waiting: '等待设备', save: '保存到',
+    navPhotosLib: '照片图库',
+    homeTilePhotosKicker: '照片图库',
+    homeTilePhotos: '导出原始文件',
+    homeTilePhotosHint: '按拍摄日期整理为标准文件夹',
+    plTitle: '照片图库导出',
+    plSub: '直接读取「照片」图库，以原始文件名按拍摄日期导出为标准文件夹。',
+    plIdleEmpty: '尚未扫描',
+    plIdleHint: '扫描后可查看本机可导出的项目数量。',
+    plScan: '扫描图库',
+    plScanning: '扫描中…',
+    plExportable: '可导出',
+    plCloud: '仅在 iCloud',
+    plLive: '实况照片',
+    plSize: '总大小',
+    plExport: '开始导出',
+    plRescan: '重新扫描',
+    plCancel: '取消',
+    plCloudWarn: '%n 个项目仅存于 iCloud，本机没有原始文件，无法导出。请在「照片」中开启「下载原片到这台 Mac」，同步完成后重新扫描。',
+    plNothing: '本机没有可导出的原始文件。',
+    plNeedPro: '导出需要 Pro。扫描不限次数免费使用。',
+    plDone: '导出完成 · %n 个项目 · %p',
+    plFailed: '%n 个项目导出失败',
+    plOutput: '导出位置 %p',
+    plQuotaNotice: '免费版本次可导出 %n 项。已选 %t 项，其余 %r 项需要 Pro。',
+    plQuotaBtn: '导出 %n 项',
+    plQuotaDone: '本次导出 %n 项，已达免费额度。再点一次可继续导下一批，或升级 Pro 一次导完。',
+    plQuotaUpgrade: '升级 Pro',
+    plSectionOut: '导出设置',
+    plSectionPick: '选择项目',
+    plOutLabel: '导出到',
+    plLowerExt: '扩展名转为小写（.JPG → .jpg）',
+    plAll: '全选',
+    plNone: '取消全选',
+    plShowGrid: '逐项选择',
+    plHideGrid: '收起',
+    plMore: '加载更多',
+    plPicked: '已选 %n / 共 %t',
+    plReveal: '在访达中显示',
+    plGrant: '前往「完全磁盘访问权限」',
+    plLibsTitle: '选择图库',
+    plLibDefault: '默认',
+    plLibExternal: '外置',
+    plNoLib: '未找到照片图库。若图库位于外置磁盘，请连接后重新扫描。',
+    licColFree: '免费', licColPro: 'Pro',
+    licColMine: 'Pro · 你的', licOwnedSummary: '已解锁 %n 项能力，额度全部解除',
+    licYes: '✓', licNo: '—', licUnlimited: '不限',
+    licFree4G: '4 GB', licFree1000: '1000 项/次',
+    licRowLan: '局域网互传', licRowResume: '断点续传',
+    licRowFileSize: '单个文件大小', licRowExport: '照片图库导出',
+    licRowUsb: 'USB 整册导入', licRowSync: '相册增量同步', licRowDedupe: '跨批次去重',
+    licFeatLarge: '单个文件不限大小', licFeatExport: '照片图库导出不限量',
+    licTitle: '卓传 Pro', licActivate: '激活', licClose: '关闭', licBest: '最划算',
+    licPlanYear: '一年', licPlanYears3: '三年', licPlanLifetime: '终生',
+    licPlanHint3: '买两年送一年', licPlanHintLife: '一次买断',
+    licOpening: '正在打开浏览器…', licOpenFailed: '打不开浏览器，请手动访问官网',
+    licHaveCode: '已经有激活码？',
+    licRemove: '注销这台设备', licBuy: '购买 Pro',
+    licPlaceholder: 'DT-XXXX-XXXX-XXXX',
+    licFree: '免费版 · 基础功能不受任何限制',
+    licPro: 'Pro 已激活',
+    licExpired: 'Pro 已过期，续期后可继续使用高级功能',
+    licNeedCode: '请输入激活码',
+    licOk: '激活成功',
+    licRemoved: '已注销，这台设备回到免费版',
+    licFeatIncremental: '相册增量同步',
+    licFeatDedupe: '跨批次去重',
+    licFeatUsb: 'USB 整册导入',
+    navHome: '总览', navHist: '已接收',
+    askClearHistTitle: '清空传输记录？',
+    askClearHistNote: '只清掉记录列表，已经存到这台电脑上的文件不会被删除。',
+    askDelBatchTitle: '删除这一批文件？',
+    askDelBatchNote: '这些文件会从这台电脑上永久删除，无法撤销。手机上的原件不受影响。',
+    askClearOutTitle: '清空待取件？',
+    askClearOutNote: '手机还没取走的会一并移除。电脑上的原文件不会被删除。',
+    askDeactivateTitle: '注销这台设备？',
+    askDeactivateNote: '这台电脑会回到免费版。激活码本身仍然有效，可以在别的设备上继续用。',
+    confirmTitle: '开始导入',
+    confirmCount: '项目数', confirmDest: '导入到', confirmGo: '开始导入', cancel: '取消',
+    confirmSub: '从「%d」导入到这台电脑',
+    confirmNote: '导入过程中请保持数据线连接。可以随时暂停或停止。',
+    xferBack: '返回', xferPrep: '准备中…', xferOf: '%n / %t',
+    usbPickDevice: '选择设备', usbSwitching: '正在切换…', usbOneDevice: '只连着这一台',
+    navGroupPhone: '手机', navGroupMac: '这台电脑',
+    navUsb: 'USB 导入', navUsbHint: '数据线 · 仅安卓',
+    navWifi: 'Wi-Fi 传输', navWifiHint: '无线 · 双向',
+    navPhotosLibHint: '导出原始文件', navHistHint: '传过来的文件',
+    homeTitle: '把照片和文件集中到这台电脑',
+    usbTile: 'USB 导入', wifiTile: 'Wi-Fi 传输',
+    scan: '扫描相册', scanning: '扫描中…', xfer: '开始传输', waiting: '等待设备', save: '接收位置',
     selAll: '全选', selNone: '取消全选',
     usbNoAlbum: '还没有相册', usbScanHint: '连上后会自动扫。选出要传的，再开始传输。',
-    copy: '复制', copied: '已复制', open: '打开文件夹', openShort: '打开',
-    wifiTitle: 'Wi-Fi 接收', wifiSub: '手机打开卓传会自己连上。',
+    copy: '复制', copied: '已复制', open: '打开', openShort: '打开',
+    saveShared: 'USB 与 Wi-Fi 共用此位置',
+    wifiTitle: 'Wi-Fi 传输 · 接收', wifiSub: '手机打开卓传后会自动连接到这台电脑。',
     wifiHint: '已装 App 时扫这个，或等它自己发现。',
-    localAddr: '本机地址', online: '在线设备', batches: '最近图库', seeAll: '全部',
+    localAddr: '本机地址', online: '在线设备', batches: '最近接收', seeAll: '全部',
     noAppYet: '手机还没装卓传？', apkGet: '用相机扫上面的码',
     goneN: '{n} 批的文件已不在', goneClean: '清理这些记录', goneShow: '看看',
     paneRecv: '接收', paneSend: '发送', sendWaiting: '等手机来取',
-    sendHead: '发到手机', sendSub: '拖文件进窗口，或粘一段文字。手机打开卓传就能取走。',
+    sendHead: 'Wi-Fi 传输 · 发送', sendSub: '将文件拖入窗口或粘贴文字，手机打开卓传后即可取走。',
     pairManage: '管理', pairSummary: '配对码 {code} · 已配对 {n} 台', pairSummaryOff: '配对已关闭',
     hotspotOn: '正连着手机热点 · 不用路由器也能传',
     hotspotHint: '没有路由器？手机开个热点，电脑连上来一样传。',
@@ -89,12 +177,12 @@ const I18N = {
     firstRun: '第一次用', firstRunTitle: '手机扫码装卓传',
     firstRunHint: '装好打开就能连。也可以插数据线走 USB。',
     noPhone: '还没有手机连上来', noPhoneHint: '打开手机 App，搜到这台电脑即可',
-    homeNextUsb: '手机已连上，去 USB 选相册。',
-    homeNextAllow: '点 USB，页面会停在「允许调试」这一步。',
-    homeNextOnline: '手机已在线，打开图库看刚传过来的。',
-    homeNextWifi: 'Wi-Fi 已就绪。手机打开卓传会自己连。',
+    homeNextUsb: '手机已连接，前往 USB 导入选择相册。',
+    homeNextAllow: '前往 USB 导入，按提示在手机上允许调试。',
+    homeNextOnline: '手机已在线，可在「已接收」中查看新文件。',
+    homeNextWifi: 'Wi-Fi 已就绪，手机打开卓传即可自动连接。',
     homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
-    openThisPhone: '打开这台手机的图库', histTitle: '图库', clear: '清空',
+    openThisPhone: '查看这台手机传来的文件', histTitle: '已接收', clear: '清空',
     noHist: '图库还是空的', noHistHint: '从 USB 或 Wi-Fi 传过来，就会出现在这里。',
     unauth: '设备未授权 USB 调试', offline: '未连接设备',
     recv: '正在接收', got: '已收到', photos: '张', openGallery: '打开图库', reveal: '在访达中显示', forget: '从图库移除记录',
@@ -113,20 +201,106 @@ const I18N = {
     updateLater: '稍后',
   },
   en: {
-    navHome: 'Home', navHist: 'Gallery',
-    homeTitle: 'Move photos from your phone to this Mac',
-    usbTile: 'USB transfer', wifiTile: 'Wi-Fi transfer',
+    navPhotosLib: 'Photos Library',
+    homeTilePhotosKicker: 'PHOTOS LIBRARY',
+    homeTilePhotos: 'Export originals',
+    homeTilePhotosHint: 'Standard folders, organised by capture date',
+    plTitle: 'Photos Library Export',
+    plSub: 'Reads the Photos library directly and exports originals to standard folders by capture date, under their original filenames.',
+    plIdleEmpty: 'Not scanned yet',
+    plIdleHint: 'Scan to see how many items can be exported from this Mac.',
+    plScan: 'Scan library',
+    plScanning: 'Scanning…',
+    plExportable: 'Exportable',
+    plCloud: 'iCloud only',
+    plLive: 'Live Photos',
+    plSize: 'Total size',
+    plExport: 'Start export',
+    plRescan: 'Rescan',
+    plCancel: 'Cancel',
+    plCloudWarn: '%n items exist only in iCloud. Their originals are not on this Mac and cannot be exported. Enable Download Originals to this Mac in Photos, then rescan once syncing completes.',
+    plNothing: 'No original files available on this Mac.',
+    plNeedPro: 'Export requires Pro. Scanning is free and unlimited.',
+    plDone: 'Export complete · %n items · %p',
+    plFailed: '%n items failed to export',
+    plOutput: 'Destination %p',
+    plQuotaNotice: 'The free plan exports %n items per run. %t selected, the remaining %r need Pro.',
+    plQuotaBtn: 'Export %n items',
+    plQuotaDone: 'Exported %n items — the free limit for one run. Run it again for the next batch, or upgrade to Pro to do it in one go.',
+    plQuotaUpgrade: 'Upgrade to Pro',
+    plSectionOut: 'Export settings',
+    plSectionPick: 'Select items',
+    plOutLabel: 'Export to',
+    plLowerExt: 'Lowercase file extensions (.JPG → .jpg)',
+    plAll: 'Select all',
+    plNone: 'Deselect all',
+    plShowGrid: 'Select individually',
+    plHideGrid: 'Collapse',
+    plMore: 'Load more',
+    plPicked: '%n of %t selected',
+    plReveal: 'Show in Finder',
+    plGrant: 'Open Full Disk Access',
+    plLibsTitle: 'Select library',
+    plLibDefault: 'Default',
+    plLibExternal: 'External',
+    plNoLib: 'No Photos library found. If it is on an external disk, connect it and rescan.',
+    licColFree: 'Free', licColPro: 'Pro',
+    licColMine: 'Pro · yours', licOwnedSummary: '%n capabilities unlocked, all limits removed',
+    licYes: '✓', licNo: '—', licUnlimited: 'Unlimited',
+    licFree4G: '4 GB', licFree1000: '1000 per run',
+    licRowLan: 'Local network transfer', licRowResume: 'Resumable transfers',
+    licRowFileSize: 'Single file size', licRowExport: 'Photos library export',
+    licRowUsb: 'Whole-album USB import', licRowSync: 'Incremental library sync', licRowDedupe: 'Cross-batch deduplication',
+    licFeatLarge: 'No file size limit', licFeatExport: 'Unlimited Photos library export',
+    licTitle: 'DroidTrans Pro', licActivate: 'Activate', licClose: 'Close', licBest: 'BEST VALUE',
+    licPlanYear: '1 year', licPlanYears3: '3 years', licPlanLifetime: 'Lifetime',
+    licPlanHint3: 'Third year free', licPlanHintLife: 'Pay once',
+    licOpening: 'Opening browser…', licOpenFailed: 'Could not open the browser — visit the site manually',
+    licHaveCode: 'Already have a code?',
+    licRemove: 'Deactivate this device', licBuy: 'Get Pro',
+    licPlaceholder: 'DT-XXXX-XXXX-XXXX',
+    licFree: 'Free — every basic feature, no limits',
+    licPro: 'Pro is active',
+    licExpired: 'Pro has expired. Renew to keep the advanced features.',
+    licNeedCode: 'Enter your activation code',
+    licOk: 'Activated',
+    licRemoved: 'Deactivated — this device is back on the free version',
+    licFeatIncremental: 'Incremental library sync',
+    licFeatDedupe: 'Deduplicate across transfers',
+    licFeatUsb: 'Whole-album USB import',
+    navHome: 'Home', navHist: 'Received',
+    askClearHistTitle: 'Clear transfer history?',
+    askClearHistNote: 'This clears the list only. Files already saved on this Mac are not deleted.',
+    askDelBatchTitle: 'Delete this batch?',
+    askDelBatchNote: 'These files are permanently removed from this Mac and cannot be recovered. The originals on your phone are untouched.',
+    askClearOutTitle: 'Clear pending files?',
+    askClearOutNote: 'Anything your phone has not picked up yet is removed from the list. The original files on this Mac are not deleted.',
+    askDeactivateTitle: 'Deactivate this device?',
+    askDeactivateNote: 'This Mac returns to the free version. Your licence key stays valid and can be used on another device.',
+    confirmTitle: 'Start import',
+    confirmCount: 'Items', confirmDest: 'Import to', confirmGo: 'Start import', cancel: 'Cancel',
+    confirmSub: 'From %d to this Mac',
+    confirmNote: 'Keep the cable connected during import. You can pause or stop at any time.',
+    xferBack: 'Back', xferPrep: 'Preparing…', xferOf: '%n / %t',
+    usbPickDevice: 'Select device', usbSwitching: 'Switching…', usbOneDevice: 'Only this one is connected',
+    navGroupPhone: 'Phone', navGroupMac: 'This Mac',
+    navUsb: 'USB import', navUsbHint: 'Cable · Android only',
+    navWifi: 'Wi-Fi transfer', navWifiHint: 'Wireless · both ways',
+    navPhotosLibHint: 'Export originals', navHistHint: 'Files received',
+    homeTitle: 'Bring photos and files together on this Mac',
+    usbTile: 'USB import', wifiTile: 'Wi-Fi transfer',
     scan: 'Scan albums', scanning: 'Scanning…', xfer: 'Transfer', waiting: 'Waiting for device', save: 'Save to',
     selAll: 'Select all', selNone: 'Clear selection',
     usbNoAlbum: 'No albums yet', usbScanHint: 'Albums scan automatically. Pick what to send, then transfer.',
-    copy: 'Copy', copied: 'Copied', open: 'Open folder', openShort: 'Open',
-    wifiTitle: 'Wi-Fi receive', wifiSub: 'The phone finds this Mac by itself.',
+    copy: 'Copy', copied: 'Copied', open: 'Open', openShort: 'Open',
+    saveShared: 'Shared by USB and Wi-Fi',
+    wifiTitle: 'Wi-Fi transfer · Receive', wifiSub: 'The phone finds this Mac by itself.',
     wifiHint: 'Scan this if the app is already installed, or wait for it to appear.',
-    localAddr: 'This computer', online: 'Online', batches: 'Recent gallery', seeAll: 'See all',
+    localAddr: 'This computer', online: 'Online', batches: 'Recently received', seeAll: 'See all',
     noAppYet: 'No app on the phone yet?', apkGet: 'Scan the code above with the camera',
     goneN: '{n} batches are missing their files', goneClean: 'Remove these records', goneShow: 'Show',
     paneRecv: 'Receive', paneSend: 'Send', sendWaiting: 'Waiting for the phone',
-    sendHead: 'Send to phone', sendSub: 'Drop files on the window, or paste text. Your phone picks them up.',
+    sendHead: 'Wi-Fi transfer · Send', sendSub: 'Drop files onto the window or paste text; your phone can then pick them up.',
     pairManage: 'Manage', pairSummary: 'Code {code} · {n} paired', pairSummaryOff: 'Pairing is off',
     hotspotOn: 'On the phone’s hotspot — no router needed',
     hotspotHint: 'No router? Turn on the phone’s hotspot and join it from this computer.',
@@ -147,7 +321,7 @@ const I18N = {
     homeNextOnline: 'Phone is online. Open the gallery for what just arrived.',
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
     homeNextIdle: 'Open USB. The page only shows the step you are on.',
-    openThisPhone: 'Open this phone’s gallery', histTitle: 'Gallery', clear: 'Clear',
+    openThisPhone: 'Files from this phone', histTitle: 'Received', clear: 'Clear',
     noHist: 'Gallery is empty', noHistHint: 'Files you send over USB or Wi-Fi show up here.',
     unauth: 'USB debugging not authorized', offline: 'No device',
     recv: 'Receiving', got: 'Received', photos: 'photos', openGallery: 'Open gallery', reveal: 'Reveal in Finder', forget: 'Remove from gallery',
@@ -178,7 +352,7 @@ function applyLang() {
     el.title = label;
     el.setAttribute('aria-label', label);
   });
-  $('#langBtn').textContent = state.lang === 'zh' ? 'EN' : '中文';
+  $('#langBtnText').textContent = state.lang === 'zh' ? 'EN' : '中文';
   if ($('#paneSend')) {
     showPane($('#paneSend').classList.contains('hidden') ? 'recv' : 'send');
   }
@@ -291,6 +465,18 @@ function paceLine(st) {
 // 之前有的居中、有的缩在左上角，像是出错了而不是「还没有内容」。
 function emptyHTML(icon, title, hint) {
   return `<div class="empty empty-go">${icon}<div><div>${esc(title)}</div>${hint ? `<small>${esc(hint)}</small>` : ''}</div></div>`;
+}
+
+/// 带插画的空态。
+///
+/// 一行灰字加个 18px 的小图标，在一整块空白区域里显得很敷衍。
+/// 空态是用户停留时间最长的界面之一（东西还没传过来的时候），值得给张图。
+function emptyArtHTML(art, title, hint) {
+  return `<div class="empty with-art">`
+    + `<img class="empty-art" src="/art/${art}.png" alt="">`
+    + `<div>${esc(title)}</div>`
+    + (hint ? `<small>${esc(hint)}</small>` : '')
+    + `</div>`;
 }
 
 const I_PHONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg>';
@@ -862,6 +1048,7 @@ function show(view) {
   if (view === 'usb') refreshUsb();
   if (view === 'wifi') refreshWifi();
   if (view === 'history') refreshHistory();
+  if (view === 'photoslib') plEnter();
 }
 
 $$('nav button').forEach((b) => b.addEventListener('click', () => {
@@ -964,6 +1151,10 @@ async function refreshUsb() {
   $('#view-usb').classList.toggle('usb-connected', state.usbConnected);
   // 序列号对用户没意义，放进 title 里备查就行
   const who = (dev.model || '').trim() || dev.selected || '';
+  state.deviceName = who;
+  state.usbSelected = dev.selected || '';
+  // 有第二台机器时才露出切换入口，只有一台的话多一个箭头是纯噪音
+  usbSyncDeviceList(dev);
   $('#usbDevice').textContent = dev.connected
     ? who
     : (dev.unauthorized_devices?.length ? t('unauth') : t('waiting'));
@@ -1001,7 +1192,7 @@ function setUsbEmpty(dev, albums) {
     el.classList.add('hidden');
     return;
   }
-  el.innerHTML = emptyHTML(I_STACK, t('usbNoAlbum'), t('usbScanHint'));
+  el.innerHTML = emptyArtHTML('album', t('usbNoAlbum'), t('usbScanHint'));
 }
 
 function updateSelAll() {
@@ -1344,7 +1535,92 @@ $('#chipToday')?.addEventListener('click', () => applyRecent('today'));
 $('#chipWeek')?.addEventListener('click', () => applyRecent('week'));
 $('#chipCamera')?.addEventListener('click', () => selectCameraAlbums());
 
+/* 点「开始传输」先确认。一跑就是几分钟，跑错了只能等它结束 ——
+   用户得有机会核对要导多少、导到哪里。 */
 $('#xferBtn').addEventListener('click', async () => {
+  const { n, bytes } = plannedTotals();
+  if (!n) return;
+  const zh = state.lang === 'zh';
+  const size = fmtBytes(bytes);
+  const okd = await askConfirm({
+    title: t('confirmTitle'),
+    sub: t('confirmSub').replace('%d', state.deviceName || (zh ? '手机' : 'your phone')),
+    rows: [
+      [t('confirmCount'), (zh ? `${n} 项` : `${n} items`) + (size ? `  ·  ${size}` : '')],
+      [t('confirmDest'), $('#usbOut').value.trim() || '—'],
+    ],
+    note: t('confirmNote'),
+    ok: t('confirmGo'),
+  });
+  if (!okd) return;
+  await startTransferNow();
+});
+
+/* 选中的相册加单张，一共多少项、多大。
+   字段名是 total_count / total_size（见 Go 侧的 Album 结构），
+   写错了确认框会显示 0 项，然后什么都不会发生。 */
+function plannedTotals() {
+  let n = state.selectedPhotos.size;
+  let bytes = 0;
+  state.selectedAlbums.forEach((p) => {
+    const al = state.albums[p];
+    if (!al) return;
+    n += al.total_count || 0;
+    bytes += al.total_size || 0;
+  });
+  return { n, bytes };
+}
+
+function closeConfirm() { $('#confirmModal').hidden = true; }
+
+/* 通用二次确认。
+   破坏性操作一律走这里，不用原生 confirm() —— 那在 WebView 里是个
+   系统丑框，和界面完全两套，而且没法说清楚「到底删的是什么」。
+
+   note 必须写实话：删记录和删磁盘文件是两回事，用户分不清就会误删。 */
+let confirmResolve = null;
+function askConfirm({ title, sub = '', rows = [], note = '', ok, danger = false }) {
+  $('#confirmTitle').textContent = title;
+  $('#confirmSub').textContent = sub;
+  $('#confirmNote').textContent = note;
+
+  const list = $('#confirmRows');
+  list.innerHTML = '';
+  list.hidden = !rows.length;
+  for (const [k, v] of rows) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span></span><strong></strong>';
+    li.querySelector('span').textContent = k;
+    li.querySelector('strong').textContent = v;
+    list.appendChild(li);
+  }
+
+  const go = $('#confirmGo');
+  go.textContent = ok;
+  go.classList.toggle('danger', danger);
+  $('#confirmModal').hidden = false;
+
+  return new Promise((resolve) => {
+    if (confirmResolve) confirmResolve(false);
+    confirmResolve = resolve;
+  });
+}
+
+function settleConfirm(v) {
+  closeConfirm();
+  const r = confirmResolve;
+  confirmResolve = null;
+  if (r) r(v);
+}
+
+$('#confirmCancel')?.addEventListener('click', () => settleConfirm(false));
+$('#confirmBackdrop')?.addEventListener('click', () => settleConfirm(false));
+$('#confirmGo')?.addEventListener('click', () => settleConfirm(true));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#confirmModal').hidden) settleConfirm(false);
+});
+
+async function startTransferNow() {
   const output_dir = $('#usbOut').value.trim();
   const body = {
     output_dir,
@@ -1360,7 +1636,14 @@ $('#xferBtn').addEventListener('click', async () => {
   $('#xferBar').classList.remove('hidden');
   $('#xferSee').classList.add('hidden');
   pollXfer();
-});
+}
+
+/* 传输中整屏只留进度。
+   把进度面板挂在相册栅格下面的话，用户得往下滚才看得见 ——
+   而这几分钟里他要看的就只有这一件事。 */
+function xferFocus(on) {
+  $('#view-usb')?.classList.toggle('xfer-running', on);
+}
 
 let xferBarSynced = false;
 
@@ -1378,20 +1661,30 @@ async function pollXfer() {
   const pct = st.percent_completed || 0;
   $('#xferFill').style.width = pct + '%';
   if (st.is_running) {
+    xferFocus(true);
     $('#xferSee').classList.add('hidden');
     $('#xferImport')?.classList.add('hidden');
+    $('#xferBack')?.classList.add('hidden');
     // 传输中必须能停下来：以前这里一个控制都没有，只能退出 App
     $('#xferPause').classList.remove('hidden');
     $('#xferStop').classList.remove('hidden');
     $('#xferPause').textContent = st.paused ? t('resume') : t('pause');
+    $('#xferArt').src = '/art/transfer.png';
+    $('#xferArt').classList.add('busy');
+    // 大数字放进度，副行放速度和剩余时间 —— 盯着看的就是这两样
+    $('#xferCount').textContent = t('xferOf')
+      .replace('%n', st.current || 0).replace('%t', st.total || 0);
     const pace = paceLine(st);
-    const file = st.current_file || '';
-    $('#xferText').textContent = st.paused
-      ? `${t('paused')}  ·  ${st.current || 0}/${st.total || 0}`
-      : `${st.current || 0}/${st.total || 0}${file ? '  ' + file : ''}${pace ? '  ·  ' + pace : ''}`;
+    $('#xferText').textContent = st.paused ? t('paused') : (pace || t('xferPrep'));
+    $('#xferFile').textContent = st.current_file || '';
     setTimeout(pollXfer, st.paused ? 900 : 400);
     return;
   }
+  xferFocus(true);
+  $('#xferArt').src = '/art/done.png';
+  $('#xferArt').classList.remove('busy');
+  $('#xferFile').textContent = '';
+  $('#xferBack')?.classList.remove('hidden');
   $('#xferPause').classList.add('hidden');
   $('#xferStop').classList.add('hidden');
   const n = st.completed_count || 0;
@@ -1409,6 +1702,7 @@ async function pollXfer() {
   if (dur) bits.push(dur);
   const avg = fmtSpeed(st.speed_mbps);
   if (avg) bits.push(`${t('avgSpeed')} ${avg}`);
+  $('#xferCount').textContent = zh ? `${n} 项` : `${n} items`;
   $('#xferText').textContent = bits.join('  ·  ');
   $('#xferSee').classList.toggle('hidden', n === 0);
   $('#xferImport')?.classList.toggle('hidden', n === 0);
@@ -1588,7 +1882,11 @@ async function copyText(s) {
   try { await navigator.clipboard.writeText(s); } catch { /* ignore */ }
 }
 async function deleteBatch(device, batch) {
-  if (!confirm(state.lang === 'zh' ? '删除这一批文件？' : 'Delete this batch?')) return;
+  // 这个是真删磁盘文件（服务端 os.RemoveAll），不可撤销，必须写清楚
+  if (!await askConfirm({
+    title: t('askDelBatchTitle'), note: t('askDelBatchNote'),
+    ok: t('delBatch'), danger: true,
+  })) return;
   await api('/api/wifi/delete_batch', { body: JSON.stringify({ device_id: device, batch_id: batch }) });
   refreshHome();
   if (state.view === 'wifi') refreshWifi();
@@ -1626,7 +1924,7 @@ async function openViewer(device, batch, folder) {
     return `<button type="button" data-i="${i}" data-path="${esc(p.path)}" data-name="${esc(p.name)}"${vid ? ' data-video="1"' : ''}>
       ${media}
     </button>`;
-  }).join('') || emptyHTML(I_STACK, t('noHist'));
+  }).join('') || emptyArtHTML('album', t('noHist'));
   bindImg($('#viewerGrid'));
   $('#viewerGrid').querySelectorAll('button[data-path]').forEach((btn) => {
     // 视频交给系统播放器：塞进 <img> 的大图查看器只会显示一个裂图
@@ -1777,10 +2075,14 @@ async function refreshOutbox(force) {
   items.length = 0;
   items.push(...waiting);
   if (!items.length) {
-    box.innerHTML = `<div class="out-empty">${I_UP}<div>
-      <strong>${esc(t('sendEmpty'))}</strong>
-      <small>${esc(t('sendEmptyHint'))}</small>
-    </div></div>`;
+    // 「把文件拖进来」是这个界面最主要的引导，给它一张图
+    box.innerHTML = `<div class="out-empty with-art">
+      <img class="empty-art" src="/art/drop.png" alt="">
+      <div>
+        <strong>${esc(t('sendEmpty'))}</strong>
+        <small>${esc(t('sendEmptyHint'))}</small>
+      </div>
+    </div>`;
     return;
   }
   box.innerHTML = items.map((it) => {
@@ -1865,6 +2167,10 @@ $('#tookClear')?.addEventListener('click', async () => {
 });
 
 $('#outClear')?.addEventListener('click', async () => {
+  if (!await askConfirm({
+    title: t('askClearOutTitle'), note: t('askClearOutNote'),
+    ok: t('clearAll'), danger: true,
+  })) return;
   await api('/api/outbox/remove', { body: '{}' });
   refreshOutbox(true);
 });
@@ -1872,7 +2178,7 @@ $('#outClear')?.addEventListener('click', async () => {
 function renderOnline(online) {
   const el = $('#onlineList');
   if (!online.length) {
-    el.innerHTML = emptyHTML(I_DEVICE, t('noPhone'), t('noPhoneHint'));
+    el.innerHTML = emptyArtHTML('unplug', t('noPhone'), t('noPhoneHint'));
     return;
   }
   el.innerHTML = online.map((d) => {
@@ -2071,7 +2377,11 @@ async function refreshHistory() {
 }
 
 $('#clearHist').addEventListener('click', async () => {
-  if (!confirm(state.lang === 'zh' ? '清空所有传输记录？' : 'Clear all transfer history?')) return;
+  // 只清记录不删文件，这一点必须说死 —— 用户最怕的是照片没了
+  if (!await askConfirm({
+    title: t('askClearHistTitle'), note: t('askClearHistNote'),
+    ok: t('clear'), danger: true,
+  })) return;
   await api('/api/history/clear', { body: '{}' });
   refreshHistory();
 });
@@ -2226,3 +2536,709 @@ $('#updateDismiss')?.addEventListener('click', () => {
   $('#updateBanner')?.classList.add('hidden');
 });
 setTimeout(checkUpdateBanner, 5000);
+
+/* ==========================================================================
+   授权
+   --------------------------------------------------------------------------
+   状态从桌面端自己的 /api/license 读，那边是离线判断的 ——
+   这里不直接连授权服务器，界面不该因为没网就显示成未激活。
+   只有点「激活」那一下才需要联网。
+   ========================================================================== */
+
+/* 只列真正被门控的能力。
+   曾经这里还有一条 auto_archive「自动归档：按日期和设备分批」——
+   但那件事免费版也在做（落盘路径本来就是 输出目录/设备/批次），
+   license.FeatureAutoArchive 这个常量全项目没有任何使用点。
+   把免费就有的东西摆进付费清单，用户买完会发现什么都没变。 */
+/* 已激活时列出解锁了什么。key 要和 internal/license/features.go 里的常量对上，
+   漏一个，用户买了却看不到自己拿到了什么。 */
+const LIC_FEATURES = [
+  ['large_files', 'licFeatLarge'],
+  ['photos_rescue', 'licFeatExport'],
+  ['incremental_sync', 'licFeatIncremental'],
+  ['usb_bulk', 'licFeatUsb'],
+  ['dedupe', 'licFeatDedupe'],
+];
+
+/* 未激活时的免费 / Pro 对照。
+   免费那一列不是摆设 —— 局域网互传不限量、断点续传都在里面，
+   那是我们对 LocalSend 的正面回应，也是这张表可信的前提：
+   一张只写「Pro 有、免费没有」的表，用户第一反应是被阉割了。 */
+const LIC_COMPARE = [
+  ['licRowLan', 'licUnlimited', 'licUnlimited'],
+  ['licRowResume', 'licYes', 'licYes'],
+  ['licRowFileSize', 'licFree4G', 'licUnlimited'],
+  ['licRowExport', 'licFree1000', 'licUnlimited'],
+  ['licRowUsb', 'licNo', 'licYes'],
+  ['licRowSync', 'licNo', 'licYes'],
+  ['licRowDedupe', 'licNo', 'licYes'],
+];
+
+let licStatus = null;
+
+/* 套餐。价格要和官网 site/src/data/plans.ts 保持一致 ——
+   两处都硬编码是有意的：客户端不该为了显示一行价格去连服务器，
+   那样没网就变成空白。改价时记得两边一起改。 */
+const LIC_PLANS = [
+  { id: 'year', price: '1.99', name: 'licPlanYear', hint: '' },
+  { id: 'years3', price: '3.99', name: 'licPlanYears3', hint: 'licPlanHint3' },
+  { id: 'lifetime', price: '9.99', name: 'licPlanLifetime', hint: 'licPlanHintLife', featured: true },
+];
+
+function licRender() {
+  const st = licStatus || { active: false, features: [] };
+  const btn = $('#licBtn');
+  const btnText = $('#licBtnText');
+  const state = $('#licState');
+
+  if (btn) btn.classList.toggle('on', !!st.active);
+  if (btnText) btnText.textContent = st.active ? 'Pro' : t('licActivate');
+
+  if (state) {
+    state.classList.toggle('on', !!st.active);
+    state.classList.toggle('warn', !!st.expired);
+    if (st.expired) state.textContent = t('licExpired');
+    else if (st.active) state.textContent = `${t('licPro')} · ${st.email || ''}`.trim();
+    else state.textContent = t('licFree');
+  }
+
+  const active = !!st.active && !st.expired;
+
+  // 解锁清单只在未激活时没用；激活之后对比表本身就说明了一切，
+  // 再列一遍是重复。
+  const list = $('#licFeatures');
+  if (list) list.hidden = true;
+
+  /* 对比表两个状态都显示。
+     以前激活之后就把它藏了，换成一排勾 —— 那恰恰把最该强化价值的时刻
+     浪费掉了：付了钱的人看不到自己比免费版多拿了什么。
+     现在激活后 Pro 那一列标成「你的」并高亮，差额一直摆在那儿。 */
+  const cmp = $('#licCompare');
+  if (cmp) {
+    cmp.hidden = false;
+    cmp.classList.toggle('owned', active);
+    licRenderCompare(cmp, active);
+  }
+
+  // 激活后在表头上方点一句「你解锁了多少」，比让用户自己数强
+  const sum = $('#licOwned');
+  if (sum) {
+    sum.hidden = !active;
+    if (active) {
+      const n = LIC_COMPARE.filter(([, free, pro]) => free !== pro).length;
+      sum.textContent = t('licOwnedSummary').replace('%n', n);
+    }
+  }
+
+  // 已激活就不必再看到输入框和套餐，但过期时要留着，方便直接续期
+  const showBuy = !st.active || st.expired;
+  const row = $('#licInputRow');
+  if (row) row.hidden = !showBuy;
+  const plans = $('#licPlans');
+  if (plans) plans.hidden = !showBuy;
+  const rm = $('#licRemove');
+  if (rm) rm.hidden = !st.active && !st.expired;
+  const hint = $('#licCodeHint');
+  if (hint) hint.hidden = !showBuy;
+}
+
+/* 两列对照表。列宽在 CSS 里定死，各行的数字才对得齐。 */
+function licRenderCompare(box, owned) {
+  box.innerHTML = '';
+
+  const head = document.createElement('div');
+  head.className = 'lic-cmp-row lic-cmp-head';
+  head.innerHTML = '<span></span><b class="free"></b><b class="pro"></b>';
+  head.querySelector('.free').textContent = t('licColFree');
+  head.querySelector('.pro').textContent = owned ? t('licColMine') : t('licColPro');
+  box.appendChild(head);
+
+  for (const [name, free, pro] of LIC_COMPARE) {
+    const row = document.createElement('div');
+    // 免费和 Pro 不一样的行才是「买到的东西」，标出来
+    row.className = 'lic-cmp-row' + (free !== pro ? ' gain' : '');
+    row.innerHTML = '<span></span><b class="free"></b><b class="pro"></b>';
+    row.querySelector('span').textContent = t(name);
+    row.querySelector('.free').textContent = t(free);
+    row.querySelector('.pro').textContent = t(pro);
+    box.appendChild(row);
+  }
+}
+
+function licRenderPlans() {
+  const box = $('#licPlans');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const p of LIC_PLANS) {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'lic-plan' + (p.featured ? ' featured' : '');
+    el.dataset.plan = p.id;
+    el.innerHTML =
+      (p.featured ? '<span class="p-badge"></span>' : '') +
+      '<span class="p-name"></span>' +
+      '<span class="p-price"><i>$</i></span>' +
+      '<span class="p-hint"></span>';
+    if (p.featured) el.querySelector('.p-badge').textContent = t('licBest');
+    el.querySelector('.p-name').textContent = t(p.name);
+    el.querySelector('.p-price').append(p.price);
+    el.querySelector('.p-hint').textContent = p.hint ? t(p.hint) : '';
+    el.addEventListener('click', () => licBuy(p.id));
+    box.appendChild(el);
+  }
+}
+
+/* 购买。外链必须由后端用系统命令打开 —— 界面跑在内嵌 WebView 里，
+   <a target="_blank"> 点了没有任何反应。 */
+async function licBuy(plan) {
+  licMsg(t('licOpening'), true);
+  try {
+    const res = await api('/api/license/buy', { body: JSON.stringify({ plan, lang: state.lang }) });
+    if (!res || !res.success) licMsg(t('licOpenFailed'));
+    else setTimeout(() => licMsg(''), 2500);
+  } catch (_) {
+    licMsg(t('licOpenFailed'));
+  }
+}
+
+async function licRefresh() {
+  try {
+    licStatus = await api('/api/license', { method: 'GET' });
+  } catch (_) {
+    licStatus = null;
+  }
+  licRender();
+}
+
+function licMsg(text, ok) {
+  const el = $('#licMsg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.hidden = !text;
+  el.classList.toggle('ok', !!ok);
+}
+
+async function licActivate() {
+  const input = $('#licCode');
+  const btn = $('#licActivate');
+  const code = (input.value || '').trim();
+  if (!code) { licMsg(t('licNeedCode')); return; }
+
+  btn.disabled = true;
+  licMsg('');
+  try {
+    const res = await api('/api/license/activate', { body: JSON.stringify({ code }) });
+    if (res && res.success) {
+      licStatus = res.status;
+      input.value = '';
+      licMsg(t('licOk'), true);
+      licRender();
+    } else {
+      licMsg((res && res.error) || t('licNeedCode'));
+    }
+  } catch (e) {
+    licMsg(String((e && e.message) || e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function licDeactivate() {
+  // 一键把付过钱的许可证从这台机器上删掉，之前居然没有任何确认
+  if (!await askConfirm({
+    title: t('askDeactivateTitle'), note: t('askDeactivateNote'),
+    ok: t('licRemove'), danger: true,
+  })) return;
+  try {
+    const res = await api('/api/license/deactivate', { body: '{}' });
+    licStatus = (res && res.status) || null;
+    licMsg(t('licRemoved'), true);
+    licRender();
+  } catch (e) {
+    licMsg(String((e && e.message) || e));
+  }
+}
+
+function licOpen() {
+  licMsg('');
+  licRenderPlans();
+  $('#licModal').hidden = false;
+  licRefresh();
+  // 未激活时直接把光标放进输入框，少一次点击
+  if (!licStatus || !licStatus.active) setTimeout(() => $('#licCode') && $('#licCode').focus(), 40);
+}
+
+function licClose() { $('#licModal').hidden = true; }
+
+function licBind() {
+  const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
+  on('#licBtn', 'click', licOpen);
+  on('#licBuy', 'click', () => licBuy('lifetime'));
+  on('#licClose', 'click', licClose);
+  on('#licBackdrop', 'click', licClose);
+  on('#licActivate', 'click', licActivate);
+  on('#licRemove', 'click', licDeactivate);
+  on('#licCode', 'keydown', (e) => { if (e.key === 'Enter') licActivate(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#licModal').hidden) licClose();
+  });
+  licRenderPlans();
+  licRefresh();
+
+  // #lic 直达。将来 Pro 功能被点到时，提示里可以直接给这个链接跳过来。
+  if (location.hash === '#lic') licOpen();
+  window.addEventListener('hashchange', () => { if (location.hash === '#lic') licOpen(); });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', licBind);
+} else {
+  licBind();
+}
+
+
+/* ==========================================================================
+   照片图库
+   --------------------------------------------------------------------------
+   系统自带的导出器导几千张会崩、每两千张里丢一百张，而且图库是黑盒，
+   用户在访达里按原始文件名根本找不到自己的照片。我们绕开它。
+
+   这一屏最重要的不是「导出」按钮，是那个「只在 iCloud」的数字 ——
+   开了「优化储存空间」的机器上，本地可能一张原片都没有。
+   静默少导几千张、让用户以为备份好了，是这类工具最恶劣的失败方式。
+   ========================================================================== */
+
+let plScanData = null;
+let plPoll = null;
+/* 没勾中的那些。默认全选，所以只需要记「排除了谁」——
+   几万张的库里，记「选了谁」会是个巨大的集合。 */
+let plExcluded = new Set();
+let plLoaded = 0;
+/* 免费额度，0 表示不限。扫描时拿到，用来在开始之前就把话说清楚。 */
+let plFreeLimit = 0;
+
+function plShow(which) {
+  for (const id of ['plIdle', 'plResult', 'plRunning']) {
+    const el = $('#' + id);
+    if (el) el.hidden = id !== which;
+  }
+}
+
+function plMsg(text, kind) {
+  const el = $('#plMsg');
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.toggle('ok', kind === 'ok');
+  el.classList.toggle('err', kind === 'err');
+
+  /* 没权限时光说「去系统设置里打开」是把用户扔在半路上 ——
+     那个开关埋在五层菜单下面，很多人翻不到就放弃了。 */
+  const grant = $('#plGrant');
+  if (grant) grant.hidden = !(text && /完全磁盘访问|Full Disk Access/.test(text));
+}
+
+/* 进这一屏先看有没有正在跑的导出 —— 用户可能切走过又切回来 */
+async function plEnter() {
+  const st = await api('/api/photoslib/status').catch(() => null);
+  if (st && st.running) {
+    plShow('plRunning');
+    plStartPolling();
+    return;
+  }
+  if (!plScanData) {
+    plShow('plIdle');
+    plLoadLibraries();
+  }
+}
+
+/* 把找到的图库列出来。只有一个（绝大多数人）就不占版面，
+   直接扫那个 —— 多一步选择对他们是纯负担。 */
+let plLibPath = '';
+async function plLoadLibraries() {
+  const box = $('#plLibs');
+  if (!box) return;
+  const r = await api('/api/photoslib/libraries').catch(() => null);
+  const libs = (r && r.libraries) || [];
+  box.innerHTML = '';
+  plLibPath = r && r.current ? r.current : '';
+
+  if (libs.length <= 1) {
+    box.hidden = true;
+    if (!libs.length) plMsg(t('plNoLib'));
+    return;
+  }
+  box.hidden = false;
+
+  const title = document.createElement('p');
+  title.className = 'pl-libs-title';
+  title.textContent = t('plLibsTitle');
+  box.appendChild(title);
+
+  // 上次用的那个优先选中；没有就用默认库
+  if (!libs.some((l) => l.path === plLibPath)) {
+    plLibPath = (libs.find((l) => l.default) || libs[0]).path;
+  }
+
+  for (const lib of libs) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'pl-lib' + (lib.path === plLibPath ? ' on' : '');
+    const tags = [];
+    if (lib.default) tags.push(t('plLibDefault'));
+    if (lib.external) tags.push(t('plLibExternal'));
+    row.innerHTML =
+      '<span class="pl-lib-name"></span>' +
+      '<span class="pl-lib-meta"></span>';
+    row.querySelector('.pl-lib-name').textContent = lib.name;
+    // 体积比名字更能帮人认出「装着十年照片的那个」
+    row.querySelector('.pl-lib-meta').textContent =
+      [fmtBytes(lib.bytes) || '—', ...tags].join(' · ');
+    row.title = lib.path;
+    row.addEventListener('click', () => {
+      plLibPath = lib.path;
+      $$('#plLibs .pl-lib').forEach((x) => x.classList.remove('on'));
+      row.classList.add('on');
+    });
+    box.appendChild(row);
+  }
+}
+
+async function plScan() {
+  const btn = $('#plScan');
+  if (btn) { btn.disabled = true; btn.textContent = t('plScanning'); }
+  plMsg('');
+  try {
+    const q = plLibPath ? '?library=' + encodeURIComponent(plLibPath) : '';
+    const r = await api('/api/photoslib/scan' + q);
+    if (!r || !r.success) throw new Error((r && r.error) || 'scan failed');
+    plScanData = r;
+    plExcluded = new Set();
+    plPicked = new Set();
+    plMode = 'except';
+    plLoaded = 0;
+    $('#plGrid').innerHTML = '';
+    $('#plGrid').hidden = true;
+    $('#plMore').hidden = true;
+    $('#plToggleGrid').textContent = t('plShowGrid');
+    plRenderScan(r);
+    plShow('plResult');
+  } catch (e) {
+    plMsg(String(e.message || e), 'err');
+    plShow('plIdle');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t('plScan'); }
+  }
+}
+
+function plRenderScan(r) {
+  $('#plExportable').textContent = r.exportable;
+  $('#plCloud').textContent = r.in_cloud_only;
+  $('#plLive').textContent = r.live_photos;
+  $('#plSize').textContent = fmtBytes(r.total_bytes);
+
+  // 上次用的目标目录和选项，不用每次重指一遍
+  plFreeLimit = r.free_limit || 0;
+  if (r.output) $('#plOut').value = r.output;
+  $('#plLowerExt').checked = !!r.lower_ext;
+
+  const warn = $('#plCloudWarn');
+  if (warn) {
+    warn.hidden = !r.in_cloud_only;
+    warn.textContent = t('plCloudWarn').replace('%n', r.in_cloud_only);
+  }
+
+  plUpdatePickCount();
+  const bar = $('#plPickbar');
+  if (bar) bar.hidden = !r.exportable;
+
+  $('#plPath').textContent = '';
+  if (!r.exportable) plMsg(t('plNothing'));
+  else if (!r.can_export) plMsg(t('plNeedPro'));
+  else plMsg('');
+}
+
+function plSelectedCount() {
+  if (!plScanData) return 0;
+  return plMode === 'except' ? plScanData.exportable - plExcluded.size : plPicked.size;
+}
+
+function plUpdatePickCount() {
+  const el = $('#plPickCount');
+  if (!el || !plScanData) return;
+  const picked = plSelectedCount();
+  el.textContent = t('plPicked')
+    .replace('%n', picked)
+    .replace('%t', plScanData.exportable);
+
+  const btn = $('#plExport');
+  if (btn) btn.disabled = picked === 0;
+
+  /* 超额要在按钮上就说清楚，别等跑完才告诉用户「只导了一部分」——
+     那时候他已经等完了，还得自己想明白该再点一次。 */
+  const over = plFreeLimit > 0 && picked > plFreeLimit;
+  const notice = $('#plQuota');
+  if (notice) {
+    notice.hidden = !over;
+    if (over) {
+      notice.textContent = t('plQuotaNotice')
+        .replace('%n', plFreeLimit)
+        .replace('%t', picked)
+        .replace('%r', picked - plFreeLimit);
+    }
+  }
+  const up = $('#plQuotaUp');
+  if (up) up.hidden = !over;
+  if (btn && !btn.disabled) {
+    btn.textContent = over
+      ? t('plQuotaBtn').replace('%n', plFreeLimit)
+      : t('plExport');
+  }
+}
+
+/* 网格。一次只取 200 条 —— 几万张一股脑塞进 DOM 会把界面卡死，
+   用户会以为软件挂了。 */
+async function plLoadMore() {
+  const r = await api(`/api/photoslib/items?offset=${plLoaded}&limit=200`).catch(() => null);
+  if (!r || !r.success) return;
+  const grid = $('#plGrid');
+  for (const it of r.items) {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'pl-cell' + (plIsOn(it.uuid) ? ' on' : '');
+    // 逐格错开一点入场，超过 24 格就不再延迟，否则末尾要等太久
+    cell.style.animationDelay = Math.min(grid.children.length, 24) * 12 + 'ms';
+    cell.dataset.uuid = it.uuid;
+    cell.title = `${it.name} · ${it.date}`;
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.src = '/api/photoslib/thumb?uuid=' + encodeURIComponent(it.uuid);
+    img.alt = it.name;
+    cell.appendChild(img);
+    if (it.live) {
+      const b = document.createElement('span');
+      b.className = 'pl-badge';
+      b.textContent = 'LIVE';
+      cell.appendChild(b);
+    }
+    cell.addEventListener('click', () => {
+      plToggle(it.uuid);
+      cell.classList.toggle('on', plIsOn(it.uuid));
+      plUpdatePickCount();
+    });
+    grid.appendChild(cell);
+  }
+  plLoaded = r.offset + r.items.length;
+  $('#plMore').hidden = plLoaded >= r.total;
+}
+
+async function plToggleGrid() {
+  const grid = $('#plGrid');
+  const btn = $('#plToggleGrid');
+  if (grid.hidden) {
+    grid.hidden = false;
+    btn.textContent = t('plHideGrid');
+    if (!plLoaded) await plLoadMore();
+  } else {
+    grid.hidden = true;
+    $('#plMore').hidden = true;
+    btn.textContent = t('plShowGrid');
+  }
+}
+
+/* 选择状态。
+   'except' —— 默认：全选，excluded 里是被取消的那几张
+   'only'   —— 用户点了「全不选」之后：picked 里是他挑中的那几张
+
+   两种模式而不是一个集合，是为了让前端不必持有全部 uuid：
+   五万张的库光 uuid 就近 2MB，为了取消两张而把它们全记下来没道理。 */
+let plMode = 'except';
+let plPicked = new Set();
+
+function plIsOn(uuid) {
+  return plMode === 'except' ? !plExcluded.has(uuid) : plPicked.has(uuid);
+}
+
+function plToggle(uuid) {
+  if (plMode === 'except') {
+    if (plExcluded.has(uuid)) plExcluded.delete(uuid);
+    else plExcluded.add(uuid);
+  } else if (plPicked.has(uuid)) {
+    plPicked.delete(uuid);
+  } else {
+    plPicked.add(uuid);
+  }
+}
+
+function plSetAll(on) {
+  plMode = on ? 'except' : 'only';
+  plExcluded = new Set();
+  plPicked = new Set();
+  $$('#plGrid .pl-cell').forEach((c) => c.classList.toggle('on', on));
+  plUpdatePickCount();
+}
+
+async function plExport() {
+  plMsg('');
+  // 一张都没动就什么都不传，后端按「全部」处理。
+  const body = {
+    output_dir: $('#plOut').value.trim() || undefined,
+    lower_ext: $('#plLowerExt').checked,
+  };
+  if (plMode === 'except' && plExcluded.size) body.excluded = [...plExcluded];
+  if (plMode === 'only') body.selected = [...plPicked];
+
+  const r = await api('/api/photoslib/export', {
+    body: JSON.stringify(body),
+  }).catch((e) => ({ error: String(e) }));
+
+  if (!r || !r.success) {
+    // 402 是没激活 Pro。直接把授权弹层打开，别让用户自己去找在哪买。
+    if (r && r.feature) {
+      plMsg(t('plNeedPro'));
+      licOpen();
+      return;
+    }
+    plMsg((r && r.error) || 'export failed', 'err');
+    return;
+  }
+  $('#plPath').textContent = t('plOutput').replace('%p', r.output);
+  plShow('plRunning');
+  plStartPolling();
+}
+
+function plStartPolling() {
+  if (plPoll) clearInterval(plPoll);
+  plPoll = setInterval(plTick, 400);
+  plTick();
+}
+
+async function plTick() {
+  const st = await api('/api/photoslib/status').catch(() => null);
+  if (!st) return;
+
+  const pct = st.total ? Math.round((st.done / st.total) * 100) : 0;
+  const fill = $('#plBarFill');
+  if (fill) fill.style.width = pct + '%';
+  $('#plProgress').textContent = `${st.done} / ${st.total}  ·  ${fmtBytes(st.bytes || 0)}`;
+  $('#plCurrent').textContent = st.current || '';
+
+  if (st.finished || !st.running) {
+    clearInterval(plPoll);
+    plPoll = null;
+    plShow('plResult');
+    if (st.error) {
+      plMsg(st.error, 'err');
+    } else {
+      let m = t('plDone').replace('%n', st.copied || st.done).replace('%p', st.output || '');
+      if (st.failed) m += ' · ' + t('plFailed').replace('%n', st.failed);
+      plMsg(m, 'ok');
+      // 因为额度停下来的，要说清楚「再点一次会接着导」，
+      // 否则用户以为导完了，剩下的就永远留在图库里
+      if (st.limit_hit) {
+        plMsg(t('plQuotaDone').replace('%n', st.copied || st.done), 'ok');
+        const up = $('#plQuotaUp');
+        if (up) up.hidden = false;
+      }
+      // 「会导到 xxx」和「导完了：存在 xxx」说的是同一件事，留一个
+      $('#plPath').textContent = '';
+      // 导完只给一行路径，用户还得自己去找 —— 差的就是这一下
+      const rev = $('#plReveal');
+      if (rev) rev.hidden = false;
+    }
+  }
+}
+
+$('#plScan')?.addEventListener('click', plScan);
+$('#plRescan')?.addEventListener('click', plScan);
+$('#plExport')?.addEventListener('click', plExport);
+$('#plCancel')?.addEventListener('click', () => api('/api/photoslib/cancel', { body: '{}' }));
+$('#plToggleGrid')?.addEventListener('click', plToggleGrid);
+$('#plMore')?.addEventListener('click', plLoadMore);
+$('#plAll')?.addEventListener('click', () => plSetAll(true));
+$('#plNone')?.addEventListener('click', () => plSetAll(false));
+$('#plReveal')?.addEventListener('click', () => api('/api/photoslib/reveal', { body: '{}' }));
+$('#plGrant')?.addEventListener('click', () => api('/api/photoslib/open_privacy', { body: '{}' }));
+$('#plQuotaUp')?.addEventListener('click', () => licOpen());
+
+/* 传输面板收起，回到相册列表 */
+$('#xferBack')?.addEventListener('click', () => {
+  $('#xferBar').classList.add('hidden');
+  xferFocus(false);
+  xferBarSynced = false;
+});
+
+/* ==========================================================================
+   多设备切换
+   --------------------------------------------------------------------------
+   后端一直支持（/api/devices、/api/select_device），但前端从来没调过 ——
+   插着两台机器时用户只看得到当前那台的名字，另一台等于不存在。
+   ========================================================================== */
+
+let usbDevices = [];
+
+async function usbSyncDeviceList(dev) {
+  const many = (dev.devices || []).length > 1;
+  const caret = $('#usbDeviceCaret');
+  const btn = $('#usbDeviceBtn');
+  if (caret) caret.classList.toggle('hidden', !many);
+  if (btn) {
+    btn.classList.toggle('switchable', many);
+    btn.title = many ? t('usbPickDevice') : t('usbOneDevice');
+  }
+  if (!many) {
+    usbDevices = [];
+    closeDeviceMenu();
+    return;
+  }
+  const r = await api('/api/devices').catch(() => null);
+  usbDevices = (r && r.devices) || [];
+}
+
+function closeDeviceMenu() {
+  const m = $('#usbDeviceMenu');
+  if (m) m.hidden = true;
+}
+
+function renderDeviceMenu() {
+  const m = $('#usbDeviceMenu');
+  if (!m || usbDevices.length < 2) return;
+  m.innerHTML = '';
+  for (const d of usbDevices) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'usb-device-item' + (d.serial === state.usbSelected ? ' on' : '');
+    row.innerHTML = '<span class="d-name"></span><span class="d-serial"></span>';
+    row.querySelector('.d-name').textContent = d.name || d.serial;
+    // 型号可能重名（两台同款手机），序列号是唯一能区分的东西
+    row.querySelector('.d-serial').textContent = d.serial;
+    row.addEventListener('click', () => selectDevice(d.serial));
+    m.appendChild(row);
+  }
+  m.hidden = false;
+}
+
+async function selectDevice(serial) {
+  closeDeviceMenu();
+  if (serial === state.usbSelected) return;
+  $('#usbDevice').textContent = t('usbSwitching');
+  await api('/api/select_device', { body: JSON.stringify({ serial }) });
+  // 换了设备，之前扫出来的相册和勾选全都不作数了
+  state.selectedAlbums.clear();
+  state.selectedPhotos.clear();
+  state.albums = {};
+  $('#albumGrid').innerHTML = '';
+  $('#usbChips')?.classList.add('hidden');
+  await refreshUsb();
+}
+
+$('#usbDeviceBtn')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (usbDevices.length < 2) return;
+  const m = $('#usbDeviceMenu');
+  if (m && !m.hidden) closeDeviceMenu();
+  else renderDeviceMenu();
+});
+document.addEventListener('click', (e) => {
+  if (!$('#usbDeviceMenu')?.contains(e.target)) closeDeviceMenu();
+});

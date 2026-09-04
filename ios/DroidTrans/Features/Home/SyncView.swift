@@ -12,6 +12,7 @@ struct SyncView: View {
     @ObservedObject private var license = LicenseStore.shared
     @State private var showPro = false
     @State private var confirmForget = false
+    @State private var floating = false
 
     var body: some View {
         ZStack {
@@ -154,6 +155,16 @@ struct SyncView: View {
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
 
+                // 超额的在按下「开始」之前就说，别等传到那一张才报错
+                if sync.overQuota > 0 {
+                    Text(L("sync.overQuota", "\(sync.overQuota)"))
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
+                        .padding(.horizontal, Space.m)
+                }
+
                 Button(L("sync.start", "\(count)")) { sync.start() }
                     .buttonStyle(PrimaryButtonStyle())
                     .accessibilityIdentifier("sync-start")
@@ -164,7 +175,15 @@ struct SyncView: View {
 
     private func syncing(done: Int, total: Int) -> some View {
         VStack(spacing: Space.l) {
-            ArtIcon(art: .sync, size: 100).padding(.top, Space.m)
+            // 让它轻轻浮起来。不是装饰 —— 传几百张要跑好几分钟，
+            // 静止画面配一个几乎不动的进度条，用户会怀疑是不是卡死了。
+            ArtIcon(art: .sync, size: 100)
+                .offset(y: floating ? -6 : 0)
+                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                           value: floating)
+                .onAppear { floating = true }
+                .onDisappear { floating = false }
+                .padding(.top, Space.m)
 
             Text("\(done) / \(total)")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
@@ -186,9 +205,7 @@ struct SyncView: View {
 
     private func finished(sent: Int, failed: Int) -> some View {
         VStack(spacing: Space.m) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 54))
-                .foregroundStyle(.green)
+            ArtIcon(art: .done, size: 88)
                 .padding(.top, Space.xl)
             Text(L("sync.done", "\(sent)"))
                 .font(.system(size: 18, weight: .semibold))

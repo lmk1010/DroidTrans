@@ -62,6 +62,7 @@ func LoadPairing(path string) *Pairing {
 	if p.Code == "" {
 		p.Code = newCode()
 	}
+	p.dedupe()
 	p.save()
 	return p
 }
@@ -121,9 +122,48 @@ func (p *Pairing) Pair(code, deviceID, name string) (string, bool) {
 	}
 	tok := newToken()
 	now := time.Now().Format(time.RFC3339)
+	// 同一台设备再配一次就换掉旧令牌，而不是又加一条。
+	//
+	// 一台手机重装、换网、重连，一天能配十几次；原来每次都往表里
+	// 追加一条，界面上那句「已配对 N 台」就成了「配对过 N 次」——
+	// 我自己这台跑到了 144，实际只有一部 iPhone。
+	// 顺带把安全性摆正：重新配对之后，泄漏出去的旧令牌应当立刻失效。
+	if deviceID != "" {
+		for t, peer := range p.Tokens {
+			if peer.DeviceID == deviceID {
+				delete(p.Tokens, t)
+			}
+		}
+	}
 	p.Tokens[tok] = &Peer{Name: name, DeviceID: deviceID, PairedAt: now, LastSeen: now}
 	p.save()
 	return tok, true
+}
+
+// dedupe 每台设备只留最新的那条。
+//
+// 装在启动路径上，是为了收拾旧版本留下的一堆重复记录 ——
+// 光改 Pair 只能保证以后不再长，已经在用户机器上的那几十上百条还在。
+// 留最新的一条：手机手上正拿着的就是它，收拾完不用重新配对。
+func (p *Pairing) dedupe() {
+	newest := map[string]string{} // deviceID -> token
+	for tok, peer := range p.Tokens {
+		if peer.DeviceID == "" {
+			continue
+		}
+		cur, ok := newest[peer.DeviceID]
+		if !ok || p.Tokens[cur].PairedAt < peer.PairedAt {
+			newest[peer.DeviceID] = tok
+		}
+	}
+	for tok, peer := range p.Tokens {
+		if peer.DeviceID == "" {
+			continue
+		}
+		if newest[peer.DeviceID] != tok {
+			delete(p.Tokens, tok)
+		}
+	}
 }
 
 func (p *Pairing) Valid(token string) bool {

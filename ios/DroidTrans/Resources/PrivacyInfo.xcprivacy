@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  隐私清单。2024 年春起 Apple 强制要求：用了「需要说明理由的 API」
+  却没在这里声明，上传后会收到 ITMS-91053 警告邮件，迟早变成硬拦截。
+
+  卓传自己不收集任何数据 —— 文件是手机直连电脑传的，不经过我们的服务器，
+  所以 NSPrivacyCollectedDataTypes 是空的，NSPrivacyTracking 是 false。
+
+  声明的两类 API：
+    · UserDefaults —— 存配对过的设备、许可证、同步记录。主 App 和分享扩展
+      共用 App Group，两个 target 同一个 team，对应理由 CA92.1。
+    · 文件时间戳 —— 图库里按修改时间排序并显示给用户（DDA9.1），
+      读的是我们自己容器里的文件（C617.1）。
+
+  加了新的 required-reason API（磁盘空间、开机时间、键盘列表等）记得回来补，
+  漏一个整包都会被警告。
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>DDA9.1</string>
+				<string>C617.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -7,6 +7,7 @@ struct ConnectView: View {
     @StateObject private var discovery = DesktopDiscovery()
 
     @State private var showManual = false
+    @State private var showTrouble = false
     @State private var showScanner = false
 
     var body: some View {
@@ -54,6 +55,9 @@ struct ConnectView: View {
                 showScanner = false
                 Task { await handleScan(payload) }
             }
+        }
+        .sheet(isPresented: $showTrouble) {
+            TroubleshootSheet()
         }
         .overlay {
             if app.busy {
@@ -130,6 +134,29 @@ struct ConnectView: View {
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .padding(.horizontal, Space.xl)
+
+                // 电脑上还没装的话，得告诉人家去哪装 —— 光说「电脑上要开着卓传」
+                // 对没装过的人是死路。这也是审核员会走到的那一步。
+                //
+                // 链的是下载页而不是定价页：指向可购买页面的行为召唤
+                // 违反审核指南 3.1.1。
+                Link(L("connect.getDesktop"),
+                     destination: URL(string: "https://droidtrans.mkstore.life/download.html")!)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.brand)
+
+                // 空雷达是最容易劝退的一屏。原来这里只有一句「有些路由器会拦掉
+                // 自动发现」—— 而搜不到的真实原因往往是访客网络的设备隔离，
+                // 或者压根没有路由器（在车上、在外面）。后一种只有热点能解，
+                // 一句提示塞不下，给它一页。
+                Button {
+                    showTrouble = true
+                } label: {
+                    Text(L("trouble.link"))
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Color.brand)
+                }
+                .accessibilityIdentifier("trouble-link")
             }
 
             HStack(spacing: Space.m) {
@@ -218,4 +245,62 @@ private struct ManualAddressSheet: View {
     }
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespaces) }
+}
+
+// MARK: - 连不上怎么办
+
+/// 空雷达的出路。
+///
+/// 四条按可能性排：同一网络 → 访客网络的设备隔离 → 没有路由器 → 手输地址。
+/// 第三条是关键的一条：在外面、车上、没有 Wi-Fi 的地方，热点是唯一能走的路，
+/// 而且直连速度通常比公共 Wi-Fi 还快。用户不会自己想到这一层。
+private struct TroubleshootSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            AppBackground()
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Spacer()
+                    Text(L("trouble.title"))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.ink)
+                    Spacer()
+                }
+                .overlay(alignment: .trailing) {
+                    Button(L("common.done")) { dismiss() }
+                        .foregroundStyle(Color.ink2)
+                }
+                .padding(.bottom, Space.l)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Space.l) {
+                        item("trouble.same.title", "trouble.same.body")
+                        item("trouble.guest.title", "trouble.guest.body")
+                        item("trouble.hotspot.title", "trouble.hotspot.body")
+                        item("trouble.manual.title", "trouble.manual.body")
+                    }
+                    .padding(.bottom, Space.xl)
+                }
+            }
+            .padding(Space.gutter)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func item(_ title: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Text(L(title))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.ink)
+            Text(L(body))
+                .font(.system(size: 13.5))
+                .foregroundStyle(Color.ink2)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }

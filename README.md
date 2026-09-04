@@ -22,11 +22,7 @@
 
 桌面端启动后会检查 `latest.json`；有新版时界面顶部提示，点「立即更新」打开下载。
 
-macOS 未签名时先拖进「应用程序」，再执行：
-
-```bash
-xattr -cr /Applications/DroidTrans.app
-```
+macOS 版本经 Apple 开发者证书签名并公证，拖进「应用程序」双击即可打开。
 
 ## 能做什么
 
@@ -34,7 +30,7 @@ xattr -cr /Applications/DroidTrans.app
 | --- | --- |
 | **手机 → 电脑** | Wi-Fi 直传，或插 USB 线由电脑直接拉取相册 |
 | **电脑 → 手机** | 文件/文件夹拖进桌面窗口，手机上一键收走 |
-| **任意文件** | 不只是照片视频；文档、压缩包、安装包都能传 |
+| **任意文件** | 不只是照片视频；文档、压缩包、安装包都能传。免费版单个文件 4 GB 以内，Pro 不限 |
 | **文字 / 链接** | 两个方向都能发，手机发来的会自动进电脑剪贴板 |
 | **系统分享菜单** | 任何 App 里「分享 → 卓传」直达电脑 |
 | **断点续传** | 两个方向都支持，中断后接着传，不重复搬运 |
@@ -45,9 +41,59 @@ xattr -cr /Applications/DroidTrans.app
 
 | 目录 | 是什么 | 怎么跑 |
 | --- | --- | --- |
-| `android/` | 手机 App | Android Studio 打开该目录 |
+| `ios/` | **iOS 端**（Swift + SwiftUI，原生） | `cd ios && xcodegen generate && open DroidTrans.xcodeproj` |
+| `android/` | **安卓端**（Java，原生） | Android Studio 打开该目录 |
 | `desktop/` | **Go 桌面端**（HTTP 9500 + TCP 9501 + FTP 9502） | `cd desktop && ./build.sh` |
-| `scripts/` | 回归与冒烟脚本 | 见下 |
+| `site/` | **官网**（Vite + React + TS），部署在 `droidtrans.mkstore.life` | `./scripts/deploy-site.sh` |
+| `scripts/` | 构建、发布、回归脚本 | 见下 |
+| `web/` | 历史遗留，浏览器版早已并进 `desktop/`，勿在此新增东西 | — |
+
+两端都走原生，不做跨平台统一。曾经有过一个 Flutter 的 `mobile/` 想同时吃下
+两端，在 iOS 转 Swift 原生之后它就没有存在的理由了，已删除。
+
+版本号只有一处来源：仓库根的 `VERSION`。桌面端、手机端、发布清单都从它读，
+不要在 gradle 或 Xcode 工程里另写一份。
+
+分发的两条线也别搞混：
+
+| 东西 | 放在哪 | 域名 | 怎么发 |
+| --- | --- | --- | --- |
+| 官网页面 | 服务器上的 neox-nginx 容器（地址见 `~/.neox-secrets/droidtrans-deploy.env`） | `droidtrans.mkstore.life` | `./scripts/deploy-site.sh` |
+| APK / DMG / `latest.json` | Cloudflare R2 桶 `droidtrans` | `droid.mkstore.life` | `./scripts/upload-r2.sh` |
+| iOS | App Store | — | Xcode Archive 后上传 |
+
+**两个域名不要搞混**：`droid.mkstore.life` 是 R2 桶的自定义域，只放安装包和
+`latest.json`；官网是 `droidtrans.mkstore.life`，在服务器上。
+
+官网部署复用服务器已有的 neox-nginx 容器（和 `openexam.cc` 同一套模式），
+不额外起容器。vhost 在 `deploy/droidtrans.mkstore.life.conf`，由部署脚本同步过去，
+**别直接在服务器上改**。HTTPS 由 Cloudflare 终结，源站只监听 80。
+
+官网和 R2 不同源，所以 vhost 里把 `/latest.json` 反代到了 R2（避开 CORS），
+安装包则 302 跳过去（不占服务器带宽）。
+
+### 官网
+
+```bash
+cd site
+npm install
+npm run dev      # 本地开发
+npm run build    # 构建 + 预渲染，产物在 site/dist
+```
+
+页面文案在 `site/src/i18n/zh.ts` 和 `en.ts`，两份结构由 TS 类型锁死，
+漏翻一个字段就编译不过。改文案不用碰组件。
+
+**中文在根路径，英文在 `/en/`** —— 每个语言有独立 URL，搜索引擎才能分别收录。
+构建会为 8 个页面（4 页 × 2 语言）各生成一份真实 HTML，并写出
+`sitemap.xml`、`robots.txt`，以及 `canonical` / `hreflang` 头。
+构建最后一步会做预渲染（`prerender.mjs`），把每页渲染成真实 HTML 写进产物——
+不做的话爬虫和禁用 JS 的访客只会看到一个空的 `<div id="root">`。
+
+版本号和下载链接由页面在运行时读 `latest.json` 得到，所以**发新版不需要重新构建官网**。
+
+官网跑在服务器的 neox-nginx 容器里（和 `openexam.cc` 同一套模式），
+`site/Dockerfile` 是一份独立镜像的备用方案，产物完全一样，需要单独跑一个容器时用。
 
 ### 验证
 

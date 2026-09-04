@@ -21,6 +21,45 @@ var onFilesPicked func([]string)
 
 func setFilesPickedHandler(fn func([]string)) { onFilesPicked = fn }
 
+// 菜单栏每次弹出都会问一遍这两行字。
+// 状态是会变的（手机连上/断开、待取件数增减），
+// 建一次菜单就不管的话，用户看到的是打开 App 那一刻的快照。
+var (
+	onStatusLine  func() string
+	onAddressLine func() string
+	onOpenOutput  func()
+)
+
+func setMenuHandlers(status, address func() string, openOutput func()) {
+	onStatusLine, onAddressLine, onOpenOutput = status, address, openOutput
+}
+
+//export dtStatusLine
+func dtStatusLine() *C.char {
+	if onStatusLine == nil {
+		return C.CString("")
+	}
+	return C.CString(onStatusLine())
+}
+
+//export dtAddressLine
+func dtAddressLine() *C.char {
+	if onAddressLine == nil {
+		return C.CString("")
+	}
+	return C.CString(onAddressLine())
+}
+
+//export dtPickFilesFromMenu
+func dtPickFilesFromMenu() { C.DTPickFiles() }
+
+//export dtOpenOutputFolder
+func dtOpenOutputFolder() {
+	if onOpenOutput != nil {
+		onOpenOutput()
+	}
+}
+
 //export dtFilesPicked
 func dtFilesPicked(paths *C.char) {
 	if onFilesPicked == nil || paths == nil {

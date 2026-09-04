@@ -29,6 +29,7 @@ struct HomeScreen: View {
     @State private var showGallery = false
     @State private var showSync = false
     @State private var showTransferList = false
+    @State private var showPro = false
     @State private var toast: String?
     @State private var error: String?
 
@@ -83,6 +84,16 @@ struct HomeScreen: View {
         }
         .sheet(isPresented: $showTransferList) {
             TransferListView(transfers: transfers)
+        }
+        .sheet(isPresented: $showPro) { ProView() }
+        // 有文件因为超出免费额度传不了，直接问一句要不要升级。
+        // 服务端专门为这种情况回了一个状态字，界面不接就白加了 ——
+        // 用户只会看到一句「传输失败」，不知道该怎么办。
+        .alert(L("pro.limit.title"), isPresented: $transfers.hitProLimit) {
+            Button(L("pro.limit.upgrade")) { showPro = true }
+            Button(L("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(L("pro.limit.body"))
         }
         .alert(L("home.error"), isPresented: .constant(error != nil)) {
             Button(L("common.ok")) { error = nil }

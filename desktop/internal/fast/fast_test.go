@@ -85,26 +85,30 @@ func TestListenRetryReportsLiveState(t *testing.T) {
 	}
 }
 
-func TestReadHeaderBothVersions(t *testing.T) {
-	// ATF1：老格式，没有令牌
+func TestReadHeaderATF3(t *testing.T) {
 	buf := &bytes.Buffer{}
-	buf.WriteString("ATF1")
-	writeStr(buf, "a.jpg")
-	_ = binary.Write(buf, binary.BigEndian, uint64(1234))
-	name, size, token, err := readHeader(buf)
-	if err != nil || name != "a.jpg" || size != 1234 || token != "" {
-		t.Fatalf("ATF1 解析错了: %q %d %q %v", name, size, token, err)
-	}
-
-	// ATF2：带令牌
-	buf = &bytes.Buffer{}
-	buf.WriteString("ATF2")
+	buf.WriteString("ATF3")
 	writeStr(buf, "tok123")
 	writeStr(buf, "b.mp4")
 	_ = binary.Write(buf, binary.BigEndian, uint64(99))
-	name, size, token, err = readHeader(buf)
+	name, size, token, err := readHeader(buf)
 	if err != nil || name != "b.mp4" || size != 99 || token != "tok123" {
-		t.Fatalf("ATF2 解析错了: %q %d %q %v", name, size, token, err)
+		t.Fatalf("ATF3 解析错了: %q %d %q %v", name, size, token, err)
+	}
+}
+
+// ATF1（无令牌）和 ATF2（无偏移协商）已经删掉。
+// 发布之前没有存量客户端，留着两套解析分支只会让线格式长期背包袱 ——
+// 而且 ATF1 根本没有令牌，等于给 TCP 通道留了一个免鉴权的后门。
+func TestOldMagicsAreGone(t *testing.T) {
+	for _, magic := range []string{"ATF1", "ATF2"} {
+		buf := &bytes.Buffer{}
+		buf.WriteString(magic)
+		writeStr(buf, "a.jpg")
+		_ = binary.Write(buf, binary.BigEndian, uint64(1))
+		if _, _, _, err := readHeader(buf); err == nil {
+			t.Errorf("%s 不该再被接受", magic)
+		}
 	}
 }
 

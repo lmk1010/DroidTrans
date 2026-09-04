@@ -37,6 +37,13 @@ final class TransferManager: ObservableObject {
     @Published private(set) var jobs: [Job] = []
     @Published private(set) var running = false
 
+    /// 这一批里有没有因为超出免费额度而失败的。
+    ///
+    /// 服务端为这种情况专门回了一个状态字（statusUpgrade），
+    /// 就是为了让界面给出升级入口 —— 只显示一句错误的话，
+    /// 那个状态字就白加了，用户还是不知道该怎么办。
+    @Published var hitProLimit = false
+
     /// 传输用哪条通道。连上电脑时探一次，别每个文件都探。
     private var useTCP = true
     private var desktop: Desktop?
@@ -153,6 +160,9 @@ final class TransferManager: ObservableObject {
         } catch is CancellationError {
             update(job.id, .failed(L("job.canceled")))
         } catch {
+            if (error as? FastSendError)?.needsPro == true {
+                hitProLimit = true
+            }
             let msg = (error as? FastSendError)?.message
                 ?? (error as? ApiError)?.message
                 ?? error.localizedDescription

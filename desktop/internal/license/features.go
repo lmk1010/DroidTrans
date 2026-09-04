@@ -18,6 +18,12 @@ const (
 	FeatureIncrementalSync Feature = "incremental_sync"
 
 	// FeatureAutoArchive 自动归档：按日期和来源设备分批整理。
+	//
+	// 【当前没有接门控】落盘路径 输出目录/设备ID/批次ID 是所有人都走的，
+	// 免费版同样按设备和批次分好了 —— 也就是说这条现在不构成付费理由。
+	// 付费弹层里已经把它撤下来了。要真拿它收费，得先想清楚是做点
+	// 免费版没有的东西（比如按日期归并、重命名规则），还是从免费用户
+	// 手里收回现有行为 —— 后者不要做。
 	FeatureAutoArchive Feature = "auto_archive"
 
 	// FeatureDedupe 跨批次去重：识别多次传输里重复的同一张照片。
@@ -26,6 +32,28 @@ const (
 	// FeatureUSBBulk USB 批量导入：插上线一次拉走整个相册。
 	// 手动选文件传照片是免费的，这里买的是「不用一张张选」。
 	FeatureUSBBulk Feature = "usb_bulk"
+
+	// FeatureLargeFiles 传输超过免费额度的大文件。
+	//
+	// 免费额度是单个文件 4 GB。这个数字不是拍的：iPhone 4K60 视频约
+	// 400 MB/分钟，4 GB 正好是 10 分钟 —— 日常的照片和短视频完全碰不到，
+	// 碰到的是长录像、录屏、电影、整包备份这类，那才是愿意付钱的人。
+	//
+	// 2 GB 不行：那只有 5 分钟，随手拍段孩子的演出就超了，会砸在普通用户身上。
+	//
+	// 局域网传输按大小分档不是我们首创 —— Send Anywhere 免费版单次上限 2 GB。
+	FeatureLargeFiles Feature = "large_files"
+
+	// FeaturePhotosRescue 从 macOS「照片」图库里把原片救出来。
+	//
+	// 对着系统自带导出器的短板打：那个东西导几千张会崩，每两千张里
+	// 大约丢一百张，报的错还看不懂；图库本身是黑盒，Catalina 之后
+	// 用户在访达里按原始文件名根本找不到自己的照片。
+	// 我们绕开它直接读 Photos.sqlite，按原始文件名摊成普通文件夹。
+	//
+	// 扫描（看看有多少张、有多少只在 iCloud）是免费的 —— 得先让用户
+	// 确认这东西对他有用；真正往外导才要 Pro。
+	FeaturePhotosRescue Feature = "photos_rescue"
 )
 
 // proFeatures 是需要授权的功能集合。
@@ -36,6 +64,8 @@ var proFeatures = map[Feature]bool{
 	FeatureAutoArchive:     true,
 	FeatureDedupe:          true,
 	FeatureUSBBulk:         true,
+	FeaturePhotosRescue:    true,
+	FeatureLargeFiles:      true,
 }
 
 // IsPro 判断一个功能是否需要付费。不认识的功能一律当免费放行 ——

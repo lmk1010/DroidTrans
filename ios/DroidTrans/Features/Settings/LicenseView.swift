@@ -11,6 +11,7 @@ struct LicenseView: View {
 
     @State private var code = ""
     @State private var busy = false
+    @State private var confirmRemove = false
     @State private var error: String?
     @FocusState private var focused: Bool
 
@@ -34,6 +35,15 @@ struct LicenseView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .confirmationDialog(L("license.remove.confirm"), isPresented: $confirmRemove,
+                            titleVisibility: .visible) {
+            Button(L("license.remove"), role: .destructive) {
+                Task { await deactivate() }
+            }
+            Button(L("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(L("license.remove.hint"))
+        }
         .alert(L("license.failed"), isPresented: .constant(error != nil)) {
             Button(L("common.ok")) { error = nil }
         } message: {
@@ -96,8 +106,10 @@ struct LicenseView: View {
             }
             .glass()
 
+            // 一点就把付过钱的许可证从这台设备上删掉，之前没有任何确认。
+            // 桌面端同一个操作也犯过这个错。
             Button(L("license.remove"), role: .destructive) {
-                Task { await deactivate() }
+                confirmRemove = true
             }
             .font(.system(size: 14))
             .foregroundStyle(.red.opacity(0.9))
@@ -144,12 +156,18 @@ struct LicenseView: View {
                 .accessibilityIdentifier("license-activate")
             }
 
-            Link(destination: URL(string: "https://droidtrans.mkstore.life/pricing.html")!) {
-                Text(L("license.buy"))
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.brand)
-            }
-            .padding(.top, Space.s)
+            // 这里以前是一个指向官网定价页的外链。
+            //
+            // App Store 审核指南 3.1.1 明确禁止：「App 不得包含引导用户使用
+            // 非 App 内购买机制的按钮、外部链接或行为召唤。」
+            // 一个写着「还没有激活码？去看看定价 →」、点开就能买的网页链接，
+            // 正是这一条要拦的东西 —— 几乎必被拒。
+            //
+            // 换成退回上一层：那一层就是 App 内购页，档位和价格都在上面。
+            Button(L("license.buy")) { dismiss() }
+                .font(.system(size: 14))
+                .foregroundStyle(Color.brand)
+                .padding(.top, Space.s)
         }
     }
 

@@ -32,13 +32,13 @@ type Manifest struct {
 }
 
 type Status struct {
-	Current    string `json:"current"`
-	Latest     string `json:"latest,omitempty"`
-	Notes      string `json:"notes,omitempty"`
-	UpdateURL  string `json:"update_url,omitempty"`
-	Available  bool   `json:"available"`
-	CheckedAt  string `json:"checked_at,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Current   string `json:"current"`
+	Latest    string `json:"latest,omitempty"`
+	Notes     string `json:"notes,omitempty"`
+	UpdateURL string `json:"update_url,omitempty"`
+	Available bool   `json:"available"`
+	CheckedAt string `json:"checked_at,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 var (

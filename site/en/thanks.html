@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DroidTrans</title>
+<meta name="description" content="">
+<link rel="icon" href="/assets/logo.svg">
+<script>
+/* 在 CSS 生效前把主题写到 <html> 上，避免深色偏好的用户先闪一下白屏。
+   React 挂载太晚，来不及做这件事。 */
+(function(){
+  var d=document.documentElement;
+  /* 标记 JS 可用。进场动画的初始状态是 opacity:0，只有在这个类存在时才生效 ——
+     否则 JS 一旦没跑起来，预渲染好的内容会全部隐形。 */
+  d.classList.add('js');
+  try{var t=localStorage.getItem('dt-theme');if(t==='light'||t==='dark'){d.dataset.theme=t}}catch(e){}
+})()
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/main-thanks.tsx"></script>
+</body>
+</html>

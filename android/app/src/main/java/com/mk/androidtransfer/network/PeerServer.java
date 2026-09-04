@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.RandomAccessFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -388,6 +389,9 @@ public final class PeerServer {
             send(out, 200, json("success", true, "items", new JSONArray(),
                     "count", 0, "total_size", 0));
 
+        } else if ("GET".equals(h.method) && "/api/fast/offset".equals(h.path)) {
+            resumeOffset(h, out);
+
         } else if ("PUT".equals(h.method) && "/api/fast/put".equals(h.path)) {
             receiveFile(h, in, out);
 
@@ -407,7 +411,7 @@ public final class PeerServer {
             ips.put(ip);
         }
         JSONArray prefer = new JSONArray();
-        // 只实现了 HTTP PUT。ATF2 裸流和 FTP 是桌面端才有的加速，
+        // 只实现了 HTTP PUT。ATF3 裸流和 FTP 是桌面端才有的加速，
         // 少报一个通道，发送方会自己降到 PUT，不会失败。
         prefer.put("http_put");
 
@@ -431,6 +435,40 @@ public final class PeerServer {
 
     // ----------------------------------------------------------------- 收文件
 
+    /**
+     * 告诉发送方「这个文件我已经有多少字节了」。
+     *
+     * <p>断点续传的第一步。发送方拿到偏移量后只补剩下的那段 ——
+     * 传到 9 GB 断掉，重来一次不该从 0 开始。
+     */
+    private void resumeOffset(Head h, OutputStream out) throws IOException {
+        String name = sanitize(decode(h.query("name") == null ? "" : h.query("name")));
+        long size = parseLong(h.query("size"), 0);
+        if (name.isEmpty() || size <= 0) {
+            send(out, 200, json("success", true, "offset", 0, "complete", false));
+            return;
+        }
+        File dir = inboxDir();
+        // 已经有一份大小完全一致的同名文件，一个字节都不用再发
+        File done = new File(dir, name);
+        if (done.isFile() && done.length() == size) {
+            send(out, 200, json("success", true, "offset", size, "complete", true));
+            return;
+        }
+        long have = partFile(dir, name, size).length();
+        send(out, 200, json("success", true, "offset", Math.min(have, size), "complete", false));
+    }
+
+    /**
+     * 没收完的字节先躺在分片里，收全了才改名到目标位置。
+     *
+     * <p>大小写进文件名：相册里同名文件遍地都是，只按名字续会把
+     * 另一个文件的字节接到这个文件后面，内容静默损坏。
+     */
+    private static File partFile(File dir, String name, long size) {
+        return new File(dir, "." + name + "." + size + ".dtpart");
+    }
+
     private void receiveFile(Head h, InputStream in, OutputStream out) throws IOException {
         String raw = h.header("X-Relative-Path");
         if (raw == null) {
@@ -441,46 +479,63 @@ public final class PeerServer {
         }
         String name = sanitize(decode(raw));
         long total = parseLong(h.header("X-File-Size"), h.contentLength());
+        long offset = Math.max(0, Math.min(parseLong(h.header("X-Start-Offset"), 0), total));
 
-        File dest = unique(inboxDir(), name);
+        // 这次请求实际带了多少字节，按 Content-Length 算，不是按 X-File-Size。
+        //
+        // 两者是两回事：X-File-Size 是整个文件多大（决定分片名和什么时候转正），
+        // Content-Length 是这一次要发的量（续传时只是剩下的那一段）。
+        // 按 X-File-Size 收的话，对方声明 4 GB 却只发一半，这条连接会一直
+        // 挂在 read 上等到超时 —— iOS 端实测卡了 60 秒。
+        long bodyLen = h.contentLength() > 0 ? h.contentLength() : Math.max(0, total - offset);
 
-        long written = 0;
-        boolean ok;
-        try (FileOutputStream fos = new FileOutputStream(dest)) {
+        File part = partFile(inboxDir(), name, total);
+        long body = 0;
+        try (RandomAccessFile raf = new RandomAccessFile(part, "rw")) {
+            // 分片比对方以为的还长时多出来的必须截掉，否则文件中间
+            // 会多出一段重复字节
+            raf.setLength(offset);
+            raf.seek(offset);
+
             // 头读完时缓冲里往往已经躺着 body 的开头，先把它写掉
             byte[] pre = h.leftover();
             if (pre.length > 0) {
-                int take = (int) Math.min(pre.length, total);
-                fos.write(pre, 0, take);
-                written += take;
+                int take = (int) Math.min(pre.length, bodyLen);
+                raf.write(pre, 0, take);
+                body += take;
             }
             byte[] buf = new byte[64 * 1024];
-            while (written < total) {
-                int want = (int) Math.min(buf.length, total - written);
+            while (body < bodyLen) {
+                int want = (int) Math.min(buf.length, bodyLen - body);
                 int n = in.read(buf, 0, want);
                 if (n < 0) {
                     break;
                 }
-                fos.write(buf, 0, n);
-                written += n;
+                raf.write(buf, 0, n);
+                body += n;
             }
-            ok = written == total;
         }
 
-        if (ok) {
-            final File f = dest;
-            final long size = written;
-            main.post(() -> {
-                if (listener != null) {
-                    listener.onFileReceived(f.getName(), size, f);
-                }
-            });
-            send(out, 200, json("success", true, "skipped", false, "size", written));
-        } else {
-            //noinspection ResultOfMethodCallIgnored
-            dest.delete();
-            send(out, 400, json("success", false, "error", "文件没收全"));
+        long written = offset + body;
+        if (written != total) {
+            // 分片留着，下次接着传。这里删掉就等于让用户从头再来一遍。
+            send(out, 400, json("success", false, "error", "文件没收全",
+                    "offset", written));
+            return;
         }
+
+        final File dest = unique(inboxDir(), name);
+        if (!part.renameTo(dest)) {
+            send(out, 500, json("success", false, "error", "落盘失败"));
+            return;
+        }
+        final long size = written;
+        main.post(() -> {
+            if (listener != null) {
+                listener.onFileReceived(dest.getName(), size, dest);
+            }
+        });
+        send(out, 200, json("success", true, "skipped", false, "size", written));
     }
 
     private void saveText(String text) {
@@ -630,7 +685,32 @@ public final class PeerServer {
     }
 
     /** 本机在当前 Wi-Fi 下的 IPv4。手输地址那条路要用它。 */
+    /**
+     * 这个网卡有多值得报出去，数字越小越优先；-1 = 别用。
+     *
+     * <p><b>热点要排在 Wi-Fi 前面。</b>这台手机自己开热点时，对方是连到
+     * ap0/softap0 那个网段上的。两个网卡同时 up 的情况很常见（连着 Wi-Fi
+     * 又开了热点），按枚举顺序随便挑一个，就会把对方根本到不了的
+     * Wi-Fi 地址报出去，手输地址那条兜底路直接断掉。
+     *
+     * <p>蜂窝网（rmnet/pdp）上对面连不过来，一律不要。
+     */
+    static int interfaceRank(String name) {
+        if (name == null) {
+            return -1;
+        }
+        if (name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan")) {
+            return 0;
+        }
+        if (name.startsWith("wlan")) {
+            return 1;
+        }
+        return -1;
+    }
+
     public String localIp() {
+        String best = null;
+        int bestRank = Integer.MAX_VALUE;
         try {
             for (Enumeration<NetworkInterface> e = NetworkInterface.getNetworkInterfaces();
                  e.hasMoreElements(); ) {
@@ -638,21 +718,22 @@ public final class PeerServer {
                 if (!ni.isUp() || ni.isLoopback()) {
                     continue;
                 }
-                String n = ni.getName();
-                // 蜂窝网（rmnet/pdp）上对面连不过来，只认 Wi-Fi 和热点
-                if (n == null || (!n.startsWith("wlan") && !n.startsWith("ap"))) {
+                int rank = interfaceRank(ni.getName());
+                if (rank < 0 || rank >= bestRank) {
                     continue;
                 }
                 for (Enumeration<InetAddress> a = ni.getInetAddresses(); a.hasMoreElements(); ) {
                     InetAddress addr = a.nextElement();
                     if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                        return addr.getHostAddress();
+                        best = addr.getHostAddress();
+                        bestRank = rank;
+                        break;
                     }
                 }
             }
         } catch (Exception ignored) {
         }
-        return null;
+        return best;
     }
 
     private static String decode(String s) {
@@ -730,10 +811,28 @@ public final class PeerServer {
         String method = "";
         String path = "/";
         final Map<String, String> fields = new HashMap<>();
+        final Map<String, String> params = new HashMap<>();
         private byte[] rest = new byte[0];
 
         String header(String name) {
             return fields.get(name.toLowerCase(Locale.US));
+        }
+
+        String query(String name) {
+            return params.get(name);
+        }
+
+        private void parseQuery(String qs) {
+            for (String pair : qs.split("&")) {
+                if (pair.isEmpty()) {
+                    continue;
+                }
+                int eq = pair.indexOf('=');
+                if (eq <= 0) {
+                    continue;
+                }
+                params.put(decode(pair.substring(0, eq)), decode(pair.substring(eq + 1)));
+            }
         }
 
         long contentLength() {
@@ -803,9 +902,15 @@ public final class PeerServer {
                     h.method = parts[0];
                 }
                 if (parts.length > 1) {
-                    // 查询串这边一个口都用不上，切掉，路由只看路径
+                    // 路由只看路径，但查询串得留着 —— /api/fast/offset 要靠它
+                    // 拿到 name 和 size。原来这里直接扔掉了。
                     int q = parts[1].indexOf('?');
-                    h.path = q >= 0 ? parts[1].substring(0, q) : parts[1];
+                    if (q >= 0) {
+                        h.path = parts[1].substring(0, q);
+                        h.parseQuery(parts[1].substring(q + 1));
+                    } else {
+                        h.path = parts[1];
+                    }
                 }
             }
             for (int i = 1; i < lines.length; i++) {

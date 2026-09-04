@@ -45,6 +45,12 @@ func main() {
 	application.OnNotify = notifyUser
 	application.OnPickFiles = pickFiles
 	// 窗口上拖进来的文件 / 选择面板选中的文件，直接进「发到手机」队列
+	// 菜单栏那两行状态。每次弹菜单都会来问一次。
+	setMenuHandlers(
+		func() string { return application.MenuStatusLine() },
+		func() string { return application.MenuAddressLine() },
+		func() { application.OpenOutputFolder() },
+	)
 	setFilesPickedHandler(func(paths []string) {
 		for _, p := range paths {
 			if _, err := application.Out.Add(p); err != nil {
