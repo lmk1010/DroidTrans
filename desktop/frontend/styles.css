@@ -1311,6 +1311,11 @@ main { padding: 52px 40px 40px; overflow: auto; }
 
 /* 窄窗口：导航横过来。之前文字会竖着折行（「总/览」「Wi-/Fi」），
    侧栏底部的设备名也挤进导航行。 */
+/* 英文界面下不显示中文副名。
+   产品不对大陆开放，英文用户看到一行看不懂的方块字只会觉得莫名其妙 ——
+   而它还占掉品牌区一半的高度。 */
+html[lang="en"] .brand span { display: none; }
+
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
   .rail {
