@@ -3,6 +3,12 @@
 import SwiftUI
 
 struct ConnectView: View {
+    /// 从「手机互传 → 我要发」进来时为真，雷达上只列手机。
+    ///
+    /// 用户刚说完「我要发给另一台手机」，紧接着看到自己的 Mac 混在
+    /// 雷达里、点下去还弹「和这台电脑配对」—— 那是在推翻他刚做的选择。
+    var phonesOnly: Bool = false
+
     @EnvironmentObject private var app: AppState
     @StateObject private var discovery = DesktopDiscovery()
 
@@ -20,7 +26,7 @@ struct ConnectView: View {
                 Spacer(minLength: Space.m)
 
                 RadarView(
-                    devices: discovery.found,
+                    devices: visible,
                     scanning: discovery.isBrowsing,
                     onTap: { d in Task { await app.connect(to: d) } }
                 )
@@ -114,9 +120,14 @@ struct ConnectView: View {
         HomeButton { app.route = .start }
     }
 
+    /// 雷达上该显示哪些。默认全都显示；只找手机时把电脑滤掉。
+    private var visible: [Desktop] {
+        phonesOnly ? discovery.found.filter(\.isPhone) : discovery.found
+    }
+
     private var statusText: String {
-        if !discovery.found.isEmpty {
-            return discovery.found.count == 1 ? L("connect.status.one") : L("connect.status.many")
+        if !visible.isEmpty {
+            return visible.count == 1 ? L("connect.status.one") : L("connect.status.many")
         }
         return discovery.isBrowsing ? L("connect.status.scanning") : L("connect.status.preparing")
     }
@@ -125,7 +136,7 @@ struct ConnectView: View {
 
     private var footer: some View {
         VStack(spacing: Space.m) {
-            if discovery.found.isEmpty && discovery.isBrowsing {
+            if visible.isEmpty && discovery.isBrowsing {
                 // 搜不到是有具体原因的，直接把原因和出路说清楚，
                 // 比让用户对着空雷达猜要好
                 Text(L("connect.hint"))

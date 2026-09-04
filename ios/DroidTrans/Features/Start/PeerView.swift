@@ -83,7 +83,7 @@ struct PeerView: View {
             VStack(spacing: Space.m) {
                 roleCard(icon: "paperplane.fill",
                          title: L("peer.send"), sub: L("peer.send.sub"),
-                         id: "peer-send") { app.route = .findDesktop }
+                         id: "peer-send") { app.route = .findDesktop(phonesOnly: true) }
 
                 roleCard(icon: "tray.and.arrow.down.fill",
                          title: L("peer.recv"), sub: L("peer.recv.sub"),
@@ -229,6 +229,7 @@ struct PeerView: View {
             if !peer.received.isEmpty {
                 VStack(alignment: .leading, spacing: Space.s) {
                     Text("\(L("peer.got")) \(peer.received.count)")
+                        .accessibilityIdentifier("peer-got-count")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.ink3)
                     ForEach(peer.received.suffix(4)) { f in

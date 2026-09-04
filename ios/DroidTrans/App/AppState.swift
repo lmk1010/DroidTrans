@@ -23,7 +23,12 @@ final class AppState: ObservableObject {
     /// 现在多了一个家（StartView），雷达只是从家出发的三条路之一。
     enum Route: Equatable {
         case start
-        case findDesktop
+        /// phonesOnly：从「手机互传 → 我要发」进来的，雷达只列手机。
+        ///
+        /// 之前这里不带参数，于是选了「发给另一台手机」之后，雷达把
+        /// 局域网里的电脑也一并列出来 —— 点下去弹的是「和这台电脑配对」，
+        /// 和用户刚刚做的选择直接冲突。
+        case findDesktop(phonesOnly: Bool = false)
         case peer(PeerKind)
     }
 
@@ -242,7 +247,7 @@ final class AppState: ObservableObject {
         }
         api = nil
         phase = .disconnected
-        route = .findDesktop   // 点「切换电脑」就是要挑一台，直接进雷达
+        route = .findDesktop()   // 点「切换电脑」就是要挑一台，直接进雷达
     }
 
     /// 雷达页的 home 键能不能按。

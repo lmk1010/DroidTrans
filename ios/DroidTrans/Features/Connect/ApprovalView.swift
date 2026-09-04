@@ -23,6 +23,7 @@ struct ApprovalView: View {
 
                 VStack(spacing: Space.m) {
                     Text(L("approval.waiting"))
+                        .accessibilityIdentifier("approval-waiting")
                         .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Color.ink)
                     Text(desktop.name)

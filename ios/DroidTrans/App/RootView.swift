@@ -19,7 +19,7 @@ struct RootView: View {
         case .disconnected:
             switch app.route {
             case .start:       StartView()
-            case .findDesktop: ConnectView()
+            case .findDesktop(let phonesOnly): ConnectView(phonesOnly: phonesOnly)
             case .peer(let k): PeerView(kind: k)
             }
         case .needsPairing(let d):

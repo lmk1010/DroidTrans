@@ -19,7 +19,7 @@ struct StartView: View {
     private var cards: [(art: Art, title: String, sub: String, id: String, go: () -> Void)] {
         [
             (.laptop,  L("start.desktop"), L("start.desktop.sub"), "start-desktop",
-             { app.route = .findDesktop }),
+             { app.route = .findDesktop() }),
             (.phone,   L("start.iphone"),  L("start.iphone.sub"),  "start-iphone",
              { app.route = .peer(.iphone) }),
             (.android, L("start.android"), L("start.android.sub"), "start-android",

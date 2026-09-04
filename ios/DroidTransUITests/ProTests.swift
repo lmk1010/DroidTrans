@@ -55,6 +55,16 @@ final class ProTests: XCTestCase {
     /// 而且它连兑换许可证都验了。所以先这么放着，不为了让 CI 变绿而删掉断言。
     ///
     ///   单独跑：xcodebuild test -only-testing:DroidTransUITests/ProTests/testPricesLoadFromStoreKit
+    /// 商品配置里有没有这一档。测试不该把「卖几档」写死 ——
+    /// 那是 Products.storekit 说了算的事。
+    private func hasProduct(_ suffix: String) -> Bool {
+        guard let url = Bundle(for: type(of: self))
+                .url(forResource: "Products", withExtension: "storekit")
+                ?? Bundle.main.url(forResource: "Products", withExtension: "storekit"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        return text.contains(".pro.\(suffix)\"")
+    }
+
     func testPricesLoadFromStoreKit() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-uitest-no-license"]
@@ -65,11 +75,19 @@ final class ProTests: XCTestCase {
         XCTAssertTrue(pro.waitForExistence(timeout: 5), "「我的」里没有会员入口")
         pro.tap()
 
-        // 三个档位都要出现，而且价格不能是占位的破折号 ——
-        // 那说明商品没取到，用户看到的是一排「—」
-        for plan in ["year", "years3", "lifetime"] {
-            let row = app.buttons["plan-\(plan)"]
-            XCTAssertTrue(row.waitForExistence(timeout: 10), "缺少档位 \(plan)")
+        // 终身档必须在 —— App Store 上只卖这一档。
+        //
+        // 原来这里要求三个档位都出现，那是 Products.storekit 里还挂着
+        // 一年/三年时写的。那两档现在只在官网和电脑端卖（不经过 Apple），
+        // 硬要求它们出现，等于要求付费页显示商店里根本买不到的东西。
+        XCTAssertTrue(app.buttons["plan-lifetime"].waitForExistence(timeout: 10),
+                      "付费页上没有终身档")
+
+        // 反过来也要守住：不该出现商店里没有的档位。
+        // 显示一个买不到的价格，用户点下去只会得到一个失败。
+        for absent in ["year", "years3"] where !hasProduct(absent) {
+            XCTAssertFalse(app.buttons["plan-\(absent)"].exists,
+                           "付费页显示了 \(absent) 档，但商品配置里没有它")
         }
 
         let buy = app.buttons["pro-buy"]
