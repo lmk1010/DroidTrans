@@ -27,13 +27,23 @@ TO TEST THE MAIN FLOW YOU NEED THE FREE MAC APP:
 5. The Mac shows a 6-digit pairing code in its window. Enter it on the phone.
 6. You are now on the main screen and can send photos, files or text.
 
-IF YOU CANNOT SET UP A MAC:
-A 56-second screen recording of the complete flow (Mac app on the left,
-iPhone on the right) is here:
+PHONE-TO-PHONE ALSO NEEDS A SECOND DEVICE:
+The app can also send between two phones (no computer involved). One phone
+taps "Receive" to make itself visible; the other taps "Send", finds it, and
+the receiving phone approves the connection.
+
+IF YOU CANNOT SET UP A SECOND DEVICE:
+A 90-second screen recording of both flows is here:
+
    https://droidtrans.mkstore.life/review-demo.mp4
-It shows the phone already paired with the Mac, files listed from the
-computer, a 3.15 GB video being pulled down with live progress, the
-received-files gallery, the transfer history, and the paywall.
+
+   0:00-0:56  Phone and Mac. The Mac app is on the left, the iPhone on the
+              right: pairing with the 6-digit code, files listed from the
+              computer, a 3.15 GB video pulled down with live progress, the
+              received-files gallery, the transfer history, and the paywall.
+   0:56-1:30  Phone to phone. Two iPhones side by side: one makes itself
+              visible, the other finds it, the first approves, and a message
+              is sent across.
 
 IN-APP PURCHASE:
 "DroidTrans Pro" is a single non-consumable, one-time purchase. There is

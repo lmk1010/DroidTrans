@@ -40,7 +40,13 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const state = {
-  lang: localStorage.getItem('droidtrans.lang') || 'zh',
+  // 默认跟系统语言走，认不出来就英文。
+  //
+  // 原来写死 'zh'：一台英文系统的 Mac 装上之后，打开是满屏中文，
+  // 用户得自己去左下角找那个切换按钮。产品主要面向海外，
+  // 这个默认值等于把第一印象让给了看不懂的界面。
+  lang: localStorage.getItem('droidtrans.lang')
+    || ((navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en'),
   view: 'home',
   albums: {},
   deviceName: '',

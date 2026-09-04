@@ -20,7 +20,11 @@ final class PeerToPeerTests: XCTestCase {
     private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.terminate()
-        app.launchArguments = ["-uitest-fresh", "-uitest-no-license"] + extra
+        // 录审核视频时要英文界面：审核员用的是英文机器。
+        let env = ProcessInfo.processInfo.environment
+        let lang = (env["TEST_RUNNER_SHOT_LANG"] ?? env["SHOT_LANG"] ?? "").isEmpty
+            ? [] : ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments = ["-uitest-fresh", "-uitest-no-license"] + lang + extra
         app.launch()
         _ = app.wait(for: .runningForeground, timeout: 15)
         return app
