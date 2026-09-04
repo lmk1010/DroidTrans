@@ -188,7 +188,7 @@ export const en: Dict = {
     },
     privacy: { title: 'Privacy — DroidTrans', desc: 'DroidTrans collects nothing, uploads nothing, and stores nothing about you.' },
     support: { title: 'Support — DroidTrans', desc: 'Common questions and how to reach us.' },
-    pricing: { title: 'Pricing — DroidTrans', desc: 'The basics stay free. Pro is one code for all three platforms: $1.99/year, $3.99/3 years, $9.99 lifetime.' },
+    pricing: { title: 'Pricing — DroidTrans', desc: 'The basics stay free. Pro is one code for all three platforms: $5.99/year, $11.99/3 years, $14.99 lifetime.' },
     thanks: { title: 'Thank you — DroidTrans', desc: 'Your DroidTrans Pro activation code.' },
     changelog: { title: 'Changelog — DroidTrans', desc: 'What changed in each release of DroidTrans.' },
   },

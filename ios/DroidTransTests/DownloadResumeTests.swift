@@ -219,6 +219,15 @@ private final class RangeServer: @unchecked Sendable {
         }
         let out = [UInt8](slice.prefix(sendLen))
         _ = out.withUnsafeBufferPointer { write(fd, $0.baseAddress, out.count) }
-        // cutAfter 时故意不发完就关，客户端应当认定没收全
+
+        // cutAfter 时故意不发完就关，客户端应当认定没收全。
+        //
+        // 关之前要停一下：真实的断线是「字节先到了，过一会儿连接才断」，
+        // 而这里如果写完立刻 close，URLSession 有可能把还没交付给
+        // didReceive 的那点数据连同错误一起丢掉 —— 于是分片是空的，
+        // 测试报「没带 Range」，看着像功能坏了，其实是这个测试服务器不真实。
+        if cutAfter != nil {
+            usleep(250_000)
+        }
     }
 }

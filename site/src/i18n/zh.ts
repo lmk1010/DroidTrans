@@ -189,7 +189,7 @@ export const zh = {
     },
     privacy: { title: '隐私政策 — 卓传 DroidTrans', desc: '卓传不收集、不上传、不存储你的任何文件和个人信息。' },
     support: { title: '支持 — 卓传 DroidTrans', desc: '卓传的常见问题与联系方式。' },
-    pricing: { title: '定价 — 卓传 DroidTrans', desc: '基础功能永远免费。Pro 一个激活码通用三端：一年 $1.99、三年 $3.99、终生 $9.99。' },
+    pricing: { title: '定价 — 卓传 DroidTrans', desc: '基础功能永远免费。Pro 一个激活码通用三端：一年 $5.99、三年 $11.99、终生 $14.99。' },
     thanks: { title: '购买成功 — 卓传 DroidTrans', desc: '你的卓传 Pro 激活码。' },
     changelog: { title: '版本记录 — 卓传 DroidTrans', desc: '卓传每个版本改了什么。' },
   },

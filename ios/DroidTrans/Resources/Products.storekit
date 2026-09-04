@@ -1,58 +1,30 @@
 {
-  "identifier" : "DroidTransPro",
-  "nonRenewingSubscriptions" : [
+  "identifier": "DroidTransPro",
+  "nonRenewingSubscriptions": [],
+  "products": [
     {
-      "displayPrice" : "1.99",
-      "familyShareable" : false,
-      "internalID" : "PRO_YEAR",
-      "localizations" : [
+      "displayPrice": "14.99",
+      "familyShareable": false,
+      "internalID": "PRO_LIFETIME",
+      "localizations": [
         {
-          "description" : "Unlock the Pro features for one year. One code covers macOS, Android and iOS.",
-          "displayName" : "DroidTrans Pro · 1 Year",
-          "locale" : "en_US"
+          "description": "Unlock the Pro features forever. One code covers macOS, Android and iOS.",
+          "displayName": "DroidTrans Pro · Lifetime",
+          "locale": "en_US"
         }
       ],
-      "productID" : "life.mkstore.droidtrans.pro.year",
-      "referenceName" : "Pro 1 Year",
-      "type" : "NonRenewingSubscription"
-    },
-    {
-      "displayPrice" : "3.99",
-      "familyShareable" : false,
-      "internalID" : "PRO_YEARS3",
-      "localizations" : [
-        {
-          "description" : "Unlock the Pro features for three years. One code covers macOS, Android and iOS.",
-          "displayName" : "DroidTrans Pro · 3 Years",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "life.mkstore.droidtrans.pro.years3",
-      "referenceName" : "Pro 3 Years",
-      "type" : "NonRenewingSubscription"
+      "productID": "life.mkstore.droidtrans.pro.lifetime",
+      "referenceName": "Pro Lifetime",
+      "type": "NonConsumable"
     }
   ],
-  "products" : [
-    {
-      "displayPrice" : "9.99",
-      "familyShareable" : false,
-      "internalID" : "PRO_LIFETIME",
-      "localizations" : [
-        {
-          "description" : "Unlock the Pro features forever. One code covers macOS, Android and iOS.",
-          "displayName" : "DroidTrans Pro · Lifetime",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "life.mkstore.droidtrans.pro.lifetime",
-      "referenceName" : "Pro Lifetime",
-      "type" : "NonConsumable"
-    }
-  ],
-  "settings" : {
-    "_applicationInternalID" : "DroidTrans",
-    "_developerTeamID" : "24D88Q3K3S"
+  "settings": {
+    "_applicationInternalID": "DroidTrans",
+    "_developerTeamID": "24D88Q3K3S"
   },
-  "subscriptionGroups" : [],
-  "version" : { "major" : 4, "minor" : 0 }
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
 }

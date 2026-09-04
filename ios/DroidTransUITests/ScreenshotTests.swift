@@ -37,6 +37,19 @@ final class ScreenshotTests: XCTestCase {
         super.tearDown()
     }
 
+    /// 出英文版商店截图时把 App 的语言顶成英文。
+    ///
+    /// 商店截图必须中英各一套，而模拟器整机切语言慢且会污染后面的用例；
+    /// 用启动参数只影响这一次启动，跑完就没了。
+    ///
+    ///   TEST_RUNNER_SHOT_LANG=en xcodebuild test -only-testing:…/ScreenshotTests
+    static var langArgs: [String] {
+        let env = ProcessInfo.processInfo.environment
+        let lang = env["TEST_RUNNER_SHOT_LANG"] ?? env["SHOT_LANG"] ?? ""
+        guard !lang.isEmpty else { return [] }
+        return ["-AppleLanguages", "(\(lang))", "-AppleLocale", lang == "en" ? "en_US" : lang]
+    }
+
     private func shot(_ app: XCUIApplication, _ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot())
         a.name = name
@@ -47,7 +60,7 @@ final class ScreenshotTests: XCTestCase {
     func testCaptureKeyScreens() throws {
         // 截的是「还没买过」的样子 —— 那才是新用户看到的界面。
         // 不清的话上一次购买留下的许可证会让 Pro 页变成「已激活」。
-        let app = try launchConnected(["-uitest-fresh", "-uitest-no-license"])
+        let app = try launchConnected(["-uitest-fresh", "-uitest-no-license"] + Self.desktopArgs + Self.langArgs)
         let me = app.buttons["open-me"]
         XCTAssertTrue(me.waitForExistence(timeout: 10))
         shot(app, "01-home")
@@ -67,7 +80,7 @@ final class ScreenshotTests: XCTestCase {
     /// 传完了、被 Pro 挡住、列表是空的。那些界面平时看不见，
     /// 也就最容易一直烂着没人管。
     func testCaptureRemainingScreens() throws {
-        let app = try launchConnected(["-uitest-fresh", "-uitest-no-license"] + Self.desktopArgs)
+        let app = try launchConnected(["-uitest-fresh", "-uitest-no-license"] + Self.desktopArgs + Self.langArgs)
         // open-me 在启动页和主界面上都有，拿它判断「已进主界面」是错的 ——
         // 结果就是下面每个 if 都静默跳过，测试绿着却一张图都没截到。
         // 用只有主界面才有的 open-gallery 来判定。

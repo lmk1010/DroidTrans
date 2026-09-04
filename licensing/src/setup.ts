@@ -30,11 +30,14 @@ const storeId = process.env.WAFFO_STORE_ID!
 
 /// 按档位分，不按平台分 —— 一个激活码通吃 macOS / Android / iOS。
 /// 阶梯定得让终生档显得划算：三年是一年的两倍（等于买两年送一年），
-/// 终生再翻一倍多，多数人会直接跳到终生。
+/// 而终生只比三年贵 $3 —— 三年档的作用不是卖钱，是让终生看起来
+/// 理所当然。价格要和 site/src/data/plans.ts、desktop/frontend/app.js
+/// 一致，终生档还必须和 App Store 上的一致：激活码三端通用，
+/// 哪个渠道便宜用户就去哪买，iOS 那档会直接被架空。
 const ITEMS = [
-  { key: 'WAFFO_PRODUCT_YEAR', name: 'DroidTrans Pro — 1 Year', amount: process.env.PRICE_YEAR ?? '1.99' },
-  { key: 'WAFFO_PRODUCT_YEARS3', name: 'DroidTrans Pro — 3 Years', amount: process.env.PRICE_YEARS3 ?? '3.99' },
-  { key: 'WAFFO_PRODUCT_LIFETIME', name: 'DroidTrans Pro — Lifetime', amount: process.env.PRICE_LIFETIME ?? '9.99' },
+  { key: 'WAFFO_PRODUCT_YEAR', name: 'DroidTrans Pro — 1 Year', amount: process.env.PRICE_YEAR ?? '5.99' },
+  { key: 'WAFFO_PRODUCT_YEARS3', name: 'DroidTrans Pro — 3 Years', amount: process.env.PRICE_YEARS3 ?? '11.99' },
+  { key: 'WAFFO_PRODUCT_LIFETIME', name: 'DroidTrans Pro — Lifetime', amount: process.env.PRICE_LIFETIME ?? '14.99' },
 ]
 
 for (const item of ITEMS) {

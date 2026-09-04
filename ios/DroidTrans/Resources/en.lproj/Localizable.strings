@@ -214,7 +214,7 @@ Pro unlocks the following.";
 "sync.locked" = "Incremental photo sync";
 "sync.locked.hint" = "Stop keeping track of what you've already sent.\nOpen it, tap once, and only the new shots go over.";
 "sync.perk.incremental" = "Only new photos — the rest are skipped";
-"sync.perk.original" = "Originals, no transcoding or compression";
+"sync.perk.original" = "Live Photos sync with their video half";
 "sync.perk.free" = "Picking photos by hand stays free";
 "sync.unlock" = "Unlock Pro";
 "sync.scanning" = "Checking what's new in your library…";

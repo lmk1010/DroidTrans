@@ -21,7 +21,10 @@ settings:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: 24D88Q3K3S
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "1.0.3"
+    # App Store 上的首个版本就是 1.0。这个号和桌面端的版本号是两回事，
+    # 不需要对齐 —— App Store Connect 里的版本号必须和这里一模一样，
+    # 对不上的话上传的构建版本在版本页里根本选不到。
+    MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     # 传输的是用户的照片，一律不许出现在崩溃日志/控制台里

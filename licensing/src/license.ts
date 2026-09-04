@@ -26,7 +26,7 @@ export type LicensePayload = {
   product: 'droidtrans-pro'
   /**
    * 授权档位。
-   * 一个激活码通吃 macOS / Android / iOS —— $1.99 的东西让用户
+   * 一个激活码通吃 macOS / Android / iOS —— $14.99 的东西让用户
    * 每端各买一次，光解释这件事的客服成本就超过收入了。
    */
   plan: Plan

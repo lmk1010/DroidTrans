@@ -214,7 +214,7 @@ Pro 解锁以下功能。";
 "sync.locked" = "相册增量同步";
 "sync.locked.hint" = "不用自己记哪些传过了。\n每次打开点一下，只把新拍的传到电脑。";
 "sync.perk.incremental" = "只传新增，已传过的自动跳过";
-"sync.perk.original" = "原图原视频，不转码不压缩";
+"sync.perk.original" = "实况照片连动态视频一起同步";
 "sync.perk.free" = "手动选照片传一直是免费的";
 "sync.unlock" = "解锁 Pro";
 "sync.scanning" = "正在看相册里有什么新的…";

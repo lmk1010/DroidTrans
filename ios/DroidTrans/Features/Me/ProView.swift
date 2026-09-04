@@ -163,9 +163,24 @@ struct ProView: View {
 
     // MARK: - 档位
 
+    /// 只列商店里真有的档位。
+    ///
+    /// 原来按 ProPlan.allCases 写死三行：App Store Connect 里没建、
+    /// 或者还在审核中的档位照样显示，价格是一个「—」，点了没反应 ——
+    /// 用户看到的就是一个坏掉的付费页。
+    ///
+    /// 一个都没拉到时（没网、StoreKit 抽风）仍旧把三档列出来，
+    /// 否则整页空白，用户连我们卖什么都看不到。
+    private var availablePlans: [ProPlan] {
+        let live = ProPlan.allCases.filter { plan in
+            iap.products.contains { $0.id == plan.rawValue }
+        }
+        return live.isEmpty ? ProPlan.allCases : live
+    }
+
     private var plans: some View {
         VStack(spacing: Space.s) {
-            ForEach(ProPlan.allCases) { plan in
+            ForEach(availablePlans) { plan in
                 PlanRow(
                     plan: plan,
                     product: iap.products.first { $0.id == plan.rawValue },
@@ -178,6 +193,14 @@ struct ProView: View {
 
             if iap.loading && iap.products.isEmpty {
                 ProgressView().tint(Color.ink2).padding(.vertical, Space.m)
+            }
+        }
+        // 默认选中的是终身版；万一它没上架，得把选中项挪到列出来的第一档，
+        // 不然按钮一直是灰的，用户不知道为什么点不动
+        .onChange(of: iap.products) { _ in
+            let live = availablePlans
+            if !live.contains(selected), let first = live.first {
+                selected = first
             }
         }
     }

@@ -13,7 +13,7 @@ export type Plan = {
 }
 
 export const plans: Plan[] = [
-  { id: 'year', price: '1.99' },
-  { id: 'years3', price: '3.99' },
-  { id: 'lifetime', price: '9.99', featured: true },
+  { id: 'year', price: '5.99' },
+  { id: 'years3', price: '11.99' },
+  { id: 'lifetime', price: '14.99', featured: true },
 ]

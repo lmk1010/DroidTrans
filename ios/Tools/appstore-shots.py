@@ -13,7 +13,10 @@
 import asyncio, base64, json, pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-W, H = 1320, 2868
+# 默认出 6.9"（1320×2868）—— App Store Connect 现在主推这个槽位。
+# 版本页上要是只给了 6.5" 的槽，用 SHOT_SIZE=1284x2778 再跑一遍即可。
+import os
+W, H = (int(x) for x in os.environ.get("SHOT_SIZE", "1320x2868").split("x"))
 
 # 每张图：原始截图、主标题、副标题。
 # 顺序即 App Store 里的展示顺序 —— 会员页排第一，那是这次上架要讲的东西。
@@ -94,7 +97,8 @@ async def main():
                                "TITLE": title, "SUB": sub}
                 await page.set_content(html)
                 await page.wait_for_timeout(300)
-                dst = out / lang / f"{i}-{name.split('-')[1]}.png"
+                sub = lang if (W, H) == (1320, 2868) else f"{lang}-{W}x{H}"
+                dst = out / sub / f"{i}-{name.split('-')[1]}.png"
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 await page.screenshot(path=str(dst))
                 print("✓", dst.relative_to(ROOT))

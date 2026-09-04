@@ -2580,9 +2580,9 @@ let licStatus = null;
    两处都硬编码是有意的：客户端不该为了显示一行价格去连服务器，
    那样没网就变成空白。改价时记得两边一起改。 */
 const LIC_PLANS = [
-  { id: 'year', price: '1.99', name: 'licPlanYear', hint: '' },
-  { id: 'years3', price: '3.99', name: 'licPlanYears3', hint: 'licPlanHint3' },
-  { id: 'lifetime', price: '9.99', name: 'licPlanLifetime', hint: 'licPlanHintLife', featured: true },
+  { id: 'year', price: '5.99', name: 'licPlanYear', hint: '' },
+  { id: 'years3', price: '11.99', name: 'licPlanYears3', hint: 'licPlanHint3' },
+  { id: 'lifetime', price: '14.99', name: 'licPlanLifetime', hint: 'licPlanHintLife', featured: true },
 ];
 
 function licRender() {
