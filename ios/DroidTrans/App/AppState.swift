@@ -201,6 +201,19 @@ final class AppState: ObservableObject {
         // UI 测试要从干净状态起步，自动重连会让雷达页整个跳过去
         if ProcessInfo.processInfo.arguments.contains("-uitest-fresh") {
             store.resetForTesting()
+            // 传输记录也要清。它原来不清 —— 于是每跑一次用例就往里多攒几条，
+            // 出上架截图时「传输记录」那一屏是同一个文件重复四遍，
+            // 一看就是假数据；用例之间也不再是干净状态。
+            History.shared.clear()
+            // 取回来的文件也清掉。同理：不清的话「图库」那一屏会把
+            // 历次用例留下的东西全堆在一起，出上架截图时混着一堆
+            // 陈年测试文件，也让「空态长什么样」这条永远测不到。
+            let docs = FileManager.default
+                .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            for f in (try? FileManager.default.contentsOfDirectory(
+                        at: docs, includingPropertiesForKeys: nil)) ?? [] {
+                try? FileManager.default.removeItem(at: f)
+            }
             await connectForTesting()
             return
         }

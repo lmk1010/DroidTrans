@@ -455,7 +455,16 @@ private struct InboxRow: View {
                     .truncationMode(.middle)
 
                 if let progress {
+                    // 进度条 + 「传了多少 / 共多少」。
+                    //
+                    // 原来传输中只剩一根进度条，文件多大、传到哪儿了全看不见 ——
+                    // 取一个几 GB 的视频时，用户盯着一根几乎不动的条，
+                    // 不知道是卡住了还是文件本来就大。
                     ProgressView(value: progress).tint(.brand)
+                    Text(progressText(progress))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Color.ink3)
+                        .monospacedDigit()
                 } else {
                     Text(detail)
                         .font(.system(size: 12))
@@ -477,10 +486,23 @@ private struct InboxRow: View {
                         .background(Color.brand.opacity(item.isMissing ? 0 : 0.14), in: Capsule())
                 }
                 .disabled(item.isMissing)
+                .accessibilityIdentifier("outbox-get")
             }
         }
         .padding(Space.m)
         .glass(radius: Radius.tile)
+    }
+
+    /// 「1.4 GB / 2.9 GB · 48%」。百分比单独给一份 —— 文件很大时
+    /// 进度条一分钟才动一格，光看条会以为卡死了。
+    private func progressText(_ p: Double) -> String {
+        let total = max(item.size, 0)
+        let done = Int64(Double(total) * min(max(p, 0), 1))
+        return "\(byteText(done)) / \(byteText(total)) · \(Int(p * 100))%"
+    }
+
+    private func byteText(_ n: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
     }
 
     /// 按扩展名挑素材。认不出来就用文件那张。

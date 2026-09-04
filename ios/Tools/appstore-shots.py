@@ -19,17 +19,25 @@ import os
 W, H = (int(x) for x in os.environ.get("SHOT_SIZE", "1320x2868").split("x"))
 
 # 每张图：原始截图、主标题、副标题。
-# 顺序即 App Store 里的展示顺序 —— 会员页排第一，那是这次上架要讲的东西。
+#
+# 顺序即 App Store 里的展示顺序，**搜索结果只展示前三张** ——
+# 所以前三张必须讲功能。之前是「会员页、首页、我的」，三张里两张在讲钱，
+# 用户扫过去看到的全是付费页，等于把最贵的三个位置浪费掉了。
+# 会员页挪到最后：它是看完功能之后才该出现的东西。
 SHOTS = {
     "zh": [
-        ("03-pro",  "实况照片<br>完整导出", "一次买断，不是订阅"),
-        ("01-home", "手机与电脑<br>双向传输", "照片、视频、文档、压缩包"),
-        ("02-me",   "一次购买<br>三端通用", "macOS、Android、iOS"),
+        ("00-radar",    "打开就找到<br>你的电脑", "同一个 Wi-Fi，点一下连上"),
+        ("02-transfer", "几个 GB<br>一口气传完", "断了从断点接着传，不用重来"),
+        ("03-gallery",  "取回来的<br>都在这儿", "照片、视频、文档、压缩包"),
+        ("04-history",  "传过什么<br>一目了然", "原图原视频，不转码不压缩"),
+        ("05-pro",      "一次买断<br>不是订阅", "基础传输永远免费"),
     ],
     "en": [
-        ("03-pro",  "Complete<br>Live Photo export", "One-time purchase. No renewal."),
-        ("01-home", "Phone and computer,<br>both directions", "Photos, video, documents, archives"),
-        ("02-me",   "One purchase,<br>three platforms", "macOS, Android and iOS"),
+        ("00-radar",    "Finds your<br>computer at once", "Same Wi-Fi, one tap to connect"),
+        ("02-transfer", "Gigabytes,<br>in one go", "Drops out? It resumes, never restarts"),
+        ("03-gallery",  "Everything you<br>pulled back", "Photos, video, documents, archives"),
+        ("04-history",  "See exactly<br>what moved", "Originals — no transcoding, no loss"),
+        ("05-pro",      "One-time purchase<br>Not a subscription", "Basic transfer is always free"),
     ],
 }
 
@@ -98,7 +106,7 @@ async def main():
                 await page.set_content(html)
                 await page.wait_for_timeout(300)
                 sub = lang if (W, H) == (1320, 2868) else f"{lang}-{W}x{H}"
-                dst = out / sub / f"{i}-{name.split('-')[1]}.png"
+                dst = out / sub / f"{i}-{name.split('-', 1)[1]}.png"
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 await page.screenshot(path=str(dst))
                 print("✓", dst.relative_to(ROOT))
