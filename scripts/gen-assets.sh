@@ -52,6 +52,31 @@ gen laptop "A single 3D icon: a slim modern laptop computer, three-quarter view,
 gen phone  "A single 3D icon: a modern smartphone standing upright, three-quarter view, blank glowing screen"
 gen android "A single 3D icon: a smartphone standing upright at a slight three-quarter angle, with a simple friendly robot head shape on its screen — a rounded dome with two short straight antennae and two dot eyes"
 
+# 设备墙上的手机。和上面那些图标不一样，这两张要按机型分：
+# 「已接收」第一屏就是一台台手机，iPhone 和安卓长一样的话，那一屏就白做了。
+#
+# 不能走 gen()：它调 fit-icon.py 把图缩成正方形，手机是竖长的，
+# 那样一半画布是空的、手机还被缩得很小。改用 prep-phone.py，
+# 它顺带把屏幕的位置量出来——封面缩略图要精确叠在屏幕上，
+# 手机边框只有几像素宽，手填差一点就露白边或盖住边框。
+#
+# 量出来的百分比要填回 desktop/frontend/app.js 的 PHONE_ART。
+genphone() {
+  local name="$1" subject="$2"
+  local raw="$RAW/$name.png" out="$DESKTOP_ART/$name.png"
+  if [[ -f "$out" && "$FORCE" != "--force" ]]; then
+    echo "  · $name 已存在，跳过"
+    return
+  fi
+  mkdir -p "$RAW" "$DESKTOP_ART"
+  "$ROOT/scripts/gen-image.sh" "$raw" "$subject, $STYLE" 1024x1024
+  "$ROOT/scripts/prep-phone.py" "$raw" "$out" 240
+}
+
+echo "→ 设备墙的手机（按机型分）"
+genphone phone-ios "A single 3D icon: a modern flagship smartphone shown perfectly straight-on from the front, orthographic flat-on view with no perspective and no tilt, portrait orientation, rounded rectangular metal frame, a small horizontal pill-shaped cutout centered near the top of the screen, a thin short horizontal indicator bar at the very bottom of the screen, the screen itself is a completely plain empty flat surface with nothing displayed on it"
+genphone phone-android "A single 3D icon: a modern Android smartphone shown perfectly straight-on from the front, orthographic flat-on view with no perspective and no tilt, portrait orientation, rounded rectangular frame with slightly tighter corner radius than an iPhone, a single small round punch-hole camera dot centered near the top edge of the screen, no notch and no pill cutout, two side buttons on the right edge, the screen itself is a completely plain empty flat surface with nothing displayed on it"
+
 echo "→ 桌面端（macOS 客户端界面用）"
 # 和移动端共用同一段 STYLE。风格串各写各的，三端摆在一起就像三个产品。
 gen usb    "A single 3D icon: a USB-C cable plug, angled, cable curving behind it" "$DESKTOP_ART"

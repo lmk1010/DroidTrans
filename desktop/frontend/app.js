@@ -563,6 +563,43 @@ function phoneFrame(inner) {
   </svg>`;
 }
 
+// 设备墙上的手机得看着像那台手机。
+//
+// 原来所有设备共用 USB 向导里那个 phoneFrame()：圆角矩形加一条听筒，
+// 既不是 iPhone 也不是这几年的安卓机，五台设备长得一模一样——
+// 而「哪台手机」正是设备墙唯一要回答的问题。
+//
+// 机身用出图服务渲染的 3D 素材（见 scripts/gen-assets.sh），和界面上其他图标
+// 共用同一段风格串。屏幕的位置由 scripts/prep-phone.py 从素材里量出来——
+// 手机边框只有几像素宽，手填差一点就露白边或盖住边框。
+//
+// 灵动岛和打孔要用 CSS 再补一层压在封面上：素材是位图，封面一铺就把它们盖没了，
+// 而那正是两种机型最认得出的地方。真机上它们本来也压在照片上面。
+const PHONE_ART = {
+  ios: {
+    src: '/art/phone-ios.png',
+    screen: { x: 9.14, y: 3.58, w: 82.1, h: 92.15, rx: 13, ry: 5.6 },
+    notch: 'ios',
+  },
+  android: {
+    src: '/art/phone-android.png',
+    screen: { x: 6, y: 3.53, w: 85.49, h: 93.15, rx: 10, ry: 4.6 },
+    notch: 'android',
+  },
+};
+
+// iOS 端上报的名字基本都带 iPhone/iPad（系统默认就是机型名或「谁的 iPhone」）；
+// 安卓端上报的是厂商+型号。认不出来的按安卓算——这个 App 的安卓用户占大头，
+// 猜错的代价是把安卓画成安卓，而不是把 iPhone 画成安卓。
+function phonePlatform(name, id) {
+  const s = `${name || ''} ${id || ''}`.toLowerCase();
+  return /iphone|ipad|ipod|\bios\b|macbook|apple/.test(s) ? 'ios' : 'android';
+}
+
+function phoneArt(name, id) {
+  return PHONE_ART[phonePlatform(name, id)];
+}
+
 function sceneHTML(scene) {
   if (scene === 'brand') {
     return `<div class="scene-art scene-pick">
@@ -2579,12 +2616,16 @@ function renderDeviceWall(back, list, groups) {
     const screen = cover
       ? `<img alt="" src="${fileURL(cover)}" />`
       : `<span class="ph">${I_STACK}</span>`;
-    const meta = [nBatches(g.batches.length), size].filter(Boolean).join(' · ');
+    const meta = [nBatches(g.batches.length), nPhotos(n), size].filter(Boolean).join(' · ');
+    const art = phoneArt(g.name, g.id);
+    const sc = art.screen;
+    const geom = `--sx:${sc.x}%;--sy:${sc.y}%;--sw:${sc.w}%;--sh:${sc.h}%;--srx:${sc.rx}%;--sry:${sc.ry}%`;
     return `<button type="button" class="dev-card" data-dev="${esc(g.id)}" title="${esc(t('openThisPhone'))}">
-      <span class="dev-phone">
-        ${phoneFrame('')}
+      <span class="dev-phone" style="${geom}">
+        <img class="phone-body" alt="" src="${art.src}" />
         <span class="dev-screen">${screen}</span>
-        <span class="dev-badge">${esc(nPhotos(n))}</span>
+        <span class="dev-notch ${art.notch}"></span>
+        <span class="dev-bar ${art.notch}"></span>
       </span>
       <span class="dev-name">${esc(g.name)}</span>
       <small>${esc(meta)}</small>

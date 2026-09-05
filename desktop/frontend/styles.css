@@ -824,47 +824,67 @@ main { padding: 52px 40px 40px; overflow: auto; }
 .dev-card:hover .dev-phone { transform: translateY(-2px); }
 .dev-phone {
   position: relative;
-  width: 84px;
+  width: 88px;
   margin-bottom: 8px;
   transition: transform 0.18s ease;
+  line-height: 0;
 }
-.dev-phone .phone-svg { width: 100%; height: auto; display: block; }
-/* 屏幕不是机身。phoneFrame 里 x14 y8 w44 h88 是机身，听筒在 y13、home 条在 y86，
-   封面要落在这两者之间——铺满机身的话边框被盖住，看着就只是一张圆角图片，
-   手机的形状就没了。换成百分比才能跟着卡片缩放。 */
+.phone-body { width: 100%; height: auto; display: block; }
+/* 屏幕的位置每种机型不一样，由 phoneArt() 随卡片写成变量，CSS 只负责摆。
+   封面绝不能铺满整个机身——那样边框会被盖掉，看着就只是一张圆角图片。 */
 .dev-screen {
   position: absolute;
-  left: 25%;
-  top: 16.1%;
-  width: 50%;
-  height: 58.9%;
-  border-radius: 16.7% / 9.1%;
+  left: var(--sx);
+  top: var(--sy);
+  width: var(--sw);
+  height: var(--sh);
+  border-radius: var(--srx) / var(--sry);
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.06);
 }
 .dev-screen img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.dev-screen .ph { opacity: 0.35; }
-.dev-screen svg { width: 22px; height: 22px; }
-/* 贴在屏幕下沿居中：放机身外面会跟设备名打架 */
-.dev-badge {
+.dev-screen .ph { opacity: 0.35; line-height: 1; }
+.dev-screen svg { width: 20px; height: 20px; }
+
+/* 压在封面上的灵动岛 / 打孔。位置按屏幕算，跟着 --s* 一起缩放。 */
+.dev-notch {
+  position: absolute;
+  top: calc(var(--sy) + var(--sh) * 0.022);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #05060a;
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+.dev-notch.ios {
+  width: calc(var(--sw) * 0.3);
+  height: calc(var(--sh) * 0.038);
+  border-radius: 999px;
+}
+.dev-notch.android {
+  width: calc(var(--sw) * 0.1);
+  height: calc(var(--sw) * 0.1);
+  border-radius: 50%;
+}
+
+/* 底部那条：iPhone 是 home indicator，安卓是细手势条。
+   和灵动岛一样得压在封面上——真机上它们本来也浮在照片上面。 */
+.dev-bar {
   position: absolute;
   left: 50%;
-  bottom: 27%;
   transform: translateX(-50%);
-  padding: 1.5px 6px;
+  bottom: calc((100% - var(--sy) - var(--sh)) + var(--sh) * 0.015);
+  height: 2px;
   border-radius: 999px;
-  background: rgba(12, 13, 17, 0.86);
-  backdrop-filter: blur(6px);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
-  font-size: 10.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
 }
+.dev-bar.ios { width: calc(var(--sw) * 0.34); }
+.dev-bar.android { width: calc(var(--sw) * 0.28); opacity: 0.6; }
+
 .dev-card .dev-name {
   font-size: 13px;
   font-weight: 600;
