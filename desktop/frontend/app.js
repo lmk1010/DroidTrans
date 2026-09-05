@@ -196,6 +196,23 @@ const I18N = {
     homeNextOnline: '手机已在线，可在「已接收」中查看新文件。',
     homeNextWifi: 'Wi-Fi 已就绪，手机打开卓传即可自动连接。',
     homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
+    navBackup: '备份', navBackupHint: '留住每一次的样子',
+    backupTitle: '备份', backupSub: '每次备份都留一份完整的，但只占新增那部分的空间。',
+    backupNew: '新建备份', backupSrcUsb: '这台手机（USB）', backupSrcFolder: '一个文件夹',
+    backupSrcPath: '要备份什么', backupSrcPh: '/Users/…/Pictures',
+    backupDest: '备份到', backupDestPh: '/Users/…/DroidTrans 备份',
+    backupSave: '建好开始', backupNow: '立即备份', backupRunNow: '正在备份',
+    backupEmpty: '还没有备份', backupEmptyHint: '手机里的照片只存在一个地方时，丢了就是真丢了。',
+    backupRuns: '次备份', backupOnDisk: '实际占用',
+    backupAdded: '新增', backupReused: '没变', backupFailed: '失败',
+    backupScan: '正在清点', backupSize: '正在核对大小',
+    backupOpen: '打开这一份', backupDelRun: '删掉这一份', backupDelPlan: '删掉这个备份',
+    backupGone: '这一份已经不在磁盘上了',
+    backupAskDelRun: '删掉这一次备份？',
+    backupAskDelRunNote: '只删这一份。其他备份里的照片一张都不会少——它们是同一份文件的多个链接。',
+    backupAskDelPlan: '删掉这个备份计划？',
+    backupAskDelPlanNote: '只删记录，磁盘上已经备好的文件一个都不动。',
+    backupNever: '还没备过',
     openThisPhone: '查看这台手机传来的文件', histTitle: '已接收', clear: '清空',
     devAll: '全部设备', devBatches: '批',
     connTitle: '{n} 已连接', connHint: '现在可以两边互传文件了',
@@ -337,6 +354,23 @@ const I18N = {
     homeNextOnline: 'Phone is online. Open the gallery for what just arrived.',
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
     homeNextIdle: 'Open USB. The page only shows the step you are on.',
+    navBackup: 'Backup', navBackupHint: 'Keep every version',
+    backupTitle: 'Backup', backupSub: 'Every backup keeps a complete copy, but only takes the space of what is new.',
+    backupNew: 'New backup', backupSrcUsb: 'This phone (USB)', backupSrcFolder: 'A folder',
+    backupSrcPath: 'What to back up', backupSrcPh: '/Users/…/Pictures',
+    backupDest: 'Back up to', backupDestPh: '/Users/…/DroidTrans Backups',
+    backupSave: 'Create and start', backupNow: 'Back up now', backupRunNow: 'Backing up',
+    backupEmpty: 'No backups yet', backupEmptyHint: 'While the photos exist in one place only, losing them is losing them.',
+    backupRuns: 'backups', backupOnDisk: 'on disk',
+    backupAdded: 'new', backupReused: 'unchanged', backupFailed: 'failed',
+    backupScan: 'Listing files', backupSize: 'Checking sizes',
+    backupOpen: 'Open this one', backupDelRun: 'Delete this one', backupDelPlan: 'Delete this backup',
+    backupGone: 'This one is no longer on disk',
+    backupAskDelRun: 'Delete this backup?',
+    backupAskDelRunNote: 'Only this one goes. Every other backup keeps all its photos — they are links to the same files.',
+    backupAskDelPlan: 'Delete this backup plan?',
+    backupAskDelPlanNote: 'Only the record goes. Nothing already backed up on disk is touched.',
+    backupNever: 'Never run',
     openThisPhone: 'Files from this phone', histTitle: 'Received', clear: 'Clear',
     devAll: 'All devices', devBatches: 'batches',
     connTitle: '{n} is connected', connHint: 'You can send files both ways now',
@@ -1122,6 +1156,7 @@ function show(view) {
   if (view === 'wifi') refreshWifi();
   if (view === 'history') refreshHistory();
   if (view === 'photoslib') plEnter();
+  if (view === 'backup') refreshBackup();
 }
 
 $$('nav button').forEach((b) => b.addEventListener('click', () => {
@@ -2689,7 +2724,7 @@ applyLang();
 applyLang();
 // 先记下启动路径：show() 会把地址栏改写掉，之后再判断就晚了
 const bootPath = location.pathname;
-const bootView = { '/usb': 'usb', '/wifi': 'wifi', '/send': 'wifi', '/history': 'history' }[bootPath];
+const bootView = { '/usb': 'usb', '/wifi': 'wifi', '/send': 'wifi', '/history': 'history', '/backup': 'backup' }[bootPath];
 if (bootView) {
   show(bootView);
   if (bootPath === '/send') showPane('send');
@@ -3526,3 +3561,210 @@ $('#usbDeviceBtn')?.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (!$('#usbDeviceMenu')?.contains(e.target)) closeDeviceMenu();
 });
+
+
+// ==========================================================================
+// 备份
+//
+// 和「已接收」的区别得说清楚，不然两个页面看着像一回事：
+// 已接收记的是「某一次传输搬了什么」，备份记的是「这些照片在这台电脑上
+// 留了几份、每份差在哪、源那边删了还能不能找回来」。
+// ==========================================================================
+
+let backupKind = 'usb';
+let backupPollTimer = 0;
+let backupOpenPlan = 0;   // 展开了哪个计划的历史
+
+function bkSetKind(kind) {
+  backupKind = kind;
+  $('#bkSrcUsb').classList.toggle('on', kind === 'usb');
+  $('#bkSrcFolder').classList.toggle('on', kind === 'folder');
+  // 手机源没什么可填的：连着哪台就是哪台
+  $('#bkSrcRow').classList.toggle('hidden', kind !== 'folder');
+}
+
+$('#bkSrcUsb')?.addEventListener('click', () => bkSetKind('usb'));
+$('#bkSrcFolder')?.addEventListener('click', () => bkSetKind('folder'));
+
+$('#backupNew')?.addEventListener('click', () => {
+  const form = $('#backupForm');
+  form.classList.toggle('hidden');
+  $('#bkErr').textContent = '';
+  if (!form.classList.contains('hidden') && !$('#bkDest').value) {
+    // 默认放在接收目录旁边，而不是里面——备份自己的输出又被当成下一轮的源就套娃了
+    const out = state.usbOut || '';
+    if (out) $('#bkDest').value = out.replace(/\/+$/, '') + ' Backups';
+  }
+});
+
+$('#bkCancel')?.addEventListener('click', () => {
+  $('#backupForm').classList.add('hidden');
+});
+
+$('#backupForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('#bkErr').textContent = '';
+  const res = await api('/api/backup/plans', {
+    body: JSON.stringify({
+      source_kind: backupKind,
+      source_id: backupKind === 'folder' ? $('#bkSrc').value.trim() : '',
+      dest: $('#bkDest').value.trim(),
+    }),
+  });
+  if (!res.success) {
+    $('#bkErr').textContent = res.error || '建不了';
+    return;
+  }
+  $('#backupForm').classList.add('hidden');
+  await refreshBackup();
+  bkStart(res.id);
+});
+
+async function bkStart(planId) {
+  const res = await api('/api/backup/start', { body: JSON.stringify({ plan_id: planId }) });
+  if (!res.success) {
+    $('#bkErr').textContent = res.error || '';
+    $('#backupForm').classList.remove('hidden');
+    return;
+  }
+  pollBackup();
+}
+
+$('#bkStop')?.addEventListener('click', () => api('/api/backup/stop', { body: '{}' }));
+
+async function pollBackup() {
+  clearTimeout(backupPollTimer);
+  const res = await api('/api/backup/status');
+  const st = res.backup || {};
+  const box = $('#backupProgress');
+  box.classList.toggle('hidden', !st.running);
+  if (st.running) {
+    // 清点和核对大小这两步没有分母，别画一条假装在走的进度条
+    const stage = st.stage === 'scan' ? t('backupScan')
+      : st.stage === 'size' ? t('backupSize')
+      : `${t('backupRunNow')} ${st.done}/${st.total}`;
+    $('#bkProgTitle').textContent = stage;
+    const bits = [];
+    if (st.added) bits.push(`${st.added} ${t('backupAdded')}`);
+    if (st.reused) bits.push(`${st.reused} ${t('backupReused')}`);
+    if (st.failed) bits.push(`${st.failed} ${t('backupFailed')}`);
+    if (st.current) bits.push(st.current);
+    $('#bkProgText').textContent = bits.join('  ·  ');
+    const pct = st.total ? Math.min(100, (st.done / st.total) * 100) : 0;
+    $('#bkProgFill').style.width = (pct || 8) + '%';
+    backupPollTimer = setTimeout(pollBackup, 700);
+    return;
+  }
+  await refreshBackup();
+}
+
+async function refreshBackup() {
+  const res = await api('/api/backup/plans');
+  const box = $('#backupList');
+  const plans = res.plans || [];
+  if (!plans.length) {
+    box.innerHTML = emptyArtHTML('inbox', t('backupEmpty'), t('backupEmptyHint'));
+    return;
+  }
+  box.innerHTML = plans.map((p) => {
+    const last = p.last;
+    const when = last ? snapTitle(last.snapshot) : t('backupNever');
+    const sum = last
+      ? `${last.added} ${t('backupAdded')} · ${last.reused} ${t('backupReused')}`
+      : '';
+    const size = fmtBytes(p.bytes_on_disk);
+    const meta = [`${p.runs} ${t('backupRuns')}`, size ? `${size} ${t('backupOnDisk')}` : '']
+      .filter(Boolean).join(' · ');
+    return `<section class="plan" data-plan="${p.id}">
+      <header class="plan-head">
+        <span class="plan-who">
+          <b>${esc(p.name)}</b>
+          <small>${esc(p.dest)}</small>
+        </span>
+        <span class="plan-meta">${esc(meta)}</span>
+        <button type="button" class="ghost" data-act="run" data-plan="${p.id}">${esc(t('backupNow'))}</button>
+        <button type="button" class="icon-btn" data-act="delplan" data-plan="${p.id}" title="${esc(t('backupDelPlan'))}" aria-label="${esc(t('backupDelPlan'))}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 7h14M10 7V5h4v2M8 7l1 12h6l1-12"/></svg>
+        </button>
+      </header>
+      <button type="button" class="plan-last" data-act="toggle" data-plan="${p.id}">
+        <span>${esc(when)}</span><small>${esc(sum)}</small>
+      </button>
+      <div class="plan-runs" data-runs="${p.id}"></div>
+    </section>`;
+  }).join('');
+
+  box.querySelectorAll('[data-act]').forEach((btn) => {
+    const id = Number(btn.dataset.plan);
+    btn.addEventListener('click', async () => {
+      if (btn.dataset.act === 'run') { bkStart(id); return; }
+      if (btn.dataset.act === 'toggle') {
+        backupOpenPlan = backupOpenPlan === id ? 0 : id;
+        renderBackupRuns(id);
+        return;
+      }
+      if (btn.dataset.act === 'delplan') {
+        if (!await askConfirm({
+          title: t('backupAskDelPlan'), note: t('backupAskDelPlanNote'),
+          ok: t('backupDelPlan'), danger: true,
+        })) return;
+        await api('/api/backup/plans/delete', { body: JSON.stringify({ id }) });
+        refreshBackup();
+      }
+    });
+  });
+  if (backupOpenPlan) renderBackupRuns(backupOpenPlan, true);
+}
+
+async function renderBackupRuns(planId, keepOpen = false) {
+  const box = document.querySelector(`[data-runs="${planId}"]`);
+  if (!box) return;
+  if (!keepOpen && backupOpenPlan !== planId) {
+    box.innerHTML = '';
+    return;
+  }
+  const res = await api('/api/backup/runs?plan=' + planId);
+  const runs = res.runs || [];
+  if (!runs.length) { box.innerHTML = ''; return; }
+  box.innerHTML = runs.map((r) => {
+    const bits = [`${r.added} ${t('backupAdded')}`, `${r.reused} ${t('backupReused')}`];
+    if (r.failed) bits.push(`${r.failed} ${t('backupFailed')}`);
+    const sz = fmtBytes(r.bytes_added);
+    if (sz) bits.push(sz);
+    if (r.missing) bits.unshift(t('backupGone'));
+    return `<div class="run-row${r.missing ? ' gone-batch' : ''}">
+      <span class="run-when">${esc(snapTitle(r.snapshot))}</span>
+      <span class="run-bits">${esc(bits.join('  ·  '))}</span>
+      <button type="button" class="linkish" data-open="${esc(r.path)}">${esc(t('backupOpen'))}</button>
+      <button type="button" class="linkish danger" data-del="${r.id}">${esc(t('backupDelRun'))}</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-open]').forEach((b) => {
+    b.addEventListener('click', () => openFolder(b.dataset.open));
+  });
+  box.querySelectorAll('[data-del]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: t('backupAskDelRun'), note: t('backupAskDelRunNote'),
+        ok: t('backupDelRun'), danger: true,
+      })) return;
+      await api('/api/backup/runs/delete', {
+        body: JSON.stringify({ run_id: Number(b.dataset.del), plan_id: planId }),
+      });
+      renderBackupRuns(planId, true);
+      refreshBackup();
+    });
+  });
+}
+
+// 备份的时间要精确到秒。批次那边到分钟就够——一分钟内不会传两批；
+// 备份不一样，用户点两下「立即备份」就是同一分钟内的两条，
+// 只显示到分钟的话，历史里会出现两行一模一样的时间。
+function snapTitle(id) {
+  const m = String(id || '').match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
+  if (!m) return batchTitle(id);
+  return `${batchTitle(id)}:${m[6]}`;
+}
+
+// 备份可能在别处触发（比如以后加自动备份），进来先看看有没有在跑
+pollBackup();

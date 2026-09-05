@@ -73,6 +73,46 @@ CREATE TABLE IF NOT EXISTS photos (
 CREATE INDEX IF NOT EXISTS idx_batches_device ON batches(device_id);
 CREATE INDEX IF NOT EXISTS idx_photos_batch ON photos(device_id, batch_id);
 CREATE INDEX IF NOT EXISTS idx_photos_name_size ON photos(name, size);
+
+-- 备份。和上面那套「批次」是两回事：批次记的是「某一次传输搬了什么」，
+-- 备份记的是「这台设备的照片，在这台电脑上留了几份、每份差在哪」。
+CREATE TABLE IF NOT EXISTS backup_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  dest TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(source_kind, source_id, dest)
+);
+CREATE TABLE IF NOT EXISTS backup_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id INTEGER NOT NULL,
+  snapshot TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  status TEXT DEFAULT 'running',
+  added INTEGER DEFAULT 0,
+  reused INTEGER DEFAULT 0,
+  failed INTEGER DEFAULT 0,
+  bytes_added INTEGER DEFAULT 0,
+  bytes_total INTEGER DEFAULT 0,
+  note TEXT,
+  UNIQUE(plan_id, snapshot)
+);
+CREATE TABLE IF NOT EXISTS backup_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id INTEGER NOT NULL,
+  run_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  rel TEXT NOT NULL,
+  path TEXT NOT NULL,
+  size INTEGER DEFAULT 0,
+  linked INTEGER DEFAULT 0
+);
+-- 差异备份每个文件都要查一次「以前备过吗」，这条索引是它唯一的依据
+CREATE INDEX IF NOT EXISTS idx_backup_files_seen ON backup_files(plan_id, name, size);
+CREATE INDEX IF NOT EXISTS idx_backup_files_run ON backup_files(run_id);
 `)
 	return err
 }
@@ -255,4 +295,192 @@ func (s *Store) Clear() error {
 
 func (s *Store) Checkpoint() {
 	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+}
+
+// ---- 备份 ----
+//
+// 差异备份的全部依据就是「这个计划以前备过这个文件吗」。
+// 判断用「文件名 + 大小」，和跨批次去重同一套标准：照片一旦拍下来内容就不再变，
+// 改名和改大小都算另一个文件。算内容哈希更准，但要把每张照片整个读一遍，
+// 一次几千张的备份会慢到没法用，而它拦下的那点误差在照片上几乎不存在。
+
+type BackupPlan struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	SourceKind string `json:"source_kind"`
+	SourceID   string `json:"source_id"`
+	Dest       string `json:"dest"`
+	CreatedAt  string `json:"created_at"`
+}
+
+type BackupRun struct {
+	ID         int64  `json:"id"`
+	PlanID     int64  `json:"plan_id"`
+	Snapshot   string `json:"snapshot"`
+	StartedAt  string `json:"started_at"`
+	FinishedAt string `json:"finished_at"`
+	Status     string `json:"status"`
+	Added      int    `json:"added"`
+	Reused     int    `json:"reused"`
+	Failed     int    `json:"failed"`
+	BytesAdded int64  `json:"bytes_added"`
+	BytesTotal int64  `json:"bytes_total"`
+	Note       string `json:"note"`
+}
+
+func (s *Store) SaveBackupPlan(p BackupPlan) (int64, error) {
+	res, err := s.db.Exec(`
+INSERT INTO backup_plans(name, source_kind, source_id, dest) VALUES(?,?,?,?)
+ON CONFLICT(source_kind, source_id, dest) DO UPDATE SET name=excluded.name
+`, p.Name, p.SourceKind, p.SourceID, p.Dest)
+	if err != nil {
+		return 0, err
+	}
+	if id, err := res.LastInsertId(); err == nil && id > 0 {
+		return id, nil
+	}
+	// ON CONFLICT 走了更新分支时 LastInsertId 不可靠，回头查一次
+	var id int64
+	err = s.db.QueryRow(`SELECT id FROM backup_plans WHERE source_kind=? AND source_id=? AND dest=?`,
+		p.SourceKind, p.SourceID, p.Dest).Scan(&id)
+	return id, err
+}
+
+func (s *Store) BackupPlans() ([]BackupPlan, error) {
+	rows, err := s.db.Query(`SELECT id, name, source_kind, source_id, dest, COALESCE(created_at,'') FROM backup_plans ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BackupPlan{}
+	for rows.Next() {
+		var p BackupPlan
+		if err := rows.Scan(&p.ID, &p.Name, &p.SourceKind, &p.SourceID, &p.Dest, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) BackupPlan(id int64) (BackupPlan, error) {
+	var p BackupPlan
+	err := s.db.QueryRow(`SELECT id, name, source_kind, source_id, dest, COALESCE(created_at,'') FROM backup_plans WHERE id=?`, id).
+		Scan(&p.ID, &p.Name, &p.SourceKind, &p.SourceID, &p.Dest, &p.CreatedAt)
+	return p, err
+}
+
+func (s *Store) DeleteBackupPlan(id int64) {
+	_, _ = s.db.Exec(`DELETE FROM backup_files WHERE plan_id=?`, id)
+	_, _ = s.db.Exec(`DELETE FROM backup_runs WHERE plan_id=?`, id)
+	_, _ = s.db.Exec(`DELETE FROM backup_plans WHERE id=?`, id)
+}
+
+func (s *Store) StartBackupRun(planID int64, snapshot string) (int64, error) {
+	res, err := s.db.Exec(`
+INSERT INTO backup_runs(plan_id, snapshot, started_at, status) VALUES(?,?,?, 'running')
+`, planID, snapshot, time.Now().Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) FinishBackupRun(runID int64, r BackupRun) {
+	_, _ = s.db.Exec(`
+UPDATE backup_runs SET finished_at=?, status=?, added=?, reused=?, failed=?,
+  bytes_added=?, bytes_total=?, note=? WHERE id=?
+`, time.Now().Format(time.RFC3339), r.Status, r.Added, r.Reused, r.Failed,
+		r.BytesAdded, r.BytesTotal, r.Note, runID)
+}
+
+func (s *Store) BackupRuns(planID int64) ([]BackupRun, error) {
+	rows, err := s.db.Query(`
+SELECT id, plan_id, snapshot, COALESCE(started_at,''), COALESCE(finished_at,''),
+       COALESCE(status,''), added, reused, failed, bytes_added, bytes_total, COALESCE(note,'')
+FROM backup_runs WHERE plan_id=? ORDER BY id DESC
+`, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BackupRun{}
+	for rows.Next() {
+		var r BackupRun
+		if err := rows.Scan(&r.ID, &r.PlanID, &r.Snapshot, &r.StartedAt, &r.FinishedAt,
+			&r.Status, &r.Added, &r.Reused, &r.Failed, &r.BytesAdded, &r.BytesTotal, &r.Note); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// BackedUpPath 这个计划以前备过这个文件吗？备过就返回一份还在磁盘上的旧副本，
+// 新快照直接硬链接过去——这是「差异备份」省下空间的地方。
+//
+// 必须 os.Stat 确认文件还在：用户在访达里删掉某个快照之后，库里的记录还在，
+// 照着一个不存在的路径去 link 会失败，然后整张照片被当成失败项。
+func (s *Store) BackedUpPath(planID int64, name string, size int64) string {
+	if name == "" || size <= 0 {
+		return ""
+	}
+	rows, err := s.db.Query(`
+SELECT path FROM backup_files WHERE plan_id=? AND name=? AND size=? ORDER BY id DESC LIMIT 8
+`, planID, name, size)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		if rows.Scan(&p) != nil {
+			continue
+		}
+		if st, err := os.Stat(p); err == nil && st.Size() == size {
+			return p
+		}
+	}
+	return ""
+}
+
+func (s *Store) AddBackupFile(planID, runID int64, name, rel, path string, size int64, linked bool) {
+	n := 0
+	if linked {
+		n = 1
+	}
+	_, _ = s.db.Exec(`
+INSERT INTO backup_files(plan_id, run_id, name, rel, path, size, linked) VALUES(?,?,?,?,?,?,?)
+`, planID, runID, name, rel, path, size, n)
+}
+
+func (s *Store) BackupRunFiles(runID int64) ([]map[string]any, error) {
+	rows, err := s.db.Query(`SELECT name, rel, path, size, linked FROM backup_files WHERE run_id=? ORDER BY id`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var name, rel, path string
+		var size int64
+		var linked int
+		if err := rows.Scan(&name, &rel, &path, &size, &linked); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{
+			"name": name, "rel": rel, "path": path, "size": size, "linked": linked == 1,
+		})
+	}
+	return out, rows.Err()
+}
+
+// DeleteBackupRun 只删这一个快照的记录。
+//
+// 磁盘上的文件交给调用方删，而且删掉也不会伤到别的快照：同一份内容在多个快照里
+// 是硬链接，删掉一个链接，其他快照里的还在——这正是 Time Machine 的做法，
+// 也是「每个快照看起来都是完整一份」和「只占增量空间」能同时成立的原因。
+func (s *Store) DeleteBackupRun(runID int64) {
+	_, _ = s.db.Exec(`DELETE FROM backup_files WHERE run_id=?`, runID)
+	_, _ = s.db.Exec(`DELETE FROM backup_runs WHERE id=?`, runID)
 }

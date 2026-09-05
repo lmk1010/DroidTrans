@@ -89,6 +89,10 @@ type App struct {
 	uiLangMu sync.Mutex
 	uiLang   string
 
+	backupMu     sync.Mutex
+	backup       backupState
+	backupCancel context.CancelFunc
+
 	devMu     sync.Mutex
 	connected bool
 	serials   []string
@@ -823,6 +827,14 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/update/open", a.updateOpen)
 	mux.HandleFunc("POST /api/client_error", a.clientError)
 	mux.HandleFunc("POST /api/ui/lang", a.setLang)
+	mux.HandleFunc("GET /api/backup/plans", a.backupPlans)
+	mux.HandleFunc("POST /api/backup/plans", a.backupSavePlan)
+	mux.HandleFunc("POST /api/backup/plans/delete", a.backupDeletePlan)
+	mux.HandleFunc("GET /api/backup/runs", a.backupRuns)
+	mux.HandleFunc("POST /api/backup/start", a.backupStart)
+	mux.HandleFunc("POST /api/backup/stop", a.backupStop)
+	mux.HandleFunc("GET /api/backup/status", a.backupStatus)
+	mux.HandleFunc("POST /api/backup/runs/delete", a.backupDeleteRun)
 	mux.HandleFunc("GET /api/wifi/info", a.wifiInfo)
 	mux.HandleFunc("POST /api/wifi/connect", a.wifiConnect)
 	mux.HandleFunc("GET /api/wifi/status", a.wifiStatus)
@@ -915,7 +927,7 @@ func (a *App) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/usb" || r.URL.Path == "/wifi" || r.URL.Path == "/history" || r.URL.Path == "/send" {
+		if r.URL.Path == "/" || r.URL.Path == "/usb" || r.URL.Path == "/wifi" || r.URL.Path == "/history" || r.URL.Path == "/send" || r.URL.Path == "/backup" {
 			// 手机浏览器扫码进来的：给一个手机专用落地页（装 App + 配对码），
 			// 而不是把桌面界面塞进一块小屏幕——那对用户毫无用处。
 			if isPhoneBrowser(r.UserAgent()) {

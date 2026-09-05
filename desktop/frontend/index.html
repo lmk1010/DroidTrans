@@ -72,6 +72,13 @@
             <small data-i18n="navHistHint">传过来的文件</small>
           </span>
         </button>
+        <button type="button" data-view="backup">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>
+          <span class="nav-copy">
+            <span data-i18n="navBackup">备份</span>
+            <small data-i18n="navBackupHint">留住每一次的样子</small>
+          </span>
+        </button>
       </nav>
       <div class="rail-foot">
         <button type="button" id="licBtn" class="lic-btn" title="">
@@ -414,6 +421,47 @@
           <button type="button" id="goneShow" class="linkish" data-i18n="goneShow">看看</button>
           <button type="button" id="goneClean" class="linkish" data-i18n="goneClean">清理这些记录</button>
         </div>
+      </section>
+
+      <section id="view-backup" class="view">
+        <header class="page-head row">
+          <div>
+            <h1 data-i18n="backupTitle">备份</h1>
+            <p class="page-sub" data-i18n="backupSub">每次备份都留一份完整的，但只占新增那部分的空间。</p>
+          </div>
+          <button type="button" id="backupNew" class="primary" data-i18n="backupNew">新建备份</button>
+        </header>
+
+        <form id="backupForm" class="backup-form hidden">
+          <div class="chips">
+            <button type="button" id="bkSrcUsb" class="ghost on" data-kind="usb" data-i18n="backupSrcUsb">这台手机（USB）</button>
+            <button type="button" id="bkSrcFolder" class="ghost" data-kind="folder" data-i18n="backupSrcFolder">一个文件夹</button>
+          </div>
+          <label id="bkSrcRow" class="backup-row hidden">
+            <span data-i18n="backupSrcPath">要备份什么</span>
+            <input id="bkSrc" type="text" spellcheck="false" data-i18n-ph="backupSrcPh" placeholder="/Users/…/Pictures" />
+          </label>
+          <label class="backup-row">
+            <span data-i18n="backupDest">备份到</span>
+            <input id="bkDest" type="text" spellcheck="false" data-i18n-ph="backupDestPh" placeholder="/Users/…/DroidTrans 备份" />
+          </label>
+          <div class="backup-acts">
+            <button type="submit" class="primary" data-i18n="backupSave">建好开始</button>
+            <button type="button" id="bkCancel" class="ghost" data-i18n="cancel">取消</button>
+            <span id="bkErr" class="backup-err"></span>
+          </div>
+        </form>
+
+        <div id="backupProgress" class="xfer-bar hidden">
+          <div class="xfer-copy">
+            <strong id="bkProgTitle"></strong>
+            <span id="bkProgText"></span>
+          </div>
+          <button type="button" id="bkStop" class="ghost" data-i18n="stop">停止</button>
+          <div class="bar"><i id="bkProgFill"></i></div>
+        </div>
+
+        <div id="backupList"></div>
       </section>
     </main>
   </div>

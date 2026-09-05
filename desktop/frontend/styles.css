@@ -2463,3 +2463,84 @@ html[lang="en"] .brand span { display: none; }
 .usb-device-item .d-name { font-size: 13.5px; font-weight: 560; }
 /* 型号可能重名（两台同款手机），序列号是唯一能区分的 */
 .usb-device-item .d-serial { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+
+/* ==========================================================================
+   备份
+   ========================================================================== */
+.page-sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.backup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--glass);
+}
+.backup-form.hidden { display: none !important; }
+.backup-row { display: flex; align-items: center; gap: 12px; }
+.backup-row.hidden { display: none !important; }
+.backup-row span { font-size: 12.5px; color: var(--muted); min-width: 76px; }
+.backup-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 0;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.backup-acts { display: flex; align-items: center; gap: 10px; }
+.backup-err { font-size: 12.5px; color: var(--danger); }
+
+.plan {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--glass);
+}
+.plan-head { display: flex; align-items: center; gap: 12px; }
+.plan-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.plan-who b { font-size: 14px; font-weight: 600; color: var(--text); }
+.plan-who small {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.plan-last {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.plan-last:hover { background: rgba(255, 255, 255, 0.05); }
+.plan-last small { color: var(--muted); font-size: 12px; }
+.plan-runs:not(:empty) { margin-top: 6px; }
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+.run-row:hover { background: rgba(255, 255, 255, 0.04); }
+.run-when { min-width: 116px; color: var(--text); font-weight: 500; }
+.run-bits { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-row .linkish.danger { color: var(--muted); }
+.run-row .linkish.danger:hover { color: var(--danger); }
