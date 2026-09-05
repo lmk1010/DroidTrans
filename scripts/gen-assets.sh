@@ -62,12 +62,12 @@ gen android "A single 3D icon: a smartphone standing upright at a slight three-q
 # 机身要浅色：界面是深色的，黑机身糊在背景里看不见，抠背时也分不出机身和底。
 # 背景要纯白：出图服务收了 transparent 却经常给回实心底，白底最好抠。
 #
-# 不能走 gen()：它调 fit-icon.py 把图缩成正方形，手机是竖长的，
-# 那样一半画布是空的、手机还被缩得很小。改用 prep-phone.py，
-# 它抠背、裁边，顺带把屏幕的位置量出来——封面缩略图要精确叠在屏幕上，
-# 手机边框只有几像素宽，手填差一点就露白边或盖住边框。
+# 屏幕要画成关着的：设备墙上这些手机屏幕里什么都不放。曾经铺过每台设备
+# 最近一批的封面，一排看过去五个花花绿绿的内容毫无秩序，而且那是用户的
+# 真实照片，截图和录屏时全跟着漏出去。
 #
-# 量出来的百分比要填回 desktop/frontend/app.js 的 PHONE_ART。
+# 不能走 gen()：它调 fit-icon.py 把图缩成正方形，手机是竖长的，
+# 那样一半画布是空的、手机还被缩得很小。改用 prep-phone.py 抠背和裁边。
 PHONE_STYLE="photorealistic product photography, physically based render, polished metal and glass with realistic reflections and subtle highlights along every edge, soft even studio lighting, crisp edges, no logos, no branding, no text, isolated on a plain solid white background, centered with generous margin, ultra sharp"
 
 genphone() {

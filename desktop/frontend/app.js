@@ -607,25 +607,17 @@ function phoneFrame(inner) {
 // 既不是 iPhone 也不是这几年的安卓机，五台设备长得一模一样——
 // 而「哪台手机」正是设备墙唯一要回答的问题。
 //
-// 机身是出图服务渲染的写实产品图（见 scripts/gen-assets.sh）。这里不跟其他
-// 图标共用那段黏土风格串：黏土风的手机不像手机，而这一屏要的就是「像」。
-// 也不能拿厂商的官方产品图——那是有版权的素材，App 正在过审，用不得。
-// 屏幕的位置由 scripts/prep-phone.py 从素材里量出来——手机边框只有几像素宽，
-// 手填差一点就露白边或盖住边框。
+// 机身是出图服务渲染的写实产品图（见 scripts/gen-assets.sh）。不跟其他图标
+// 共用那段黏土风格串：黏土风的手机不像手机，而这一屏要的就是「像」。
+// 也不能拿厂商的官方产品图——那是有版权的素材，用不得。
 //
-// 灵动岛和打孔要用 CSS 再补一层压在封面上：素材是位图，封面一铺就把它们盖没了，
-// 而那正是两种机型最认得出的地方。真机上它们本来也压在照片上面。
+// 屏幕一律是关着的。曾经把每台设备最近一批的封面铺在屏幕上，看着热闹，
+// 实际上两头都输：五块屏幕五个花花绿绿的内容，一排看过去毫无秩序；
+// 而且那是用户的真实照片，截图、演示、录屏时全都跟着漏出去。
+// 机型和名字已经够回答「哪台手机」了，屏幕不必再说一遍。
 const PHONE_ART = {
-  ios: {
-    src: '/art/phone-ios.png',
-    screen: { x: 4.23, y: 1.67, w: 91.76, h: 96.56, rx: 12, ry: 4.6 },
-    notch: 'ios',
-  },
-  android: {
-    src: '/art/phone-android.png',
-    screen: { x: 2.58, y: 1.02, w: 93.99, h: 97.76, rx: 9, ry: 3.6 },
-    notch: 'android',
-  },
+  ios: '/art/phone-ios.png',
+  android: '/art/phone-android.png',
 };
 
 // iOS 端上报的名字基本都带 iPhone/iPad（系统默认就是机型名或「谁的 iPhone」）；
@@ -2653,20 +2645,11 @@ function renderDeviceWall(back, list, groups) {
   list.innerHTML = `<div class="dev-wall">${groups.map((g) => {
     const n = g.batches.reduce((s, b) => s + (b.photo_count || 0), 0);
     const size = fmtBytes(g.batches.reduce((s, b) => s + (b.total_size || 0), 0));
-    const cover = g.batches.find((b) => b.cover)?.cover || '';
-    const screen = cover
-      ? `<img alt="" src="${fileURL(cover)}" />`
-      : `<span class="ph">${I_STACK}</span>`;
-    const meta = [nBatches(g.batches.length), nPhotos(n), size].filter(Boolean).join(' · ');
-    const art = phoneArt(g.name, g.id);
-    const sc = art.screen;
-    const geom = `--sx:${sc.x}%;--sy:${sc.y}%;--sw:${sc.w}%;--sh:${sc.h}%;--srx:${sc.rx}%;--sry:${sc.ry}%`;
-    return `<button type="button" class="dev-card" data-dev="${esc(g.id)}" title="${esc(t('openThisPhone'))}">
-      <span class="dev-phone" style="${geom}">
-        <img class="phone-body" alt="" src="${art.src}" />
-        <span class="dev-screen">${screen}</span>
-        <span class="dev-notch ${art.notch}"></span>
-        <span class="dev-bar ${art.notch}"></span>
+    const meta = [nPhotos(n), size].filter(Boolean).join(' · ');
+    const tip = [g.name, nBatches(g.batches.length), nPhotos(n), size].filter(Boolean).join('  ·  ');
+    return `<button type="button" class="dev-card" data-dev="${esc(g.id)}" title="${esc(tip)}">
+      <span class="dev-phone">
+        <img class="phone-body" alt="" src="${phoneArt(g.name, g.id)}" />
       </span>
       <span class="dev-name">${esc(g.name)}</span>
       <small>${esc(meta)}</small>

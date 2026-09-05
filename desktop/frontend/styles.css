@@ -809,15 +809,15 @@ main { padding: 52px 40px 40px; overflow: auto; }
 /* 已接收 · 第一级：一台设备一部手机 */
 .dev-wall {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 18px 14px;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 12px;
 }
 .dev-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 12px 8px 14px;
+  padding: 10px 6px 12px;
   border: 0;
   border-radius: 16px;
   background: transparent;
@@ -826,70 +826,29 @@ main { padding: 52px 40px 40px; overflow: auto; }
   font: inherit;
   text-align: center;
 }
+/* 关着屏的黑手机放在深色界面上会糊成一团，只剩一圈边框。
+   给每台设备一张淡底卡片，手机才立得起来，一排看过去也更有秩序。 */
+.dev-card { background: rgba(255, 255, 255, 0.042); }
 .dev-card:hover { background: var(--glass); }
-.dev-card:hover .dev-phone { transform: translateY(-2px); }
-.dev-phone {
+.dev-card:hover .dev-phone {
   position: relative;
-  width: 88px;
   margin-bottom: 8px;
   transition: transform 0.18s ease;
   line-height: 0;
 }
-.phone-body { width: 100%; height: auto; display: block; }
-/* 屏幕的位置每种机型不一样，由 phoneArt() 随卡片写成变量，CSS 只负责摆。
-   封面绝不能铺满整个机身——那样边框会被盖掉，看着就只是一张圆角图片。 */
-.dev-screen {
-  position: absolute;
-  left: var(--sx);
-  top: var(--sy);
-  width: var(--sw);
-  height: var(--sh);
-  border-radius: var(--srx) / var(--sry);
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: rgba(255, 255, 255, 0.06);
+/* 按高度对齐，不是按宽度。两张素材的长宽比不一样，锁宽度的话 iPhone 会比
+   安卓高出一截，一排手机高低不齐；真机摆一排也是高度看齐的。 */
+.phone-body {
+  height: 104px;
+  width: auto;
+  display: block;
+  /* 关着屏的黑手机贴在深色界面上只剩一圈轮廓。一层白描边把边缘勾出来，
+     一层投影把它和卡片底分开，手机才有「摆在那儿」的实感。 */
+  filter:
+    drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.22))
+    drop-shadow(0 5px 12px rgba(0, 0, 0, 0.6))
+    brightness(1.08);
 }
-.dev-screen img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.dev-screen .ph { opacity: 0.35; line-height: 1; }
-.dev-screen svg { width: 20px; height: 20px; }
-
-/* 压在封面上的灵动岛 / 打孔。位置按屏幕算，跟着 --s* 一起缩放。 */
-.dev-notch {
-  position: absolute;
-  top: calc(var(--sy) + var(--sh) * 0.022);
-  left: 50%;
-  transform: translateX(-50%);
-  background: #05060a;
-  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1);
-  pointer-events: none;
-}
-.dev-notch.ios {
-  width: calc(var(--sw) * 0.27);
-  height: calc(var(--sh) * 0.034);
-  border-radius: 999px;
-}
-.dev-notch.android {
-  width: calc(var(--sw) * 0.055);
-  height: calc(var(--sw) * 0.055);
-  border-radius: 50%;
-}
-
-/* 底部那条：iPhone 是 home indicator，安卓是细手势条。
-   和灵动岛一样得压在封面上——真机上它们本来也浮在照片上面。 */
-.dev-bar {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc((100% - var(--sy) - var(--sh)) + var(--sh) * 0.015);
-  height: 2px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.45);
-  pointer-events: none;
-}
-.dev-bar.ios { width: calc(var(--sw) * 0.34); }
-.dev-bar.android { width: calc(var(--sw) * 0.28); opacity: 0.6; }
 
 .dev-card .dev-name {
   font-size: 13px;
@@ -900,7 +859,16 @@ main { padding: 52px 40px 40px; overflow: auto; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dev-card small { font-size: 11.5px; color: var(--muted); }
+/* 「1 批 · 101 张 · 76 MB」在这个宽度里会折成两行，卡片一高一低参差不齐。
+   限死一行，装不下就省略——完整的数字点进去就有。 */
+.dev-card small {
+  font-size: 11.5px;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* 已接收 · 第二级：返回条 */
 .hist-back {
