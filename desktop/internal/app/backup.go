@@ -284,7 +284,7 @@ func (a *App) backupPlans(w http.ResponseWriter, r *http.Request) {
 		out = append(out, map[string]any{
 			"id": p.ID, "name": p.Name, "source_kind": p.SourceKind,
 			"source_id": p.SourceID, "dest": p.Dest,
-			"runs": len(runs), "last": last, "bytes_on_disk": bytes,
+			"runs": len(runs), "last": last, "bytes_on_disk": bytes, "auto": p.Auto,
 		})
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "plans": out})
@@ -368,58 +368,18 @@ func (a *App) backupRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) backupStart(w http.ResponseWriter, r *http.Request) {
-	a.backupMu.Lock()
-	if a.backup.Running {
-		a.backupMu.Unlock()
-		writeJSON(w, 409, map[string]any{"success": false, "error": "已经有一个备份在跑了"})
-		return
-	}
-	a.backupMu.Unlock()
-
 	id := int64(readJSONNum(r, "plan_id"))
 	p, err := a.Store.BackupPlan(id)
 	if err != nil {
 		writeJSON(w, 404, map[string]any{"success": false, "error": "没有这个备份计划"})
 		return
 	}
-
-	snapshot := time.Now().Format("20060102_150405")
-	a.setBackup(func(s *backupState) {
-		*s = backupState{Running: true, PlanID: p.ID, Snapshot: snapshot,
-			Stage: "scan", StartedAt: time.Now()}
-	})
-
-	items, err := a.backupSource(p)
+	total, err := a.startBackupPlan(p)
 	if err != nil {
-		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
-		writeJSON(w, 400, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(w, 409, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	if len(items) == 0 {
-		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "done" })
-		writeJSON(w, 200, map[string]any{"success": true, "total": 0, "message": "源里没有可备份的文件"})
-		return
-	}
-	if p.SourceKind == "usb" {
-		a.setBackup(func(s *backupState) { s.Stage = "size"; s.Total = len(items) })
-		a.backupSizes(items, "/sdcard/")
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].rel < items[j].rel })
-
-	runID, err := a.Store.StartBackupRun(p.ID, snapshot)
-	if err != nil {
-		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
-		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.backupMu.Lock()
-	a.backup.RunID = runID
-	a.backupCancel = cancel
-	a.backupMu.Unlock()
-
-	go a.runBackup(ctx, p, runID, snapshot, items)
-	writeJSON(w, 200, map[string]any{"success": true, "total": len(items), "run_id": runID, "snapshot": snapshot})
+	writeJSON(w, 200, map[string]any{"success": true, "total": total})
 }
 
 func (a *App) backupStop(w http.ResponseWriter, r *http.Request) {
@@ -505,4 +465,101 @@ func withinDir(parent, child string) bool {
 		return false
 	}
 	return rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel))
+}
+
+// autoBackupCooldown 同一个计划两次自动备份之间至少隔这么久。
+//
+// 没有它，拔一下线再插回去就会再备一遍；有些数据线接触不良，一分钟能反复
+// 断连好几次。手动点「立即备份」不受这个限制——那是用户明确要的。
+const autoBackupCooldown = 30 * time.Minute
+
+// autoBackupOnConnect 手机插上来时，把开了自动备份的计划跑一遍。
+func (a *App) autoBackupOnConnect() {
+	a.backupMu.Lock()
+	busy := a.backup.Running
+	a.backupMu.Unlock()
+	if busy {
+		return
+	}
+	plans, err := a.Store.BackupPlans()
+	if err != nil {
+		return
+	}
+	for _, p := range plans {
+		if !p.Auto || p.SourceKind != "usb" {
+			continue
+		}
+		if last, err := time.Parse(time.RFC3339, p.LastAuto); err == nil &&
+			time.Since(last) < autoBackupCooldown {
+			continue
+		}
+		a.Store.MarkBackupAuto(p.ID)
+		_, _ = a.startBackupPlan(p)
+		return // 一次只跑一个，两个计划抢同一根线只会互相拖慢
+	}
+}
+
+// startBackupPlan 真正把一个计划跑起来。手动和自动共用这一条路。
+func (a *App) startBackupPlan(p store.BackupPlan) (int, error) {
+	a.backupMu.Lock()
+	if a.backup.Running {
+		a.backupMu.Unlock()
+		return 0, fmt.Errorf("已经有一个备份在跑了")
+	}
+	a.backupMu.Unlock()
+
+	snapshot := time.Now().Format("20060102_150405")
+	a.setBackup(func(s *backupState) {
+		*s = backupState{Running: true, PlanID: p.ID, Snapshot: snapshot,
+			Stage: "scan", StartedAt: time.Now()}
+	})
+	items, err := a.backupSource(p)
+	if err != nil {
+		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
+		return 0, err
+	}
+	if len(items) == 0 {
+		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "done" })
+		return 0, nil
+	}
+	if p.SourceKind == "usb" {
+		a.setBackup(func(s *backupState) { s.Stage = "size"; s.Total = len(items) })
+		a.backupSizes(items, "/sdcard/")
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].rel < items[j].rel })
+
+	runID, err := a.Store.StartBackupRun(p.ID, snapshot)
+	if err != nil {
+		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
+		return 0, err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.backupMu.Lock()
+	a.backup.RunID = runID
+	a.backupCancel = cancel
+	a.backupMu.Unlock()
+	go a.runBackup(ctx, p, runID, snapshot, items)
+	return len(items), nil
+}
+
+func (a *App) backupSetAuto(w http.ResponseWriter, r *http.Request) {
+	body := readJSON(r)
+	id := int64(toNum(body["id"]))
+	on, _ := body["auto"].(bool)
+	if id <= 0 {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "缺少 id"})
+		return
+	}
+	p, err := a.Store.BackupPlan(id)
+	if err != nil {
+		writeJSON(w, 404, map[string]any{"success": false, "error": "没有这个备份计划"})
+		return
+	}
+	if on && p.SourceKind != "usb" {
+		writeJSON(w, 400, map[string]any{"success": false,
+			"error": "只有手机源能「连上就备份」——文件夹一直都在，没有「连上」这回事"})
+		return
+	}
+	a.Store.SetBackupAuto(id, on)
+	writeJSON(w, 200, map[string]any{"success": true})
 }

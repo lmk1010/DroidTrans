@@ -114,7 +114,18 @@ CREATE TABLE IF NOT EXISTS backup_files (
 CREATE INDEX IF NOT EXISTS idx_backup_files_seen ON backup_files(plan_id, name, size);
 CREATE INDEX IF NOT EXISTS idx_backup_files_run ON backup_files(run_id);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	// 后加的列。CREATE TABLE IF NOT EXISTS 对已经建好的表不会补列，
+	// 老用户的库升上来会缺这一列，所以只能 ALTER——重复执行报的错咽掉就行。
+	s.addColumn("backup_plans", "auto", "INTEGER DEFAULT 0")
+	s.addColumn("backup_plans", "last_auto", "TEXT")
+	return nil
+}
+
+func (s *Store) addColumn(table, col, decl string) {
+	_, _ = s.db.Exec("ALTER TABLE " + table + " ADD COLUMN " + col + " " + decl)
 }
 
 type Batch struct {
@@ -311,6 +322,9 @@ type BackupPlan struct {
 	SourceID   string `json:"source_id"`
 	Dest       string `json:"dest"`
 	CreatedAt  string `json:"created_at"`
+	// Auto 手机一连上就自动备一次
+	Auto     bool   `json:"auto"`
+	LastAuto string `json:"last_auto"`
 }
 
 type BackupRun struct {
@@ -347,7 +361,8 @@ ON CONFLICT(source_kind, source_id, dest) DO UPDATE SET name=excluded.name
 }
 
 func (s *Store) BackupPlans() ([]BackupPlan, error) {
-	rows, err := s.db.Query(`SELECT id, name, source_kind, source_id, dest, COALESCE(created_at,'') FROM backup_plans ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, source_kind, source_id, dest, COALESCE(created_at,''),
+       COALESCE(auto,0), COALESCE(last_auto,'') FROM backup_plans ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -355,9 +370,12 @@ func (s *Store) BackupPlans() ([]BackupPlan, error) {
 	out := []BackupPlan{}
 	for rows.Next() {
 		var p BackupPlan
-		if err := rows.Scan(&p.ID, &p.Name, &p.SourceKind, &p.SourceID, &p.Dest, &p.CreatedAt); err != nil {
+		var auto int
+		if err := rows.Scan(&p.ID, &p.Name, &p.SourceKind, &p.SourceID, &p.Dest, &p.CreatedAt,
+			&auto, &p.LastAuto); err != nil {
 			return nil, err
 		}
+		p.Auto = auto == 1
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -365,8 +383,11 @@ func (s *Store) BackupPlans() ([]BackupPlan, error) {
 
 func (s *Store) BackupPlan(id int64) (BackupPlan, error) {
 	var p BackupPlan
-	err := s.db.QueryRow(`SELECT id, name, source_kind, source_id, dest, COALESCE(created_at,'') FROM backup_plans WHERE id=?`, id).
-		Scan(&p.ID, &p.Name, &p.SourceKind, &p.SourceID, &p.Dest, &p.CreatedAt)
+	var auto int
+	err := s.db.QueryRow(`SELECT id, name, source_kind, source_id, dest, COALESCE(created_at,''),
+       COALESCE(auto,0), COALESCE(last_auto,'') FROM backup_plans WHERE id=?`, id).
+		Scan(&p.ID, &p.Name, &p.SourceKind, &p.SourceID, &p.Dest, &p.CreatedAt, &auto, &p.LastAuto)
+	p.Auto = auto == 1
 	return p, err
 }
 
@@ -483,4 +504,18 @@ func (s *Store) BackupRunFiles(runID int64) ([]map[string]any, error) {
 func (s *Store) DeleteBackupRun(runID int64) {
 	_, _ = s.db.Exec(`DELETE FROM backup_files WHERE run_id=?`, runID)
 	_, _ = s.db.Exec(`DELETE FROM backup_runs WHERE id=?`, runID)
+}
+
+// SetBackupAuto 打开/关掉「连上就自动备份」。
+func (s *Store) SetBackupAuto(id int64, on bool) {
+	n := 0
+	if on {
+		n = 1
+	}
+	_, _ = s.db.Exec(`UPDATE backup_plans SET auto=? WHERE id=?`, n, id)
+}
+
+// MarkBackupAuto 记下这次自动备份的时间，用来做冷却。
+func (s *Store) MarkBackupAuto(id int64) {
+	_, _ = s.db.Exec(`UPDATE backup_plans SET last_auto=? WHERE id=?`, time.Now().Format(time.RFC3339), id)
 }

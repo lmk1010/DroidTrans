@@ -213,6 +213,8 @@ const I18N = {
     backupAskDelPlan: '删掉这个备份计划？',
     backupAskDelPlanNote: '只删记录，磁盘上已经备好的文件一个都不动。',
     backupNever: '还没备过',
+    backupAuto: '插上就备', backupAutoHint: '这台手机每次插上数据线，自动备一次（30 分钟内不重复）',
+    backupAutoFolder: '文件夹一直都在，没有「插上」这回事',
     openThisPhone: '查看这台手机传来的文件', histTitle: '已接收', clear: '清空',
     devAll: '全部设备', devBatches: '批',
     connTitle: '{n} 已连接', connHint: '现在可以两边互传文件了',
@@ -371,6 +373,8 @@ const I18N = {
     backupAskDelPlan: 'Delete this backup plan?',
     backupAskDelPlanNote: 'Only the record goes. Nothing already backed up on disk is touched.',
     backupNever: 'Never run',
+    backupAuto: 'On plug-in', backupAutoHint: 'Back up automatically whenever this phone is plugged in (at most once every 30 minutes)',
+    backupAutoFolder: 'A folder is always there — there is no plugging it in',
     openThisPhone: 'Files from this phone', histTitle: 'Received', clear: 'Clear',
     devAll: 'All devices', devBatches: 'batches',
     connTitle: '{n} is connected', connHint: 'You can send files both ways now',
@@ -3682,6 +3686,10 @@ async function refreshBackup() {
           <small>${esc(p.dest)}</small>
         </span>
         <span class="plan-meta">${esc(meta)}</span>
+        ${p.source_kind === 'usb' ? `<label class="auto-toggle" title="${esc(t('backupAutoHint'))}">
+          <input type="checkbox" data-auto="${p.id}"${p.auto ? ' checked' : ''} />
+          <span>${esc(t('backupAuto'))}</span>
+        </label>` : ''}
         <button type="button" class="ghost" data-act="run" data-plan="${p.id}">${esc(t('backupNow'))}</button>
         <button type="button" class="icon-btn" data-act="delplan" data-plan="${p.id}" title="${esc(t('backupDelPlan'))}" aria-label="${esc(t('backupDelPlan'))}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 7h14M10 7V5h4v2M8 7l1 12h6l1-12"/></svg>
@@ -3693,6 +3701,18 @@ async function refreshBackup() {
       <div class="plan-runs" data-runs="${p.id}"></div>
     </section>`;
   }).join('');
+
+  box.querySelectorAll('[data-auto]').forEach((cb) => {
+    cb.addEventListener('change', async () => {
+      const res = await api('/api/backup/plans/auto', {
+        body: JSON.stringify({ id: Number(cb.dataset.auto), auto: cb.checked }),
+      });
+      if (!res.success) {
+        cb.checked = !cb.checked;   // 后端没认，别让界面上留一个假的「已开」
+        $('#bkErr').textContent = res.error || '';
+      }
+    });
+  });
 
   box.querySelectorAll('[data-act]').forEach((btn) => {
     const id = Number(btn.dataset.plan);

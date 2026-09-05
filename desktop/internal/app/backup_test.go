@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"droidtrans/internal/store"
 )
@@ -184,5 +185,62 @@ func TestSavePlanIsIdempotent(t *testing.T) {
 	p, _ := a.Store.BackupPlan(first)
 	if !strings.Contains(p.Name, "新名字") {
 		t.Errorf("重复保存时名字没更新：%q", p.Name)
+	}
+}
+
+// 自动备份得有冷却：数据线接触不良的话，一分钟能反复断连好几次，
+// 每次都重备一遍等于把用户的磁盘和时间当免费的。
+func TestAutoBackupRespectsCooldown(t *testing.T) {
+	a, root := backupApp(t)
+	id, err := a.Store.SaveBackupPlan(store.BackupPlan{
+		Name: "手机", SourceKind: "usb", SourceID: "", Dest: filepath.Join(root, "dest"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Store.SetBackupAuto(id, true)
+
+	p, _ := a.Store.BackupPlan(id)
+	if !p.Auto {
+		t.Fatal("自动备份没开起来")
+	}
+	if p.LastAuto != "" {
+		t.Fatalf("还没跑过就有时间戳：%q", p.LastAuto)
+	}
+
+	a.Store.MarkBackupAuto(id)
+	p, _ = a.Store.BackupPlan(id)
+	last, err := time.Parse(time.RFC3339, p.LastAuto)
+	if err != nil {
+		t.Fatalf("时间戳存坏了 %q: %v", p.LastAuto, err)
+	}
+	if time.Since(last) > autoBackupCooldown {
+		t.Error("刚记下的时间就已经过了冷却期")
+	}
+
+	// 冷却期内再插一次线，不该再跑一遍：没有手机连着时 backupSource 会报错，
+	// 真跑起来这里就会留下一条 failed 记录。
+	a.autoBackupOnConnect()
+	runs, _ := a.Store.BackupRuns(id)
+	if len(runs) != 0 {
+		t.Errorf("冷却期内又备了一次：%d 条记录", len(runs))
+	}
+}
+
+// 文件夹源没有「连上」这回事，不该能打开自动备份。
+func TestAutoBackupOnlyForPhoneSource(t *testing.T) {
+	a, root := backupApp(t)
+	src := filepath.Join(root, "src")
+	writeFile(t, filepath.Join(src, "a.jpg"), "a")
+	id, _ := a.Store.SaveBackupPlan(store.BackupPlan{
+		Name: "文件夹", SourceKind: "folder", SourceID: src, Dest: filepath.Join(root, "dest"),
+	})
+	a.Store.SetBackupAuto(id, true)
+
+	// 就算库里被写成了开，触发时也只认手机源
+	a.autoBackupOnConnect()
+	runs, _ := a.Store.BackupRuns(id)
+	if len(runs) != 0 {
+		t.Errorf("文件夹源被自动备份触发了：%d 条记录", len(runs))
 	}
 }

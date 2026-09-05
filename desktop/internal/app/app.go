@@ -803,6 +803,7 @@ func (a *App) refreshDevices() {
 	}
 
 	a.devMu.Lock()
+	wasConnected := a.connected
 	a.serials = serials
 	a.unauth = un
 	a.offline = off
@@ -818,6 +819,13 @@ func (a *App) refreshDevices() {
 	}
 	a.devAt = time.Now()
 	a.devMu.Unlock()
+
+	// 手机刚插上来这一下，是自动备份唯一的触发点。
+	// 放在这里而不是定时轮询：用户插线的动作本身就是「我要把东西弄下来」，
+	// 定时器则会在半夜把一台没插线的手机的计划跑空。
+	if !wasConnected && len(serials) > 0 {
+		go a.autoBackupOnConnect()
+	}
 }
 
 func (a *App) Handler() http.Handler {
@@ -835,6 +843,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/backup/stop", a.backupStop)
 	mux.HandleFunc("GET /api/backup/status", a.backupStatus)
 	mux.HandleFunc("POST /api/backup/runs/delete", a.backupDeleteRun)
+	mux.HandleFunc("POST /api/backup/plans/auto", a.backupSetAuto)
 	mux.HandleFunc("GET /api/wifi/info", a.wifiInfo)
 	mux.HandleFunc("POST /api/wifi/connect", a.wifiConnect)
 	mux.HandleFunc("GET /api/wifi/status", a.wifiStatus)
