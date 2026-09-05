@@ -800,26 +800,97 @@ main { padding: 52px 40px 40px; overflow: auto; }
   100% { box-shadow: none; }
 }
 
-/* 已接收 · 按设备分组 */
-.hist-filter { margin: 0 0 14px; }
-.hist-filter.hidden { display: none !important; }
-.dev-group { margin: 0 0 22px; }
-.dev-group:last-child { margin-bottom: 0; }
-.dev-head {
+/* 已接收 · 第一级：一台设备一部手机 */
+.dev-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 18px 14px;
+}
+.dev-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 10px;
+  gap: 2px;
+  padding: 12px 8px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+}
+.dev-card:hover { background: var(--glass); }
+.dev-card:hover .dev-phone { transform: translateY(-2px); }
+.dev-phone {
+  position: relative;
+  width: 84px;
+  margin-bottom: 8px;
+  transition: transform 0.18s ease;
+}
+.dev-phone .phone-svg { width: 100%; height: auto; display: block; }
+/* 屏幕不是机身。phoneFrame 里 x14 y8 w44 h88 是机身，听筒在 y13、home 条在 y86，
+   封面要落在这两者之间——铺满机身的话边框被盖住，看着就只是一张圆角图片，
+   手机的形状就没了。换成百分比才能跟着卡片缩放。 */
+.dev-screen {
+  position: absolute;
+  left: 25%;
+  top: 16.1%;
+  width: 50%;
+  height: 58.9%;
+  border-radius: 16.7% / 9.1%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.dev-screen img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dev-screen .ph { opacity: 0.35; }
+.dev-screen svg { width: 22px; height: 22px; }
+/* 贴在屏幕下沿居中：放机身外面会跟设备名打架 */
+.dev-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 27%;
+  transform: translateX(-50%);
+  padding: 1.5px 6px;
+  border-radius: 999px;
+  background: rgba(12, 13, 17, 0.86);
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+.dev-card .dev-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.dev-head svg { width: 15px; height: 15px; opacity: 0.75; }
-.dev-head small {
-  font-weight: 400;
-  color: var(--muted);
-  font-size: 12px;
+.dev-card small { font-size: 11.5px; color: var(--muted); }
+
+/* 已接收 · 第二级：返回条 */
+.hist-back {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
 }
+.hist-back.hidden { display: none !important; }
+.hist-back .ghost { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px 6px 8px; }
+.hist-back .ghost svg { width: 15px; height: 15px; }
+.hist-who { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+.hist-who svg { width: 14px; height: 14px; opacity: 0.7; align-self: center; }
+.hist-who b { font-size: 14px; font-weight: 600; color: var(--text); }
+.hist-who small { font-size: 12px; color: var(--muted); }
+
 #histList, .hist-list { display: block; }
 .batch-list { display: flex; flex-direction: column; gap: 4px; }
 
@@ -869,11 +940,12 @@ main { padding: 52px 40px 40px; overflow: auto; }
   white-space: nowrap;
 }
 .row-count {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
+  color: var(--ink2, rgba(242, 243, 245, 0.78));
   padding-left: 4px;
+  white-space: nowrap;
 }
 .batch-row.gone-batch { opacity: 0.5; }
 .batch-row.gone-batch .row-main b { text-decoration: line-through; }

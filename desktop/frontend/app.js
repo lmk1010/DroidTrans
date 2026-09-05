@@ -197,7 +197,7 @@ const I18N = {
     homeNextWifi: 'Wi-Fi 已就绪，手机打开卓传即可自动连接。',
     homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
     openThisPhone: '查看这台手机传来的文件', histTitle: '已接收', clear: '清空',
-    devAll: '全部设备', devBatches: '批', devOnline: '在线',
+    devAll: '全部设备', devBatches: '批',
     connTitle: '{n} 已连接', connHint: '现在可以两边互传文件了',
     noHist: '图库还是空的', noHistHint: '从 USB 或 Wi-Fi 传过来，就会出现在这里。',
     unauth: '设备未授权 USB 调试', offline: '未连接设备',
@@ -338,7 +338,7 @@ const I18N = {
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
     homeNextIdle: 'Open USB. The page only shows the step you are on.',
     openThisPhone: 'Files from this phone', histTitle: 'Received', clear: 'Clear',
-    devAll: 'All devices', devBatches: 'batches', devOnline: 'online',
+    devAll: 'All devices', devBatches: 'batches',
     connTitle: '{n} is connected', connHint: 'You can send files both ways now',
     noHist: 'Gallery is empty', noHistHint: 'Files you send over USB or Wi-Fi show up here.',
     unauth: 'USB debugging not authorized', offline: 'No device',
@@ -429,6 +429,19 @@ function batchTitle(id) {
   if (diff === 0) return zh ? `今天 ${hhmm}` : `Today ${hhmm}`;
   if (diff === 1) return zh ? `昨天 ${hhmm}` : `Yesterday ${hhmm}`;
   return zh ? `${Number(m[2])}月${Number(m[3])}日 ${hhmm}` : `${m[2]}-${m[3]} ${hhmm}`;
+}
+
+// 英文的「1 photos」「1 batches」很显眼，尤其现在每一批各占一行。
+// 中文没有单复数，照原样拼。
+function nPhotos(n) {
+  n = Number(n) || 0;
+  if (state.lang !== 'en') return `${n} ${t('photos')}`;
+  return `${n} ${n === 1 ? 'photo' : 'photos'}`;
+}
+function nBatches(n) {
+  n = Number(n) || 0;
+  if (state.lang !== 'en') return `${n} ${t('devBatches')}`;
+  return `${n} ${n === 1 ? 'batch' : 'batches'}`;
 }
 
 function fmtBytes(n) {
@@ -1801,7 +1814,7 @@ function renderBatchList(el, batches) {
     const cover = b.cover
       ? `<img alt="" src="${fileURL(b.cover)}" />`
       : `<span class="ph">${I_STACK}</span>`;
-    const bits = [`${b.photo_count || 0} ${t('photos')}`];
+    const bits = [];
     const sz = fmtBytes(b.total_size);
     if (sz) bits.push(sz);
     const dur = fmtDur(b.duration_sec);
@@ -1820,7 +1833,7 @@ function renderBatchList(el, batches) {
         <b>${esc(batchTitle(b.batch_id))}</b>
         <small>${esc(bits.join('  ·  '))}</small>
       </span>
-      <span class="row-count">${b.photo_count || 0}</span>
+      <span class="row-count">${esc(nPhotos(b.photo_count))}</span>
     </button>`;
   }).join('');
   bindImg(el);
@@ -1873,10 +1886,10 @@ function renderGallery(target, batches, limit) {
     }
     // 卡片一行放得下三项就够：张数、大小、哪台手机。
     // 耗时和均速塞进去只会被省略号吃掉，放到悬停提示里。
-    const extra = [`${b.photo_count || 0} ${t('photos')}`];
+    const extra = [nPhotos(b.photo_count)];
     if (sz) extra.push(sz);
     extra.push(name);
-    const tip = [batchTitle(b.batch_id), `${b.photo_count || 0} ${t('photos')}`, sz, dur, avg, name]
+    const tip = [batchTitle(b.batch_id), nPhotos(b.photo_count), sz, dur, avg, name]
       .filter(Boolean).join('  ·  ');
     const gone = !!b.missing;
     // 放在最前面：这行会被省略号截断，最该看到的是「文件已不在」
@@ -1885,7 +1898,7 @@ function renderGallery(target, batches, limit) {
       data-device="${esc(b.device_id)}" data-batch="${esc(b.batch_id)}" data-folder="${esc(b.folder || '')}" data-name="${esc(name)}" data-missing="${gone ? '1' : ''}">
       <span class="thumb">
         ${cover}
-        <span class="count">${b.photo_count || 0} ${t('photos')}</span>
+        <span class="count">${esc(nPhotos(b.photo_count))}</span>
       </span>
       <figcaption><strong>${esc(batchTitle(b.batch_id))}</strong><small>${esc(extra.join(' · '))}</small></figcaption>
     </button>`;
@@ -2491,14 +2504,17 @@ async function refreshHistory() {
   renderHistory(gal.batches || []);
 }
 
-// 「已接收」按设备分开。
+// 「已接收」分两级：先是一台台手机，点进去才是那台手机传来的东西。
 //
-// 原来是一个平铺的网格，两台手机传来的东西混在一起，设备名挤在卡片小字的
-// 第三项、还经常被省略号吃掉 —— 想找「刚才那台手机传的」只能一张张认。
+// 原来是一整片缩略图：七台设备的批次混在一起，设备名挤在卡片小字的第三项、
+// 还常被省略号吃掉，想找「刚才那台手机传的」只能一张张认。
+// 中间试过按设备分段——段是分了，段里仍是缩略图墙，等于把一堵墙切成几堵。
+// 现在第一屏只回答「哪台手机」：一台设备一部手机，屏幕里放它最近一批的封面，
+// 认得出画面、也数得清有几台；具体哪一批是进去之后的事。
 function renderHistory(batches) {
   const all = batches || [];
   const list = $('#histList');
-  const bar = $('#histFilter');
+  const back = $('#histBack');
 
   // 按设备聚合，顺序沿用批次本身的顺序（新的在前）
   const groups = [];
@@ -2516,30 +2532,9 @@ function renderHistory(batches) {
     g.batches.push(b);
   });
 
-  // 选中的设备已经没有记录了（清空、删批次）就退回全部，
-  // 否则会停在一个永远空着的筛选上，看着像数据丢了
+  // 选中的设备已经没有记录了（清空、删批次）就退回设备墙，
+  // 否则会停在一个永远空着的页面上，看着像数据丢了
   if (state.histDevice && !byId.has(state.histDevice)) state.histDevice = '';
-
-  // 只有一台设备时不分组也不显示筛选：那时候「按设备分」全是废话
-  const many = groups.length > 1;
-  bar.classList.toggle('hidden', !many);
-
-  if (many) {
-    const chip = (id, label, n, on) =>
-      `<button type="button" class="ghost${on ? ' on' : ''}" data-dev="${esc(id)}">${esc(label)}<small> · ${n}</small></button>`;
-    bar.innerHTML = [
-      chip('', t('devAll'), all.length, !state.histDevice),
-      ...groups.map((g) => chip(g.id, g.name, g.batches.length, state.histDevice === g.id)),
-    ].join('');
-    bar.querySelectorAll('[data-dev]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.histDevice = btn.dataset.dev;
-        renderHistory(all);
-      });
-    });
-  } else {
-    bar.innerHTML = '';
-  }
 
   // 文件已经不在磁盘上的批次，默认不占位置：东西早就没了，看也没得看
   const keep = (arr) => (showGone ? arr : arr.filter((b) => !b.missing));
@@ -2547,12 +2542,12 @@ function renderHistory(batches) {
 
   const visible = groups
     .map((g) => ({ ...g, batches: keep(g.batches) }))
-    .filter((g) => g.batches.length)
-    .filter((g) => !state.histDevice || g.id === state.histDevice);
+    .filter((g) => g.batches.length);
   const total = visible.reduce((s, g) => s + g.batches.length, 0);
   $('#clearHist')?.classList.toggle('hidden', total === 0);
 
   if (!total) {
+    back.classList.add('hidden');
     list.innerHTML = `<div class="empty empty-go">${I_STACK}<div>
       <div>${esc(t('noHist'))}</div>
       <small>${esc(t('noHistHint'))}</small>
@@ -2565,21 +2560,61 @@ function renderHistory(batches) {
     return;
   }
 
-  // 一台设备一段，段里一批一行。只筛了一台时段头就只剩那一个，不额外藏起来 ——
-  // 留着它才知道「现在看的是哪台」。
-  list.innerHTML = visible.map((g) => {
+  const picked = state.histDevice ? visible.find((g) => g.id === state.histDevice) : null;
+  if (picked) {
+    renderDevicePage(back, list, picked);
+  } else {
+    renderDeviceWall(back, list, visible);
+  }
+}
+
+// 第一级：一台设备一部手机
+function renderDeviceWall(back, list, groups) {
+  back.classList.add('hidden');
+  back.innerHTML = '';
+  list.innerHTML = `<div class="dev-wall">${groups.map((g) => {
     const n = g.batches.reduce((s, b) => s + (b.photo_count || 0), 0);
     const size = fmtBytes(g.batches.reduce((s, b) => s + (b.total_size || 0), 0));
-    const meta = [`${g.batches.length} ${t('devBatches')}`, `${n} ${t('photos')}`, size]
-      .filter(Boolean).join(' · ');
-    return `<section class="dev-group">
-      <h2 class="dev-head">${I_DEVICE}<span>${esc(g.name)}</span><small>${esc(meta)}</small></h2>
-      <div class="batch-list"></div>
-    </section>`;
-  }).join('');
-  list.querySelectorAll('.dev-group .batch-list').forEach((box, i) => {
-    renderBatchList(box, visible[i].batches);
+    const cover = g.batches.find((b) => b.cover)?.cover || '';
+    const screen = cover
+      ? `<img alt="" src="${fileURL(cover)}" />`
+      : `<span class="ph">${I_STACK}</span>`;
+    const meta = [nBatches(g.batches.length), size].filter(Boolean).join(' · ');
+    return `<button type="button" class="dev-card" data-dev="${esc(g.id)}" title="${esc(t('openThisPhone'))}">
+      <span class="dev-phone">
+        ${phoneFrame('')}
+        <span class="dev-screen">${screen}</span>
+        <span class="dev-badge">${esc(nPhotos(n))}</span>
+      </span>
+      <span class="dev-name">${esc(g.name)}</span>
+      <small>${esc(meta)}</small>
+    </button>`;
+  }).join('')}</div>`;
+  bindImg(list);
+  list.querySelectorAll('.dev-card').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.histDevice = btn.dataset.dev;
+      refreshHistory();
+    });
   });
+}
+
+// 第二级：这台设备传来的每一批，一批一行
+function renderDevicePage(back, list, g) {
+  const n = g.batches.reduce((s, b) => s + (b.photo_count || 0), 0);
+  const size = fmtBytes(g.batches.reduce((s, b) => s + (b.total_size || 0), 0));
+  const meta = [nBatches(g.batches.length), nPhotos(n), size].filter(Boolean).join(' · ');
+  back.classList.remove('hidden');
+  back.innerHTML = `<button type="button" id="histBackBtn" class="ghost">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      <span>${esc(t('devAll'))}</span>
+    </button>
+    <span class="hist-who">${I_DEVICE}<b>${esc(g.name)}</b><small>${esc(meta)}</small></span>`;
+  back.querySelector('#histBackBtn').addEventListener('click', () => {
+    state.histDevice = '';
+    refreshHistory();
+  });
+  renderBatchList(list, g.batches);
 }
 
 $('#clearHist').addEventListener('click', async () => {
@@ -2677,7 +2712,7 @@ async function pollInbox() {
       $('#inboxFill').style.width = pct ? pct + '%' : '40%';
       clearTimeout(inboxHideTimer);
     } else {
-      const bits = [`${t('got')} ${n} ${t('photos')}`];
+      const bits = [`${t('got')} ${nPhotos(n)}`];
       const size = fmtBytes(box.bytes_done);
       if (size) bits.push(size);
       const dur = fmtDur(box.elapsed_sec);
