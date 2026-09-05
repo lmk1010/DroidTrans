@@ -835,6 +835,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/update/open", a.updateOpen)
 	mux.HandleFunc("POST /api/client_error", a.clientError)
 	mux.HandleFunc("POST /api/ui/lang", a.setLang)
+	mux.HandleFunc("POST /api/open_url", a.openURL)
 	mux.HandleFunc("GET /api/backup/plans", a.backupPlans)
 	mux.HandleFunc("POST /api/backup/plans", a.backupSavePlan)
 	mux.HandleFunc("POST /api/backup/plans/delete", a.backupDeletePlan)
@@ -1119,6 +1120,24 @@ func (a *App) versionInfo(w http.ResponseWriter, r *http.Request) {
 		st = update.Check()
 	}
 	writeJSON(w, 200, st)
+}
+
+// openURL 「关于」里那几个链接（官网、支持、隐私政策）由电脑端代为打开。
+//
+// 只放自家域名，而且写死。这套 HTTP 接口在局域网上是开着的，一个不加限制的
+// 「打开这个网址」等于把这台电脑的浏览器交给任何能连上来的人。
+func (a *App) openURL(w http.ResponseWriter, r *http.Request) {
+	raw, _ := readJSON(r)["url"].(string)
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host != "droidtrans.mkstore.life" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "只能打开官网上的页面"})
+		return
+	}
+	if err := exec.Command("open", u.String()).Start(); err != nil {
+		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"success": true})
 }
 
 func (a *App) updateOpen(w http.ResponseWriter, r *http.Request) {

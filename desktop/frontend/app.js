@@ -197,6 +197,11 @@ const I18N = {
     homeNextWifi: 'Wi-Fi 已就绪，手机打开卓传即可自动连接。',
     homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
     navBackup: '备份', navBackupHint: '留住每一次的样子',
+    aboutTitle: '关于', aboutCheck: '检查更新', aboutChecking: '正在检查…',
+    aboutLatest: '已经是最新版', aboutFound: '有新版本 {v}', aboutGet: '去下载',
+    aboutFailed: '连不上更新服务器', aboutVer: '版本 {v}',
+    aboutSite: '官网', aboutSupport: '支持', aboutPrivacy: '隐私政策',
+    aboutLegal: '文件只在你的两台设备之间走，不经过任何服务器。',
     backupTitle: '备份', backupSub: '每次备份都留一份完整的，但只占新增那部分的空间。',
     backupNew: '新建备份', backupSrcUsb: '这台手机（USB）', backupSrcFolder: '一个文件夹',
     backupSrcPath: '要备份什么', backupSrcPh: '/Users/…/Pictures',
@@ -357,6 +362,11 @@ const I18N = {
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
     homeNextIdle: 'Open USB. The page only shows the step you are on.',
     navBackup: 'Backup', navBackupHint: 'Keep every version',
+    aboutTitle: 'About', aboutCheck: 'Check for updates', aboutChecking: 'Checking…',
+    aboutLatest: 'You are on the latest version', aboutFound: 'Version {v} is available', aboutGet: 'Download',
+    aboutFailed: 'Could not reach the update server', aboutVer: 'Version {v}',
+    aboutSite: 'Website', aboutSupport: 'Support', aboutPrivacy: 'Privacy policy',
+    aboutLegal: 'Files travel straight between your two devices. Nothing goes through a server.',
     backupTitle: 'Backup', backupSub: 'Every backup keeps a complete copy, but only takes the space of what is new.',
     backupNew: 'New backup', backupSrcUsb: 'This phone (USB)', backupSrcFolder: 'A folder',
     backupSrcPath: 'What to back up', backupSrcPh: '/Users/…/Pictures',
@@ -3771,3 +3781,71 @@ function snapTitle(id) {
 
 // 备份可能在别处触发（比如以后加自动备份），进来先看看有没有在跑
 pollBackup();
+
+
+// ==========================================================================
+// 关于
+//
+// 版本号一直只在更新横幅出现的那一刻才露一面，用户想确认自己装的是哪一版
+// 只能去翻 DMG 的文件名。侧栏底下常驻一个，点开是完整信息。
+// ==========================================================================
+
+let aboutVersion = '';
+
+async function loadVersion() {
+  try {
+    const st = await api('/api/version');
+    aboutVersion = st.current || '';
+    if (aboutVersion) {
+      $('#aboutBtnText').textContent = 'v' + aboutVersion;
+      $('#aboutBtn').title = t('aboutVer').replace('{v}', aboutVersion);
+    }
+  } catch (_) { /* 拿不到就让按钮保持占位，别把侧栏搞崩 */ }
+}
+
+function aboutOpen() {
+  $('#aboutLogo').innerHTML = APP_LOGO;
+  $('#aboutVer').textContent = aboutVersion ? t('aboutVer').replace('{v}', aboutVersion) : '';
+  $('#aboutUpdMsg').textContent = '';
+  $('#aboutModal').hidden = false;
+}
+
+function aboutClose() { $('#aboutModal').hidden = true; }
+
+async function aboutCheckUpdate() {
+  const msg = $('#aboutUpdMsg');
+  msg.textContent = t('aboutChecking');
+  msg.classList.remove('ok');
+  try {
+    const st = await api('/api/version?refresh=1');
+    if (!st || !st.current) { msg.textContent = t('aboutFailed'); return; }
+    if (!st.available) {
+      msg.textContent = t('aboutLatest');
+      msg.classList.add('ok');
+      return;
+    }
+    // 有新版就地给一个下载入口，别让用户自己去官网找
+    msg.innerHTML = `${esc(t('aboutFound').replace('{v}', st.latest || ''))} `
+      + `<button type="button" class="linkish">${esc(t('aboutGet'))}</button>`;
+    // 在容器里找，不给它安一个 id：那个 id 只存在于这一瞬，
+    // 静态检查会把它当成指向不存在元素的悬空引用（而且它说得没错）。
+    msg.querySelector('button')?.addEventListener('click',
+      () => api('/api/update/open', { body: '{}' }));
+  } catch (_) {
+    msg.textContent = t('aboutFailed');
+  }
+}
+
+$('#aboutBtn')?.addEventListener('click', aboutOpen);
+$('#aboutClose')?.addEventListener('click', aboutClose);
+$('#aboutBackdrop')?.addEventListener('click', aboutClose);
+$('#aboutCheck')?.addEventListener('click', aboutCheckUpdate);
+$('#aboutModal')?.querySelectorAll('[data-url]').forEach((b) => {
+  // 外链交给电脑端开：WebView 里直接跳会把整个界面替换成网页，退不回来
+  b.addEventListener('click', () => api('/api/open_url', { body: JSON.stringify({ url: b.dataset.url }) }));
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#aboutModal').hidden) aboutClose();
+});
+
+loadVersion();

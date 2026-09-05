@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -643,5 +644,27 @@ func TestDeviceOnlineFollowsUILang(t *testing.T) {
 	a.touchDevice("dev-2", "小米 14")
 	if !strings.Contains(title, "已连接") {
 		t.Errorf("中文界面没拿到中文通知：%q", title)
+	}
+}
+
+// 「关于」里那几个链接由电脑端代为打开。这套接口在局域网上是开着的，
+// 一个不加限制的「打开这个网址」等于把这台电脑的浏览器交给任何能连上来的人。
+func TestOpenURLOnlyAllowsOwnSite(t *testing.T) {
+	a := newTestApp(t)
+	for _, bad := range []string{
+		"https://evil.example/x",
+		"file:///etc/passwd",
+		"http://droidtrans.mkstore.life/",          // 明文
+		"https://droidtrans.mkstore.life.evil.com", // 后缀冒充
+		"https://evil.com/?x=droidtrans.mkstore.life",
+		"",
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/api/open_url",
+			strings.NewReader(`{"url":`+strconv.Quote(bad)+`}`))
+		a.openURL(w, r)
+		if w.Code == 200 {
+			t.Errorf("放行了不该开的网址：%q", bad)
+		}
 	}
 }

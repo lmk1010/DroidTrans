@@ -89,6 +89,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.2 12h17.6"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z"/></svg>
           <span id="langBtnText">EN</span>
         </button>
+        <button type="button" id="aboutBtn" class="lang-btn" title="">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.9" r="0.9" fill="currentColor" stroke="none"/></svg>
+          <span id="aboutBtnText">—</span>
+        </button>
         <p id="adbHint" class="hint" title=""></p>
       </div>
     </aside>
@@ -494,6 +498,37 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>
     </button>
   </aside>
+
+  <div id="aboutModal" class="lic-modal" hidden>
+    <div class="lic-backdrop" id="aboutBackdrop"></div>
+    <div class="lic-card about-card" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+      <div class="about-top">
+        <span id="aboutLogo" class="about-logo" aria-hidden="true"></span>
+        <div>
+          <h3 id="aboutTitle">DroidTrans</h3>
+          <p id="aboutName" class="about-name">卓传</p>
+          <p id="aboutVer" class="about-ver"></p>
+        </div>
+      </div>
+
+      <div class="about-update">
+        <button type="button" id="aboutCheck" class="ghost" data-i18n="aboutCheck">检查更新</button>
+        <span id="aboutUpdMsg" class="about-upd-msg"></span>
+      </div>
+
+      <div class="about-links">
+        <button type="button" class="linkish" data-url="https://droidtrans.mkstore.life/" data-i18n="aboutSite">官网</button>
+        <button type="button" class="linkish" data-url="https://droidtrans.mkstore.life/support.html" data-i18n="aboutSupport">支持</button>
+        <button type="button" class="linkish" data-url="https://droidtrans.mkstore.life/privacy.html" data-i18n="aboutPrivacy">隐私政策</button>
+      </div>
+
+      <p class="about-legal" data-i18n="aboutLegal">文件只在你的两台设备之间走，不经过任何服务器。</p>
+
+      <div class="lic-foot">
+        <button type="button" id="aboutClose" class="ghost" data-i18n="licClose">关闭</button>
+      </div>
+    </div>
+  </div>
 
   <div id="menu" class="menu hidden" role="menu"></div>
   <div id="viewer" class="viewer hidden">
