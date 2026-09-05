@@ -55,12 +55,21 @@ gen android "A single 3D icon: a smartphone standing upright at a slight three-q
 # 设备墙上的手机。和上面那些图标不一样，这两张要按机型分：
 # 「已接收」第一屏就是一台台手机，iPhone 和安卓长一样的话，那一屏就白做了。
 #
+# 也不共用上面那段 STYLE。黏土风的手机不像手机，而这一屏要的就是「像」——
+# 用户一眼要认出那是自己的哪台设备。厂商的官方产品图不能用：那是有版权的
+# 素材，拿来当自家 App 的界面元素会出问题。所以自己渲染一张写实的。
+#
+# 机身要浅色：界面是深色的，黑机身糊在背景里看不见，抠背时也分不出机身和底。
+# 背景要纯白：出图服务收了 transparent 却经常给回实心底，白底最好抠。
+#
 # 不能走 gen()：它调 fit-icon.py 把图缩成正方形，手机是竖长的，
 # 那样一半画布是空的、手机还被缩得很小。改用 prep-phone.py，
-# 它顺带把屏幕的位置量出来——封面缩略图要精确叠在屏幕上，
+# 它抠背、裁边，顺带把屏幕的位置量出来——封面缩略图要精确叠在屏幕上，
 # 手机边框只有几像素宽，手填差一点就露白边或盖住边框。
 #
 # 量出来的百分比要填回 desktop/frontend/app.js 的 PHONE_ART。
+PHONE_STYLE="photorealistic product photography, physically based render, polished metal and glass with realistic reflections and subtle highlights along every edge, soft even studio lighting, crisp edges, no logos, no branding, no text, isolated on a plain solid white background, centered with generous margin, ultra sharp"
+
 genphone() {
   local name="$1" subject="$2"
   local raw="$RAW/$name.png" out="$DESKTOP_ART/$name.png"
@@ -69,13 +78,13 @@ genphone() {
     return
   fi
   mkdir -p "$RAW" "$DESKTOP_ART"
-  "$ROOT/scripts/gen-image.sh" "$raw" "$subject, $STYLE" 1024x1024
+  "$ROOT/scripts/gen-image.sh" "$raw" "$subject, $PHONE_STYLE" 1024x1024
   "$ROOT/scripts/prep-phone.py" "$raw" "$out" 240
 }
 
 echo "→ 设备墙的手机（按机型分）"
-genphone phone-ios "A single 3D icon: a modern flagship smartphone shown perfectly straight-on from the front, orthographic flat-on view with no perspective and no tilt, portrait orientation, rounded rectangular metal frame, a small horizontal pill-shaped cutout centered near the top of the screen, a thin short horizontal indicator bar at the very bottom of the screen, the screen itself is a completely plain empty flat surface with nothing displayed on it"
-genphone phone-android "A single 3D icon: a modern Android smartphone shown perfectly straight-on from the front, orthographic flat-on view with no perspective and no tilt, portrait orientation, rounded rectangular frame with slightly tighter corner radius than an iPhone, a single small round punch-hole camera dot centered near the top edge of the screen, no notch and no pill cutout, two side buttons on the right edge, the screen itself is a completely plain empty flat surface with nothing displayed on it"
+genphone phone-ios "A modern flagship smartphone photographed perfectly straight-on from the front, orthographic view with zero perspective and zero tilt, portrait orientation, bright silver polished titanium frame that clearly stands out, rounded corners, a horizontal pill-shaped cutout centered near the top of the display, a thin white home indicator line at the bottom of the display, the display is switched off showing uniform deep black glass"
+genphone phone-android "A modern Android flagship smartphone photographed perfectly straight-on from the front, orthographic view with zero perspective and zero tilt, portrait orientation, bright silver aluminium frame that clearly stands out, slightly tighter corner radius than an iPhone, a single small round punch-hole camera centered near the top edge of the display, no notch, two side buttons on the right edge, the display is switched off showing uniform deep black glass"
 
 echo "→ 桌面端（macOS 客户端界面用）"
 # 和移动端共用同一段 STYLE。风格串各写各的，三端摆在一起就像三个产品。

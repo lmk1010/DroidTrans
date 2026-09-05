@@ -859,13 +859,13 @@ main { padding: 52px 40px 40px; overflow: auto; }
   pointer-events: none;
 }
 .dev-notch.ios {
-  width: calc(var(--sw) * 0.3);
-  height: calc(var(--sh) * 0.038);
+  width: calc(var(--sw) * 0.27);
+  height: calc(var(--sh) * 0.034);
   border-radius: 999px;
 }
 .dev-notch.android {
-  width: calc(var(--sw) * 0.1);
-  height: calc(var(--sw) * 0.1);
+  width: calc(var(--sw) * 0.055);
+  height: calc(var(--sw) * 0.055);
   border-radius: 50%;
 }
 
