@@ -7,7 +7,12 @@
 不裁的话几个图标并排会一个大一个小。留边比例和 pack-assets.sh 保持一致。
 """
 import sys
+from pathlib import Path
+
 from PIL import Image
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bgstrip import strip_solid_background  # noqa: E402
 
 MARGIN = 0.04
 
@@ -15,6 +20,9 @@ path = sys.argv[1]
 size = int(sys.argv[2]) if len(sys.argv) > 2 else 160
 
 im = Image.open(path).convert("RGBA")
+# 出图服务经常无视 background=transparent 给回实心底。不先抠掉的话，
+# 下面按 alpha 取的 bbox 会等于整张画布，缩出来就是一块方块。
+im = strip_solid_background(im)
 bbox = im.split()[-1].getbbox()
 if bbox:
     im = im.crop(bbox)

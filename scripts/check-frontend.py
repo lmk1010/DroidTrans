@@ -54,6 +54,17 @@ for m in re.finditer(r'data-i18n(?:-ph|-title)?="([\w]+)"', html):
     if m.group(1) not in keys:
         problems.append(f"index.html 用了未定义的文案 key: {m.group(1)}")
 
+# ---- 5. 引用了但不存在的素材 ----
+#
+# 空态那张插画裂开只会在界面上看到一个问号方块，代码和构建都不会吭声。
+# iOS 那边的素材名（inbox、link…）和桌面端不是一套，照着写就会踩空。
+art_dir = root / "art"
+have = {p.stem for p in art_dir.glob("*.png")} if art_dir.is_dir() else set()
+used = set(re.findall(r"emptyArtHTML\(\s*['\"]([\w-]+)['\"]", js))
+used |= {m for m in re.findall(r"/art/([\w-]+)\.png", js + html)}
+for name in sorted(used - have):
+    problems.append(f"引用了不存在的素材 art/{name}.png")
+
 if problems:
     print("界面检查发现 %d 个问题：" % len(problems))
     for p in problems:

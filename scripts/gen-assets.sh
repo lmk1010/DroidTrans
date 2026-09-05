@@ -92,6 +92,7 @@ gen usb    "A single 3D icon: a USB-C cable plug, angled, cable curving behind i
 gen wifi   "A single 3D icon: a Wi-Fi signal symbol, three curved arcs rising from a dot" "$DESKTOP_ART"
 gen drop   "A single 3D icon: a document sheet dropping into an open folder, motion implied by slight tilt" "$DESKTOP_ART"
 gen album  "A single 3D icon: an empty photo album, open, no pictures inside" "$DESKTOP_ART"
+gen backup "A single 3D icon: three rounded disc-shaped layers stacked on top of each other like a small tower, the top disc bearing a simple clock face with two hands, suggesting saved versions over time" "$DESKTOP_ART"
 gen photoslib "A single 3D icon: a stack of photo prints being lifted out of an open box, the top print showing a simple mountain and sun" "$DESKTOP_ART"
 gen transfer "A single 3D icon: several photo cards flowing along a gentle upward arc from left to right, motion implied by their staggered spacing" "$DESKTOP_ART"
 gen done "A single 3D icon: a thick rounded checkmark inside a soft circle" "$DESKTOP_ART"

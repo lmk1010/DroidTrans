@@ -3650,7 +3650,7 @@ async function refreshBackup() {
   const box = $('#backupList');
   const plans = res.plans || [];
   if (!plans.length) {
-    box.innerHTML = emptyArtHTML('inbox', t('backupEmpty'), t('backupEmptyHint'));
+    box.innerHTML = emptyArtHTML('backup', t('backupEmpty'), t('backupEmptyHint'));
     return;
   }
   box.innerHTML = plans.map((p) => {
