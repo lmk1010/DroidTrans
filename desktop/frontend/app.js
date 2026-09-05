@@ -220,6 +220,8 @@ const I18N = {
     backupAskDelPlanNote: '只删记录，磁盘上已经备好的文件一个都不动。',
     backupNever: '还没备过',
     backupNothing: '源里没有可备份的文件', backupStarted: '开始备份…',
+    backupNoLinks: '这个盘不支持硬链接，每次备份都会占一整份空间',
+    backupNoLinksHint: '多半是 exFAT 或 FAT32（移动硬盘出厂默认）。格式化成 APFS 之后，只有新增的部分才占地方。',
     backupAuto: '插上就备', backupAutoHint: '这台手机每次插上数据线，自动备一次（30 分钟内不重复）',
     backupAutoFolder: '文件夹一直都在，没有「插上」这回事',
     openThisPhone: '查看这台手机传来的文件', histTitle: '已接收', clear: '清空',
@@ -387,6 +389,8 @@ const I18N = {
     backupAskDelPlanNote: 'Only the record goes. Nothing already backed up on disk is touched.',
     backupNever: 'Never run',
     backupNothing: 'Nothing in the source to back up', backupStarted: 'Backing up…',
+    backupNoLinks: 'This disk has no hard links — every backup takes a full copy',
+    backupNoLinksHint: 'Most likely exFAT or FAT32 (how external drives ship). Reformat as APFS and only what is new takes space.',
     backupAuto: 'On plug-in', backupAutoHint: 'Back up automatically whenever this phone is plugged in (at most once every 30 minutes)',
     backupAutoFolder: 'A folder is always there — there is no plugging it in',
     openThisPhone: 'Files from this phone', histTitle: 'Received', clear: 'Clear',
@@ -3618,6 +3622,7 @@ $('#backupForm')?.addEventListener('submit', async (e) => {
   }
   $('#backupForm').classList.add('hidden');
   await refreshBackup();
+  if (res.hardlinks === false) bkNote(t('backupNoLinks'));
   bkStart(res.id);
 });
 
@@ -3698,6 +3703,9 @@ async function refreshBackup() {
     const size = fmtBytes(p.bytes_on_disk);
     const meta = [`${p.runs} ${t('backupRuns')}`, size ? `${size} ${t('backupOnDisk')}` : '']
       .filter(Boolean).join(' · ');
+    const warn = p.hardlinks === false
+      ? `<p class="plan-warn">${esc(t('backupNoLinks'))}<small>${esc(t('backupNoLinksHint'))}</small></p>`
+      : '';
     return `<section class="plan" data-plan="${p.id}">
       <header class="plan-head">
         <span class="plan-who">
@@ -3717,6 +3725,7 @@ async function refreshBackup() {
       <button type="button" class="plan-last" data-act="toggle" data-plan="${p.id}">
         <span>${esc(when)}</span><small>${esc(sum)}</small>
       </button>
+      ${warn}
       <div class="plan-runs" data-runs="${p.id}"></div>
     </section>`;
   }).join('');

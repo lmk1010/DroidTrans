@@ -529,7 +529,7 @@ func (a *App) videoPoster(path string) (string, error) {
 		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".png") {
 			continue
 		}
-		if err := linkOrCopy(filepath.Join(tmp, e.Name()), out); err != nil {
+		if _, err := linkOrCopy(filepath.Join(tmp, e.Name()), out); err != nil {
 			return "", err
 		}
 		return out, nil
@@ -873,7 +873,7 @@ func (a *App) runTransfer(ctx context.Context, photos []string, output, deviceID
 				}
 				if size > 0 {
 					if src := a.Store.ExistingPath(name, size); src != "" && src != local {
-						if err := linkOrCopy(src, local); err == nil {
+						if _, err := linkOrCopy(src, local); err == nil {
 							finish(size, nil)
 							continue
 						}

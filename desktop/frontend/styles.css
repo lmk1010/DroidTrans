@@ -2571,3 +2571,16 @@ html[lang="en"] .brand span { display: none; }
   color: var(--muted);
 }
 .backup-note.hidden { display: none !important; }
+.plan-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgba(255, 211, 106, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 211, 106, 0.22);
+  font-size: 12.5px;
+  color: #ffd36a;
+}
+.plan-warn small { color: var(--muted); font-size: 11.5px; }

@@ -392,3 +392,43 @@ func TestBackupPicksUpEditsThatDoNotChangeSize(t *testing.T) {
 		t.Errorf("旧快照被改掉了：%q", old)
 	}
 }
+
+// 盘不支持硬链接时（exFAT / FAT32，移动硬盘出厂默认），退化成真拷贝的那些
+// 必须算成「新增」。报「复用」等于告诉用户没占地方，而他的硬盘正在成倍地满。
+func TestReusedCountsOnlyRealHardLinks(t *testing.T) {
+	a, root := backupApp(t)
+	src := filepath.Join(root, "src")
+	dest := filepath.Join(root, "dest")
+	writeFile(t, filepath.Join(src, "a.jpg"), "aaaa")
+
+	id, _ := a.Store.SaveBackupPlan(store.BackupPlan{
+		Name: "算账", SourceKind: "folder", SourceID: src, Dest: dest,
+	})
+	p, _ := a.Store.BackupPlan(id)
+	runOnce(t, a, p, "20260101_000000")
+
+	// 这里的临时目录是 APFS，硬链接可用，第二次应当真的复用
+	added, reused := runOnce(t, a, p, "20260101_000001")
+	if added != 0 || reused != 1 {
+		t.Fatalf("支持硬链接的盘上应当复用：added=%d reused=%d", added, reused)
+	}
+	files, _ := a.Store.BackupRunFiles(2)
+	if len(files) != 1 || files[0]["linked"] != true {
+		t.Errorf("这一条应当记成硬链接：%+v", files)
+	}
+}
+
+// 临时目录（APFS）能做硬链接，这是上面那条测试成立的前提。
+func TestSupportsHardLinksDetects(t *testing.T) {
+	dir := t.TempDir()
+	if !supportsHardLinks(dir) {
+		t.Skip("这台机器的临时目录不支持硬链接，跳过")
+	}
+	// 探测不能留下垃圾文件
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "linktest") {
+			t.Errorf("探测留下了临时文件：%s", e.Name())
+		}
+	}
+}

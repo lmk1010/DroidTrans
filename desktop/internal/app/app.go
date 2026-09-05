@@ -256,32 +256,56 @@ func (a *App) storageRoot() string {
 	return ""
 }
 
-func linkOrCopy(src, dest string) error {
+// linkOrCopy 先试硬链接，不行就真拷一份。
+//
+// 返回值说清楚到底走了哪条路。这不是细节：备份靠硬链接才能「每份都完整、
+// 只占增量」，而 exFAT / FAT32 根本不支持硬链接——移动硬盘出厂多半就是
+// exFAT。那种盘上每个快照都会退化成整整一份拷贝，占用成倍地长，
+// 调用方要是不知道，还会照旧报「复用 200 项」，等于骗人。
+func linkOrCopy(src, dest string) (linked bool, err error) {
 	if src == "" || dest == "" || src == dest {
-		return nil
+		return false, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
+		return false, err
 	}
 	_ = os.Remove(dest)
 	if err := os.Link(src, dest); err == nil {
-		return nil
+		return true, nil
 	}
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer in.Close()
 	out, err := os.Create(dest)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, err = io.Copy(out, in)
 	cerr := out.Close()
 	if err != nil {
-		return err
+		return false, err
 	}
-	return cerr
+	return false, cerr
+}
+
+// supportsHardLinks 这个目录所在的盘能不能做硬链接。
+//
+// 只能真试一次。exFAT / FAT32 不支持，而移动硬盘出厂基本都是 exFAT——
+// 备份放上去会变成「每次一整份」，用户得等硬盘满了才发现。
+func supportsHardLinks(dir string) bool {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return false
+	}
+	a := filepath.Join(dir, ".droidtrans-linktest")
+	b := a + "-2"
+	defer func() { _ = os.Remove(a); _ = os.Remove(b) }()
+	if err := os.WriteFile(a, []byte("x"), 0o644); err != nil {
+		return false
+	}
+	_ = os.Remove(b)
+	return os.Link(a, b) == nil
 }
 
 type progressWriter struct {
@@ -336,7 +360,7 @@ func (a *App) tryReuse(dest string, expected int64) (int64, bool) {
 	if src == "" || src == dest {
 		return 0, false
 	}
-	if err := linkOrCopy(src, dest); err != nil {
+	if _, err := linkOrCopy(src, dest); err != nil {
 		return 0, false
 	}
 	return expected, true

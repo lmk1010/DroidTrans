@@ -209,12 +209,25 @@ func (a *App) runBackup(ctx context.Context, p store.BackupPlan, runID int64, sn
 		}
 		a.setBackup(func(s *backupState) { s.Current = path.Base(it.rel) })
 
-		// 差异备份就在这一句：这个计划以前备过同名同大小的文件，就只挂一个硬链接。
+		// 差异备份就在这一句：这个计划以前备过同一个文件，就只挂一个硬链接。
 		if old := a.Store.BackedUpPath(p.ID, path.Base(it.rel), it.size, it.mtime); old != "" {
-			if err := linkOrCopy(old, dest); err == nil {
-				reused++
-				a.Store.AddBackupFile(p.ID, runID, path.Base(it.rel), it.rel, dest, it.size, it.mtime, true)
-				a.setBackup(func(s *backupState) { s.Reused = reused; s.Done = added + reused + failed })
+			if linked, err := linkOrCopy(old, dest); err == nil {
+				// 盘不支持硬链接（exFAT / FAT32）时它会退化成真拷贝。
+				// 那就得如实算成「新增」：空间是实打实又占了一份，
+				// 报「复用」等于告诉用户没占地方。
+				if linked {
+					reused++
+					a.setBackup(func(s *backupState) { s.Reused = reused; s.Done = added + reused + failed })
+				} else {
+					added++
+					bytesAdded += it.size
+					a.setBackup(func(s *backupState) {
+						s.Added = added
+						s.BytesAdded = bytesAdded
+						s.Done = added + reused + failed
+					})
+				}
+				a.Store.AddBackupFile(p.ID, runID, path.Base(it.rel), it.rel, dest, it.size, it.mtime, linked)
 				continue
 			}
 		}
@@ -313,6 +326,8 @@ func (a *App) backupPlans(w http.ResponseWriter, r *http.Request) {
 			"id": p.ID, "name": p.Name, "source_kind": p.SourceKind,
 			"source_id": p.SourceID, "dest": p.Dest,
 			"runs": len(runs), "last": last, "bytes_on_disk": bytes, "auto": p.Auto,
+			// 盘换了、重新格式化了都会变，所以每次都真试一下，不存进库
+			"hardlinks": supportsHardLinks(p.Dest),
 		})
 	}
 	writeJSON(w, 200, map[string]any{"success": true, "plans": out})
@@ -358,7 +373,8 @@ func (a *App) backupSavePlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"success": true, "id": id})
+	writeJSON(w, 200, map[string]any{"success": true, "id": id,
+		"hardlinks": supportsHardLinks(dest)})
 }
 
 func (a *App) backupDeletePlan(w http.ResponseWriter, r *http.Request) {
