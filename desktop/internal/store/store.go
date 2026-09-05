@@ -121,6 +121,7 @@ CREATE INDEX IF NOT EXISTS idx_backup_files_run ON backup_files(run_id);
 	// 老用户的库升上来会缺这一列，所以只能 ALTER——重复执行报的错咽掉就行。
 	s.addColumn("backup_plans", "auto", "INTEGER DEFAULT 0")
 	s.addColumn("backup_plans", "last_auto", "TEXT")
+	s.addColumn("backup_files", "mtime", "INTEGER DEFAULT 0")
 	return nil
 }
 
@@ -441,15 +442,25 @@ FROM backup_runs WHERE plan_id=? ORDER BY id DESC
 // BackedUpPath 这个计划以前备过这个文件吗？备过就返回一份还在磁盘上的旧副本，
 // 新快照直接硬链接过去——这是「差异备份」省下空间的地方。
 //
+// 比对用「文件名 + 大小 + 修改时间」。只看名字和大小是不够的：一个文本文件
+// 改掉几个字、图片重新导出一次，大小常常分毫不差，那样改动就再也备不进来了。
+// 照片确实不会这样，但备份的源不止照片。
+//
+// mtime 传 0 表示不知道（手机源要一个个 adb stat 才问得到，太贵），
+// 老记录的 mtime 也是 0；这两种情况都退回只看名字和大小，
+// 免得升级之后第一次备份把所有文件重搬一遍。
+//
 // 必须 os.Stat 确认文件还在：用户在访达里删掉某个快照之后，库里的记录还在，
 // 照着一个不存在的路径去 link 会失败，然后整张照片被当成失败项。
-func (s *Store) BackedUpPath(planID int64, name string, size int64) string {
+func (s *Store) BackedUpPath(planID int64, name string, size, mtime int64) string {
 	if name == "" || size <= 0 {
 		return ""
 	}
 	rows, err := s.db.Query(`
-SELECT path FROM backup_files WHERE plan_id=? AND name=? AND size=? ORDER BY id DESC LIMIT 8
-`, planID, name, size)
+SELECT path FROM backup_files WHERE plan_id=? AND name=? AND size=?
+  AND (COALESCE(mtime,0) = 0 OR ? = 0 OR mtime = ?)
+ORDER BY id DESC LIMIT 8
+`, planID, name, size, mtime, mtime)
 	if err != nil {
 		return ""
 	}
@@ -466,14 +477,14 @@ SELECT path FROM backup_files WHERE plan_id=? AND name=? AND size=? ORDER BY id 
 	return ""
 }
 
-func (s *Store) AddBackupFile(planID, runID int64, name, rel, path string, size int64, linked bool) {
+func (s *Store) AddBackupFile(planID, runID int64, name, rel, path string, size, mtime int64, linked bool) {
 	n := 0
 	if linked {
 		n = 1
 	}
 	_, _ = s.db.Exec(`
-INSERT INTO backup_files(plan_id, run_id, name, rel, path, size, linked) VALUES(?,?,?,?,?,?,?)
-`, planID, runID, name, rel, path, size, n)
+INSERT INTO backup_files(plan_id, run_id, name, rel, path, size, mtime, linked) VALUES(?,?,?,?,?,?,?,?)
+`, planID, runID, name, rel, path, size, mtime, n)
 }
 
 func (s *Store) BackupRunFiles(runID int64) ([]map[string]any, error) {

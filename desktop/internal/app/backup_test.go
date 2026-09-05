@@ -355,3 +355,40 @@ func TestBackupSurvivesInPlaceEditOfTheSource(t *testing.T) {
 		t.Fatalf("源文件被就地改写之后，快照里的内容也变了：%q", got)
 	}
 }
+
+// 内容改了但大小没变，也必须重新备一份。
+//
+// 只按「文件名 + 大小」比对的话，一个文本文件改掉几个字、一张图重新导出一次，
+// 大小常常分毫不差，那样改动就再也备不进来——用户以为备了，其实备的是旧的。
+func TestBackupPicksUpEditsThatDoNotChangeSize(t *testing.T) {
+	a, root := backupApp(t)
+	src := filepath.Join(root, "src")
+	dest := filepath.Join(root, "dest")
+	note := filepath.Join(src, "notes.txt")
+	writeFile(t, note, "ORIGINAL")
+
+	id, _ := a.Store.SaveBackupPlan(store.BackupPlan{
+		Name: "改字", SourceKind: "folder", SourceID: src, Dest: dest,
+	})
+	p, _ := a.Store.BackupPlan(id)
+	runOnce(t, a, p, "20260101_000000")
+
+	// 一样长，只是内容不同
+	writeFile(t, note, "MUTATED!")
+	if err := os.Chtimes(note, time.Now(), time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	added, reused := runOnce(t, a, p, "20260101_000001")
+	if added != 1 || reused != 0 {
+		t.Fatalf("改过的文件没有重新备份：added=%d reused=%d", added, reused)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "20260101_000001", "notes.txt"))
+	if err != nil || string(got) != "MUTATED!" {
+		t.Fatalf("新快照里还是旧内容：%q %v", got, err)
+	}
+	// 旧快照必须保持原样，这才是「历史版本」的意义
+	old, _ := os.ReadFile(filepath.Join(dest, "20260101_000000", "notes.txt"))
+	if string(old) != "ORIGINAL" {
+		t.Errorf("旧快照被改掉了：%q", old)
+	}
+}

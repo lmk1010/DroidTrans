@@ -56,6 +56,8 @@ type backupItem struct {
 	// 而存储根在不同机型上是 /sdcard、/storage/emulated/0、/storage/self/primary 三选一。
 	remote string
 	size   int64
+	// mtime 源文件的修改时间。手机源问不起（要一个个 adb stat），留 0。
+	mtime int64
 	// fetch 把它取到 dest。手机源是 adb pull，本机源是硬链接。
 	fetch func(dest string) error
 }
@@ -123,8 +125,9 @@ func (a *App) backupSource(p store.BackupPlan) ([]backupItem, error) {
 			}
 			src := p2
 			items = append(items, backupItem{
-				rel:  rel,
-				size: info.Size(),
+				rel:   rel,
+				size:  info.Size(),
+				mtime: info.ModTime().Unix(),
 				// 老老实实拷。硬链接到源文件会和它共用 inode，源那边被就地改写时
 				// 快照里的内容跟着一起变——那不叫备份。快照之间才可以硬链接。
 				fetch: func(dest string) error { return copyFile(src, dest) },
@@ -207,10 +210,10 @@ func (a *App) runBackup(ctx context.Context, p store.BackupPlan, runID int64, sn
 		a.setBackup(func(s *backupState) { s.Current = path.Base(it.rel) })
 
 		// 差异备份就在这一句：这个计划以前备过同名同大小的文件，就只挂一个硬链接。
-		if old := a.Store.BackedUpPath(p.ID, path.Base(it.rel), it.size); old != "" {
+		if old := a.Store.BackedUpPath(p.ID, path.Base(it.rel), it.size, it.mtime); old != "" {
 			if err := linkOrCopy(old, dest); err == nil {
 				reused++
-				a.Store.AddBackupFile(p.ID, runID, path.Base(it.rel), it.rel, dest, it.size, true)
+				a.Store.AddBackupFile(p.ID, runID, path.Base(it.rel), it.rel, dest, it.size, it.mtime, true)
 				a.setBackup(func(s *backupState) { s.Reused = reused; s.Done = added + reused + failed })
 				continue
 			}
@@ -233,7 +236,7 @@ func (a *App) runBackup(ctx context.Context, p store.BackupPlan, runID int64, sn
 		}
 		added++
 		bytesAdded += size
-		a.Store.AddBackupFile(p.ID, runID, path.Base(it.rel), it.rel, dest, size, false)
+		a.Store.AddBackupFile(p.ID, runID, path.Base(it.rel), it.rel, dest, size, it.mtime, false)
 		a.setBackup(func(s *backupState) {
 			s.Added = added
 			s.BytesAdded = bytesAdded
