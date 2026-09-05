@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -242,5 +244,114 @@ func TestAutoBackupOnlyForPhoneSource(t *testing.T) {
 	runs, _ := a.Store.BackupRuns(id)
 	if len(runs) != 0 {
 		t.Errorf("文件夹源被自动备份触发了：%d 条记录", len(runs))
+	}
+}
+
+// 备份跑到一半把计划删了，不能留下一堆没有主人的记录：
+// 它们再也没人查得到、也没人删得掉，只会让库一直长大。
+func TestDeletingPlanMidRunLeavesNoOrphans(t *testing.T) {
+	a, root := backupApp(t)
+	src := filepath.Join(root, "src")
+	for i := 0; i < 40; i++ {
+		writeFile(t, filepath.Join(src, "f"+strconv.Itoa(i)+".bin"), strings.Repeat("x", 512))
+	}
+	id, _ := a.Store.SaveBackupPlan(store.BackupPlan{
+		Name: "半路删掉", SourceKind: "folder", SourceID: src, Dest: filepath.Join(root, "dest"),
+	})
+	p, _ := a.Store.BackupPlan(id)
+
+	items, err := a.backupSource(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID, _ := a.Store.StartBackupRun(p.ID, "20260101_000000")
+	ctx, cancel := context.WithCancel(context.Background())
+	a.setBackup(func(s *backupState) {
+		*s = backupState{Running: true, PlanID: p.ID, Snapshot: "20260101_000000"}
+	})
+	a.backupCancel = cancel
+
+	done := make(chan struct{})
+	go func() { a.runBackup(ctx, p, runID, "20260101_000000", items); close(done) }()
+	// 让它先备几个，再从「删计划」那条路把它掐掉
+	time.Sleep(20 * time.Millisecond)
+	w := httptest.NewRecorder()
+	a.backupDeletePlan(w, httptest.NewRequest("POST", "/api/backup/plans/delete",
+		strings.NewReader(`{"id":`+strconv.FormatInt(id, 10)+`}`)))
+	<-done
+
+	a.Store.PruneOrphanBackupFiles()
+	files, _ := a.Store.BackupRunFiles(runID)
+	if len(files) != 0 {
+		t.Errorf("计划删了之后还剩 %d 条无主的文件记录", len(files))
+	}
+	if runs, _ := a.Store.BackupRuns(id); len(runs) != 0 {
+		t.Errorf("计划删了之后还剩 %d 条无主的快照记录", len(runs))
+	}
+}
+
+// rel 是从设备上的路径切出来的，不是自己拼的。带 .. 的一条就能把文件写到
+// 快照目录外面去。
+func TestBackupRefusesToWriteOutsideTheSnapshot(t *testing.T) {
+	a, root := backupApp(t)
+	dest := filepath.Join(root, "dest")
+	id, _ := a.Store.SaveBackupPlan(store.BackupPlan{
+		Name: "越界", SourceKind: "folder", SourceID: filepath.Join(root, "src"), Dest: dest,
+	})
+	p, _ := a.Store.BackupPlan(id)
+
+	escaped := filepath.Join(root, "escaped.txt")
+	items := []backupItem{{
+		rel:   "../../escaped.txt",
+		size:  4,
+		fetch: func(d string) error { return os.WriteFile(d, []byte("boom"), 0o644) },
+	}}
+	runID, _ := a.Store.StartBackupRun(p.ID, "20260101_000000")
+	a.setBackup(func(s *backupState) { *s = backupState{Running: true, PlanID: p.ID} })
+	a.runBackup(context.Background(), p, runID, "20260101_000000", items)
+
+	if _, err := os.Stat(escaped); err == nil {
+		t.Error("带 .. 的路径把文件写到快照目录外面去了")
+	}
+	runs, _ := a.Store.BackupRuns(p.ID)
+	if len(runs) == 0 || runs[0].Failed != 1 {
+		t.Errorf("越界的那一项应该记成失败，实际：%+v", runs)
+	}
+}
+
+// 源文件被就地改写，已经备好的快照不能跟着变。
+//
+// 一开始本机源是硬链接过去的——「一秒钟备完，不多占一个字节」，看着很聪明，
+// 实际上快照和源文件共用同一个 inode：源那边被追加、被 dd、被 sqlite 写一下，
+// 所有历史快照的内容同时被改掉。一份会随原件变化的「备份」不是备份。
+func TestBackupSurvivesInPlaceEditOfTheSource(t *testing.T) {
+	a, root := backupApp(t)
+	src := filepath.Join(root, "src")
+	dest := filepath.Join(root, "dest")
+	note := filepath.Join(src, "notes.txt")
+	writeFile(t, note, "ORIGINAL")
+
+	id, _ := a.Store.SaveBackupPlan(store.BackupPlan{
+		Name: "就地改写", SourceKind: "folder", SourceID: src, Dest: dest,
+	})
+	p, _ := a.Store.BackupPlan(id)
+	runOnce(t, a, p, "20260101_000000")
+
+	// 就地写，不删不换名——inode 不变，硬链接就会跟着变
+	f, err := os.OpenFile(note, os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteAt([]byte("MUTATED!"), 0); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	got, err := os.ReadFile(filepath.Join(dest, "20260101_000000", "notes.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ORIGINAL" {
+		t.Fatalf("源文件被就地改写之后，快照里的内容也变了：%q", got)
 	}
 }

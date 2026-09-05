@@ -216,6 +216,46 @@ func humanBytes(n int64) string {
 	}
 }
 
+// copyFile 老老实实拷一份，不走硬链接。
+//
+// 备份的第一份必须是真副本：硬链接会和源文件共用同一个 inode，源那边被就地
+// 改写（追加、dd、sqlite、有些图片编辑器）时，快照里的内容跟着一起变——
+// 一份会随原件变化的「备份」不是备份。快照之间才可以硬链接，那些都是我们
+// 自己写出来的、不会再被人动的文件。
+func copyFile(src, dest string) error {
+	if src == "" || dest == "" || src == dest {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	_ = os.Remove(dest)
+	out, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// storageRoot 手机上外部存储的挂载点。不同机型不一样，只能挨个探。
+func (a *App) storageRoot() string {
+	for _, p := range []string{"/sdcard", "/storage/emulated/0", "/storage/self/primary"} {
+		if a.ADB.DirExists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
 func linkOrCopy(src, dest string) error {
 	if src == "" || dest == "" || src == dest {
 		return nil
@@ -564,6 +604,9 @@ func (a *App) Shutdown() {
 
 func (a *App) StartBackground() {
 	a.Store.PruneEmptyBatches()
+	if n := a.Store.PruneOrphanBackupFiles(); n > 0 {
+		fmt.Println("maintain  清掉无主的备份记录", n, "条")
+	}
 	// 高速通道（TCP/FTP）也走同一套配对令牌
 	a.Fast.SetAuth(func(token string) bool {
 		if a.Pair == nil {
@@ -640,6 +683,9 @@ func (a *App) maintain() {
 		a.Out.PruneTaken(2 * time.Hour)
 	}
 	a.Store.PruneEmptyBatches()
+	if n := a.Store.PruneOrphanBackupFiles(); n > 0 {
+		fmt.Println("maintain  清掉无主的备份记录", n, "条")
+	}
 	a.Store.Checkpoint()
 	fmt.Println("maintain  lan=", ip)
 }

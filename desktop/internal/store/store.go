@@ -343,17 +343,18 @@ type BackupRun struct {
 }
 
 func (s *Store) SaveBackupPlan(p BackupPlan) (int64, error) {
-	res, err := s.db.Exec(`
+	_, err := s.db.Exec(`
 INSERT INTO backup_plans(name, source_kind, source_id, dest) VALUES(?,?,?,?)
 ON CONFLICT(source_kind, source_id, dest) DO UPDATE SET name=excluded.name
 `, p.Name, p.SourceKind, p.SourceID, p.Dest)
 	if err != nil {
 		return 0, err
 	}
-	if id, err := res.LastInsertId(); err == nil && id > 0 {
-		return id, nil
-	}
-	// ON CONFLICT 走了更新分支时 LastInsertId 不可靠，回头查一次
+	// 一律回头查，不看 LastInsertId。
+	//
+	// ON CONFLICT 走更新分支时它并不报错，而是返回这个连接上「上一次插入」的
+	// rowid ——一个货真价实、但属于别的计划的 id。调用方拿它去启动备份，
+	// 备的就是另一个计划、写进另一个人的目标目录。
 	var id int64
 	err = s.db.QueryRow(`SELECT id FROM backup_plans WHERE source_kind=? AND source_id=? AND dest=?`,
 		p.SourceKind, p.SourceID, p.Dest).Scan(&id)
@@ -494,6 +495,24 @@ func (s *Store) BackupRunFiles(runID int64) ([]map[string]any, error) {
 		})
 	}
 	return out, rows.Err()
+}
+
+// PruneOrphanBackupFiles 清掉没有主人的备份记录。
+//
+// 删计划的那一刻如果它正好在备份，取消是异步的，中间还会再写进来几条；
+// 别的意外路径也可能留下这种记录。它们再也没人查得到、也没人删得掉，
+// 只会让库一直长大，所以定期扫一遍。
+func (s *Store) PruneOrphanBackupFiles() int64 {
+	n := int64(0)
+	if r, err := s.db.Exec(`DELETE FROM backup_files WHERE plan_id NOT IN (SELECT id FROM backup_plans)`); err == nil {
+		c, _ := r.RowsAffected()
+		n += c
+	}
+	if r, err := s.db.Exec(`DELETE FROM backup_runs WHERE plan_id NOT IN (SELECT id FROM backup_plans)`); err == nil {
+		c, _ := r.RowsAffected()
+		n += c
+	}
+	return n
 }
 
 // DeleteBackupRun 只删这一个快照的记录。

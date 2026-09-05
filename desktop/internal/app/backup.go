@@ -51,10 +51,24 @@ type backupState struct {
 // backupItem 一个待备份的文件。源是手机还是本机目录，到这一层就没区别了。
 type backupItem struct {
 	// rel 是它在快照里的相对路径。带上目录，不然两个相册里的 IMG_0001.JPG 会互相覆盖。
-	rel  string
-	size int64
+	rel string
+	// remote 手机源在设备上的原始路径。量大小要用它——用 rel 反拼前缀会拼错，
+	// 而存储根在不同机型上是 /sdcard、/storage/emulated/0、/storage/self/primary 三选一。
+	remote string
+	size   int64
 	// fetch 把它取到 dest。手机源是 adb pull，本机源是硬链接。
 	fetch func(dest string) error
+}
+
+// relOnDevice 把设备上的绝对路径变成快照里的相对路径。
+// 剥的前缀要和 remoteToLocal 那份保持一致，少一个就会在
+// /storage/self/primary 的机型上留下一层莫名其妙的目录。
+func relOnDevice(remote string) string {
+	rel := remote
+	for _, p := range []string{"/sdcard/", "/storage/emulated/0/", "/storage/self/primary/"} {
+		rel = strings.TrimPrefix(rel, p)
+	}
+	return strings.TrimPrefix(rel, "/")
 }
 
 func (a *App) backupSnapshotDir(p store.BackupPlan, snapshot string) string {
@@ -68,16 +82,20 @@ func (a *App) backupSource(p store.BackupPlan) ([]backupItem, error) {
 		if !a.connectedFlag() {
 			return nil, fmt.Errorf("手机没连上")
 		}
+		// 存储根必须先探出来。写死 "" 的话 discoverAlbums 会去找 /DCIM、/Pictures
+		// 这些根目录，安卓上一个都不存在，扫出来永远是空的——备份看着「成功」，
+		// 实际一个文件都没备。
+		storage := a.storageRoot()
+		if storage == "" {
+			return nil, fmt.Errorf("读不到手机存储")
+		}
 		var items []backupItem
-		for _, album := range a.discoverAlbums("") {
+		for _, album := range a.discoverAlbums(storage) {
 			for _, remote := range a.listAlbumMedia(album) {
 				remote := remote
-				// /sdcard/DCIM/Camera/IMG_1.jpg → DCIM/Camera/IMG_1.jpg
-				rel := strings.TrimPrefix(remote, "/sdcard/")
-				rel = strings.TrimPrefix(rel, "/storage/emulated/0/")
-				rel = strings.TrimPrefix(rel, "/")
 				items = append(items, backupItem{
-					rel: rel,
+					rel:    relOnDevice(remote),
+					remote: remote,
 					fetch: func(dest string) error {
 						return a.ADB.Pull(remote, dest, 10*time.Minute)
 					},
@@ -107,9 +125,9 @@ func (a *App) backupSource(p store.BackupPlan) ([]backupItem, error) {
 			items = append(items, backupItem{
 				rel:  rel,
 				size: info.Size(),
-				// 本机源不用拷：直接硬链接，一秒钟备完，也不多占一个字节。
-				// 跨盘时 linkOrCopy 会自己退回真拷贝。
-				fetch: func(dest string) error { return linkOrCopy(src, dest) },
+				// 老老实实拷。硬链接到源文件会和它共用 inode，源那边被就地改写时
+				// 快照里的内容跟着一起变——那不叫备份。快照之间才可以硬链接。
+				fetch: func(dest string) error { return copyFile(src, dest) },
 			})
 			return nil
 		})
@@ -119,7 +137,7 @@ func (a *App) backupSource(p store.BackupPlan) ([]backupItem, error) {
 }
 
 // backupSizes 手机源的大小要一个个问，串行问几千次能问上好几分钟。
-func (a *App) backupSizes(items []backupItem, prefix string) {
+func (a *App) backupSizes(items []backupItem) {
 	need := []int{}
 	for i := range items {
 		if items[i].size <= 0 {
@@ -140,7 +158,7 @@ func (a *App) backupSizes(items []backupItem, prefix string) {
 		go func() {
 			defer wg.Done()
 			for idx := range jobs {
-				items[idx].size = a.ADB.FileSize(prefix + items[idx].rel)
+				items[idx].size = a.ADB.FileSize(items[idx].remote)
 			}
 		}()
 	}
@@ -179,6 +197,13 @@ func (a *App) runBackup(ctx context.Context, p store.BackupPlan, runID int64, sn
 		default:
 		}
 		dest := filepath.Join(dir, filepath.FromSlash(it.rel))
+		// rel 是从设备上的路径切出来的，不是我们自己拼的。带 .. 的一条就能把文件
+		// 写到快照目录外面去——同一个道理，删除类接口也只认输出目录内的路径。
+		if !withinDir(dir, dest) {
+			failed++
+			a.setBackup(func(s *backupState) { s.Failed = failed; s.Done = added + reused + failed })
+			continue
+		}
 		a.setBackup(func(s *backupState) { s.Current = path.Base(it.rel) })
 
 		// 差异备份就在这一句：这个计划以前备过同名同大小的文件，就只挂一个硬链接。
@@ -339,6 +364,14 @@ func (a *App) backupDeletePlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"success": false, "error": "缺少 id"})
 		return
 	}
+	// 正在备份的就是它：先停。不停的话它会一路跑完，把一堆 backup_files 写回
+	// 一个已经不存在的计划名下——那些记录再也没人查得到，也再也没人删得掉。
+	a.backupMu.Lock()
+	if a.backup.Running && a.backup.PlanID == id && a.backupCancel != nil {
+		a.backupCancel()
+	}
+	a.backupMu.Unlock()
+
 	// 只删记录，不动磁盘上的备份——用户删的是「这个计划」，不是「我的照片」
 	a.Store.DeleteBackupPlan(id)
 	writeJSON(w, 200, map[string]any{"success": true})
@@ -374,12 +407,12 @@ func (a *App) backupStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]any{"success": false, "error": "没有这个备份计划"})
 		return
 	}
-	total, err := a.startBackupPlan(p)
-	if err != nil {
+	if err := a.startBackupPlan(p); err != nil {
 		writeJSON(w, 409, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"success": true, "total": total})
+	// 清点还没开始，这里给不出总数。界面靠 /api/backup/status 轮询拿。
+	writeJSON(w, 200, map[string]any{"success": true})
 }
 
 func (a *App) backupStop(w http.ResponseWriter, r *http.Request) {
@@ -493,53 +526,66 @@ func (a *App) autoBackupOnConnect() {
 			time.Since(last) < autoBackupCooldown {
 			continue
 		}
+		// 启动成功了才记冷却。反过来的话，手机在这一瞬掉线（或另一个备份正好在跑）
+		// 导致启动失败，冷却却已经记上，接下来半小时都不会再试。
+		if err := a.startBackupPlan(p); err != nil {
+			continue
+		}
 		a.Store.MarkBackupAuto(p.ID)
-		_, _ = a.startBackupPlan(p)
 		return // 一次只跑一个，两个计划抢同一根线只会互相拖慢
 	}
 }
 
 // startBackupPlan 真正把一个计划跑起来。手动和自动共用这一条路。
-func (a *App) startBackupPlan(p store.BackupPlan) (int, error) {
+//
+// 只负责占住位子然后立刻返回，剩下的全在后台做。清点相册和逐个问文件大小
+// 都要走 adb，几千张照片能花上好几分钟——放在 HTTP 处理函数里做的话，
+// 「立即备份」这个请求就挂在那儿，界面上按钮卡住、进度条不出现，
+// 而「正在清点」「正在核对大小」这两个状态永远没机会显示出来。
+func (a *App) startBackupPlan(p store.BackupPlan) error {
+	// 检查和置位必须在同一个锁里。先 Unlock 再置位的话，
+	// 两个几乎同时进来的请求会双双通过检查，然后一起开跑。
+	snapshot := time.Now().Format("20060102_150405")
 	a.backupMu.Lock()
 	if a.backup.Running {
 		a.backupMu.Unlock()
-		return 0, fmt.Errorf("已经有一个备份在跑了")
+		return fmt.Errorf("已经有一个备份在跑了")
 	}
+	a.backup = backupState{Running: true, PlanID: p.ID, Snapshot: snapshot,
+		Stage: "scan", StartedAt: time.Now()}
 	a.backupMu.Unlock()
 
-	snapshot := time.Now().Format("20060102_150405")
-	a.setBackup(func(s *backupState) {
-		*s = backupState{Running: true, PlanID: p.ID, Snapshot: snapshot,
-			Stage: "scan", StartedAt: time.Now()}
-	})
-	items, err := a.backupSource(p)
-	if err != nil {
-		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
-		return 0, err
-	}
-	if len(items) == 0 {
-		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "done" })
-		return 0, nil
-	}
-	if p.SourceKind == "usb" {
-		a.setBackup(func(s *backupState) { s.Stage = "size"; s.Total = len(items) })
-		a.backupSizes(items, "/sdcard/")
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].rel < items[j].rel })
+	go func() {
+		items, err := a.backupSource(p)
+		if err != nil {
+			a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
+			return
+		}
+		if len(items) == 0 {
+			// 和「备完了」区分开：界面要能说出「源里没有可备份的文件」，
+			// 否则用户点完按钮看到的是一片安静，分不清是没反应还是已经好了。
+			a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "empty" })
+			return
+		}
+		if p.SourceKind == "usb" {
+			a.setBackup(func(s *backupState) { s.Stage = "size"; s.Total = len(items) })
+			a.backupSizes(items)
+		}
+		sort.Slice(items, func(i, j int) bool { return items[i].rel < items[j].rel })
 
-	runID, err := a.Store.StartBackupRun(p.ID, snapshot)
-	if err != nil {
-		a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
-		return 0, err
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.backupMu.Lock()
-	a.backup.RunID = runID
-	a.backupCancel = cancel
-	a.backupMu.Unlock()
-	go a.runBackup(ctx, p, runID, snapshot, items)
-	return len(items), nil
+		runID, err := a.Store.StartBackupRun(p.ID, snapshot)
+		if err != nil {
+			a.setBackup(func(s *backupState) { s.Running = false; s.Stage = "failed"; s.Error = err.Error() })
+			return
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		a.backupMu.Lock()
+		a.backup.RunID = runID
+		a.backupCancel = cancel
+		a.backupMu.Unlock()
+		a.runBackup(ctx, p, runID, snapshot, items)
+	}()
+	return nil
 }
 
 func (a *App) backupSetAuto(w http.ResponseWriter, r *http.Request) {

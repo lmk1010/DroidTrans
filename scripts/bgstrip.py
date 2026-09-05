@@ -45,12 +45,20 @@ def strip_solid_background(im, tol=20, feather=46):
 
     # 交界那一圈是背景和主体混出来的过渡色，全留着是一道白边（或黑边），
     # 全砍掉又会啃掉主体轮廓。按它离背景色有多远给一个渐变的 alpha。
-    for x in range(w):
-        for y in range(h):
-            r, g, b, a = px[x, y]
-            if not a:
-                continue
-            d = max(abs((r, g, b)[i] - bg[i]) for i in range(3))
-            if d < feather:
-                px[x, y] = (r, g, b, int(255 * d / feather))
+    #
+    # 只能作用在挨着背景的那一圈。扫全图的话，主体内部凡是接近背景色的像素
+    # 都会被打成半透明——白底上的白色时钟表盘、黑底上的黑色屏幕，正好是
+    # 这套素材里最常见的两样东西，会被生生挖出一个洞。
+    edge = set()
+    for x, y in seen:
+        for n in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= n[0] < w and 0 <= n[1] < h and n not in seen:
+                edge.add(n)
+    for x, y in edge:
+        r, g, b, a = px[x, y]
+        if not a:
+            continue
+        d = max(abs((r, g, b)[i] - bg[i]) for i in range(3))
+        if d < feather:
+            px[x, y] = (r, g, b, int(255 * d / feather))
     return im

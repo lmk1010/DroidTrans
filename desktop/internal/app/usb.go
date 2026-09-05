@@ -184,13 +184,7 @@ func (a *App) scanAlbums(id int) {
 	if a.ADB.Serial() == "" {
 		a.ADB.SetSerial(ready[0].Serial)
 	}
-	storage := ""
-	for _, p := range []string{"/sdcard", "/storage/emulated/0", "/storage/self/primary"} {
-		if a.ADB.DirExists(p) {
-			storage = p
-			break
-		}
-	}
+	storage := a.storageRoot()
 	if storage == "" {
 		a.scanMu.Lock()
 		a.scanErr = "无法访问手机存储"

@@ -197,6 +197,7 @@ const I18N = {
     homeNextWifi: 'Wi-Fi 已就绪，手机打开卓传即可自动连接。',
     homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
     navBackup: '备份', navBackupHint: '留住每一次的样子',
+    aboutSubName: '卓传',
     aboutTitle: '关于', aboutCheck: '检查更新', aboutChecking: '正在检查…',
     aboutLatest: '已经是最新版', aboutFound: '有新版本 {v}', aboutGet: '去下载',
     aboutFailed: '连不上更新服务器', aboutVer: '版本 {v}',
@@ -218,6 +219,7 @@ const I18N = {
     backupAskDelPlan: '删掉这个备份计划？',
     backupAskDelPlanNote: '只删记录，磁盘上已经备好的文件一个都不动。',
     backupNever: '还没备过',
+    backupNothing: '源里没有可备份的文件', backupStarted: '开始备份…',
     backupAuto: '插上就备', backupAutoHint: '这台手机每次插上数据线，自动备一次（30 分钟内不重复）',
     backupAutoFolder: '文件夹一直都在，没有「插上」这回事',
     openThisPhone: '查看这台手机传来的文件', histTitle: '已接收', clear: '清空',
@@ -362,6 +364,7 @@ const I18N = {
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
     homeNextIdle: 'Open USB. The page only shows the step you are on.',
     navBackup: 'Backup', navBackupHint: 'Keep every version',
+    aboutSubName: '',
     aboutTitle: 'About', aboutCheck: 'Check for updates', aboutChecking: 'Checking…',
     aboutLatest: 'You are on the latest version', aboutFound: 'Version {v} is available', aboutGet: 'Download',
     aboutFailed: 'Could not reach the update server', aboutVer: 'Version {v}',
@@ -383,6 +386,7 @@ const I18N = {
     backupAskDelPlan: 'Delete this backup plan?',
     backupAskDelPlanNote: 'Only the record goes. Nothing already backed up on disk is touched.',
     backupNever: 'Never run',
+    backupNothing: 'Nothing in the source to back up', backupStarted: 'Backing up…',
     backupAuto: 'On plug-in', backupAutoHint: 'Back up automatically whenever this phone is plugged in (at most once every 30 minutes)',
     backupAutoFolder: 'A folder is always there — there is no plugging it in',
     openThisPhone: 'Files from this phone', histTitle: 'Received', clear: 'Clear',
@@ -3617,10 +3621,26 @@ $('#backupForm')?.addEventListener('submit', async (e) => {
   bkStart(res.id);
 });
 
+let bkNoteTimer = 0;
+
+// 备份页顶上那行短反馈。
+//
+// 「源里一个文件都没有」这种情况原来是完全静默的：用户点了「立即备份」，
+// 界面一动不动，看不出是没反应还是已经备完了。
+function bkNote(text) {
+  const el = $('#bkNote');
+  el.textContent = text;
+  el.classList.toggle('hidden', !text);
+  clearTimeout(bkNoteTimer);
+  if (text) bkNoteTimer = setTimeout(() => el.classList.add('hidden'), 5000);
+}
+
 async function bkStart(planId) {
+  bkNote('');
   const res = await api('/api/backup/start', { body: JSON.stringify({ plan_id: planId }) });
   if (!res.success) {
     $('#bkErr').textContent = res.error || '';
+    bkNote(res.error || '');
     $('#backupForm').classList.remove('hidden');
     return;
   }
@@ -3635,6 +3655,12 @@ async function pollBackup() {
   const st = res.backup || {};
   const box = $('#backupProgress');
   box.classList.toggle('hidden', !st.running);
+  if (!st.running) {
+    // 清点完发现源里一个文件都没有。不说一声的话，用户点完按钮只看到一片安静，
+    // 分不清是没反应还是已经备完了。
+    if (st.stage === 'empty') bkNote(t('backupNothing'));
+    else if (st.stage === 'failed' && st.error) bkNote(st.error);
+  }
   if (st.running) {
     // 清点和核对大小这两步没有分母，别画一条假装在走的进度条
     const stage = st.stage === 'scan' ? t('backupScan')
