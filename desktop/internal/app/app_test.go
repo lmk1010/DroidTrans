@@ -597,3 +597,51 @@ func TestOutboxClearAndPruneTaken(t *testing.T) {
 		t.Errorf("一键清理清掉 %d 条，想要 1", n)
 	}
 }
+
+// 手机连上来只该响一次。心跳每几秒来一趟，跟着响就成了骚扰。
+func TestDeviceOnlineNotifiesOnce(t *testing.T) {
+	a := newTestApp(t)
+	var got []string
+	a.OnNotify = func(title, body string) { got = append(got, title) }
+
+	a.touchDevice("dev-1", "小米 14")
+	a.touchDevice("dev-1", "小米 14") // 心跳
+	a.touchDevice("dev-1", "小米 14")
+	if len(got) != 1 {
+		t.Fatalf("同一台设备提醒了 %d 次，应该只有 1 次：%v", len(got), got)
+	}
+	if !strings.Contains(got[0], "小米 14") {
+		t.Errorf("通知里没有设备名：%q", got[0])
+	}
+
+	a.touchDevice("dev-2", "iPhone 15 Pro")
+	if len(got) != 2 {
+		t.Fatalf("第二台设备没触发提醒：%v", got)
+	}
+
+	// 掉线被清掉之后再连上，应该重新提醒 —— 那确实是一次新的连接
+	a.pruneStaleDevices(0)
+	a.touchDevice("dev-1", "小米 14")
+	if len(got) != 3 {
+		t.Fatalf("重连后没有再提醒：%v", got)
+	}
+}
+
+// 英文界面不该收到中文通知。
+func TestDeviceOnlineFollowsUILang(t *testing.T) {
+	a := newTestApp(t)
+	var title, body string
+	a.OnNotify = func(ti, bo string) { title, body = ti, bo }
+
+	a.uiLang = "en"
+	a.touchDevice("dev-1", "Pixel 8")
+	if strings.ContainsAny(title+body, "已现在可以") {
+		t.Errorf("英文界面收到了中文通知：%q / %q", title, body)
+	}
+
+	a.uiLang = "zh"
+	a.touchDevice("dev-2", "小米 14")
+	if !strings.Contains(title, "已连接") {
+		t.Errorf("中文界面没拿到中文通知：%q", title)
+	}
+}

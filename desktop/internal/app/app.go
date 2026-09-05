@@ -82,6 +82,13 @@ type App struct {
 	OnPickFiles func()
 	mdnsStop    func()
 
+	// 界面当前的语言，由前端在启动和切换时告知。
+	//
+	// 系统通知是在 Go 这边发的，而语言只有前端知道 —— 不同步过来的话，
+	// 一台英文界面的机器会收到中文通知。
+	uiLangMu sync.Mutex
+	uiLang   string
+
 	devMu     sync.Mutex
 	connected bool
 	serials   []string
@@ -815,6 +822,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/version", a.versionInfo)
 	mux.HandleFunc("POST /api/update/open", a.updateOpen)
 	mux.HandleFunc("POST /api/client_error", a.clientError)
+	mux.HandleFunc("POST /api/ui/lang", a.setLang)
 	mux.HandleFunc("GET /api/wifi/info", a.wifiInfo)
 	mux.HandleFunc("POST /api/wifi/connect", a.wifiConnect)
 	mux.HandleFunc("GET /api/wifi/status", a.wifiStatus)
@@ -1185,10 +1193,54 @@ func (a *App) touchDevice(id, name string) {
 	name = d.Name
 	d.LastHeartbeat = now
 	a.mu.Unlock()
+
+	// 只有第一次出现才提醒。心跳每几秒来一次，跟着响就成了骚扰。
+	// 掉线满 10 分钟才会被 pruneStaleDevices 清掉，所以手机短暂断网重连不会重复弹。
+	// 回调放在解锁之后：OnNotify 会进 cgo 调 AppKit，在锁里调等于把界面卡住。
+	if !ok {
+		a.notifyDeviceOnline(name)
+	}
 	// Store 可能没接（测试里就没有）。少一行持久化不该让整条请求崩掉。
 	if a.Store != nil {
 		a.Store.UpsertDevice(id, name)
 	}
+}
+
+// 界面语言。前端启动和切换语言时会告诉我们一次，没说过就按中文。
+func (a *App) lang() string {
+	a.uiLangMu.Lock()
+	defer a.uiLangMu.Unlock()
+	if a.uiLang == "en" {
+		return "en"
+	}
+	return "zh"
+}
+
+func (a *App) setLang(w http.ResponseWriter, r *http.Request) {
+	v, _ := readJSON(r)["lang"].(string)
+	if v != "zh" && v != "en" {
+		writeJSON(w, 400, map[string]any{"success": false, "error": "lang must be zh or en"})
+		return
+	}
+	a.uiLangMu.Lock()
+	a.uiLang = v
+	a.uiLangMu.Unlock()
+	writeJSON(w, 200, map[string]any{"success": true, "lang": v})
+}
+
+// 手机连上来时弹一条系统通知。
+//
+// 界面里那点变化（状态行多出「1 台在线」）在窗口没被盯着时等于没有 ——
+// 而手机连上来的那一刻，用户十有八九正低头看手机。
+func (a *App) notifyDeviceOnline(name string) {
+	if a.OnNotify == nil || name == "" {
+		return
+	}
+	if a.lang() == "en" {
+		a.OnNotify(name+" is connected", "You can send files both ways now.")
+		return
+	}
+	a.OnNotify(name+" 已连接", "现在可以两边互传文件了。")
 }
 
 func shortID(id string) string {

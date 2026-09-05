@@ -407,7 +407,8 @@
           <h1 data-i18n="histTitle">已接收</h1>
           <button type="button" id="clearHist" class="ghost danger" data-i18n="clear">清空</button>
         </header>
-        <div id="histList" class="gallery"></div>
+        <div id="histFilter" class="chips hist-filter hidden"></div>
+        <div id="histList" class="hist-list"></div>
         <div id="goneBar" class="pair-bar hidden">
           <span id="goneText"></span>
           <button type="button" id="goneShow" class="linkish" data-i18n="goneShow">看看</button>
@@ -431,6 +432,21 @@
     </button>
     <div class="bar"><i id="inboxFill"></i></div>
   </aside>
+
+  <aside id="connToast" class="inbox conn-toast hidden" aria-live="polite">
+    <span class="inbox-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="14" rx="1.6"/><path d="M10 18.5h4"/><path d="M7 21h10"/><path d="m18 6.5 2 2 4-4" transform="translate(-1.5 1)"/></svg>
+    </span>
+    <div class="inbox-copy">
+      <strong id="connToastTitle"></strong>
+      <span id="connToastText"></span>
+    </div>
+    <button type="button" id="connToastOpen" class="ghost" data-i18n="seeGallery">查看</button>
+    <button type="button" id="connToastX" class="icon-btn" title="关闭" aria-label="关闭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>
+    </button>
+  </aside>
+
   <div id="menu" class="menu hidden" role="menu"></div>
   <div id="viewer" class="viewer hidden">
     <div class="viewer-bar">

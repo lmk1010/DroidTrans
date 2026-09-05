@@ -59,10 +59,18 @@ const state = {
   names: {},
   usbConnected: false,
   wifiPick: '',
+  // 「已接收」里当前只看哪台设备。'' = 全部（按设备分组展示）
+  histDevice: '',
 };
 
 let viewerPhotos = [];
 let viewerIndex = 0;
+// 在线设备的对比基准。renderOnline 定义在这几个变量之前用到它们，
+// 声明必须留在顶部 —— 挪到用它的函数旁边就会踩 let 的暂时性死区。
+let onlineSeen = null;          // null = 还没拿到过第一批，别把开机时已在线的当成刚连上
+let justOnline = new Set();
+let justOnlineTimer = 0;
+let connToastTimer = 0;
 let inboxBatch = { device: '', batch: '', folder: '' };
 let lastXfer = { device: '', batch: '', folder: '' };
 
@@ -189,6 +197,8 @@ const I18N = {
     homeNextWifi: 'Wi-Fi 已就绪，手机打开卓传即可自动连接。',
     homeNextIdle: '点 USB，页面只说你现在该做的那一步。',
     openThisPhone: '查看这台手机传来的文件', histTitle: '已接收', clear: '清空',
+    devAll: '全部设备', devBatches: '批', devOnline: '在线',
+    connTitle: '{n} 已连接', connHint: '现在可以两边互传文件了',
     noHist: '图库还是空的', noHistHint: '从 USB 或 Wi-Fi 传过来，就会出现在这里。',
     unauth: '设备未授权 USB 调试', offline: '未连接设备',
     recv: '正在接收', got: '已收到', photos: '张', openGallery: '打开图库', reveal: '在访达中显示', forget: '从图库移除记录',
@@ -328,6 +338,8 @@ const I18N = {
     homeNextWifi: 'Wi-Fi is ready. The phone app will connect itself.',
     homeNextIdle: 'Open USB. The page only shows the step you are on.',
     openThisPhone: 'Files from this phone', histTitle: 'Received', clear: 'Clear',
+    devAll: 'All devices', devBatches: 'batches', devOnline: 'online',
+    connTitle: '{n} is connected', connHint: 'You can send files both ways now',
     noHist: 'Gallery is empty', noHistHint: 'Files you send over USB or Wi-Fi show up here.',
     unauth: 'USB debugging not authorized', offline: 'No device',
     recv: 'Receiving', got: 'Received', photos: 'photos', openGallery: 'Open gallery', reveal: 'Reveal in Finder', forget: 'Remove from gallery',
@@ -351,6 +363,9 @@ const t = (k) => I18N[state.lang][k] || I18N.zh[k] || k;
 
 function applyLang() {
   document.documentElement.lang = state.lang === 'zh' ? 'zh-CN' : 'en';
+  // 系统通知是 Go 那边发的，语言只有这里知道。不同步过去的话，
+  // 英文界面会收到中文通知。
+  api('/api/ui/lang', { body: JSON.stringify({ lang: state.lang }) }).catch(() => {});
   $$('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
   $$('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   $$('[data-i18n-title]').forEach((el) => {
@@ -1104,6 +1119,8 @@ async function refreshHome() {
   (wifi.connected_devices || []).forEach((d) => {
     if (d.id && d.name) state.names[d.id] = d.name;
   });
+  // 名字先记下再比对，不然刚连上的那台在提示里只有一串 id
+  noteOnline(wifi.connected_devices);
   const next = $('#homeNext');
   if (next) {
     // 这行本来就是「下一步该干什么」，之前用强调色却点不动，看着像坏掉的链接
@@ -1771,19 +1788,66 @@ async function forgetBatch(device, batch) {
 
 let showGone = false;
 
+// 「已接收」里的一批 = 一行。
+//
+// 原来这里跟首页一样铺缩略图卡片。首页只放 4 个，是个视觉锚点；
+// 已接收页动辄几十批，铺开就是一堵墙 —— 每张图都在抢注意力，
+// 结果是「哪一批是刚才那次」反而看不出来。
+// 一行一批，把张数、大小、耗时、均速摊平成一行字，扫读比认图快得多；
+// 左边留一个 40px 的小图当锚点，认得出画面的那一批仍然一眼能挑出来。
+function renderBatchList(el, batches) {
+  el.innerHTML = (batches || []).map((b) => {
+    const name = b.device_name || deviceLabel(b.device_id);
+    const cover = b.cover
+      ? `<img alt="" src="${fileURL(b.cover)}" />`
+      : `<span class="ph">${I_STACK}</span>`;
+    const bits = [`${b.photo_count || 0} ${t('photos')}`];
+    const sz = fmtBytes(b.total_size);
+    if (sz) bits.push(sz);
+    const dur = fmtDur(b.duration_sec);
+    if (dur) bits.push(dur);
+    if (b.duration_sec > 0 && b.total_size > 0) {
+      const avg = fmtSpeed((b.total_size / 1024 / 1024) / b.duration_sec);
+      if (avg) bits.push(avg);
+    }
+    const gone = !!b.missing;
+    if (gone) bits.unshift(state.lang === 'zh' ? '文件已不在' : 'files missing');
+    return `<button type="button" class="batch-row${gone ? ' gone-batch' : ''}"
+      data-device="${esc(b.device_id)}" data-batch="${esc(b.batch_id)}"
+      data-folder="${esc(b.folder || '')}" data-name="${esc(name)}" data-missing="${gone ? '1' : ''}">
+      <span class="row-thumb">${cover}</span>
+      <span class="row-main">
+        <b>${esc(batchTitle(b.batch_id))}</b>
+        <small>${esc(bits.join('  ·  '))}</small>
+      </span>
+      <span class="row-count">${b.photo_count || 0}</span>
+    </button>`;
+  }).join('');
+  bindImg(el);
+  el.querySelectorAll('.batch-row').forEach((btn) => {
+    bindOpenAndMenu(
+      btn,
+      () => openViewer(btn.dataset.device, btn.dataset.batch, btn.dataset.folder),
+      () => [
+        { label: t('openGallery'), act: () => openViewer(btn.dataset.device, btn.dataset.batch, btn.dataset.folder) },
+        { label: t('open'), act: () => openFolder(btn.dataset.folder) },
+        { label: t('toPhotos'), act: () => importToPhotos(btn.dataset.folder) },
+        { label: t('reveal'), act: () => reveal(btn.dataset.folder) },
+        { label: t('copyPath'), act: () => copyText(btn.dataset.folder) },
+        { label: t('copyName'), act: () => copyText(btn.dataset.name) },
+        { sep: true },
+        { label: t('forget'), act: () => forgetBatch(btn.dataset.device, btn.dataset.batch) },
+        { label: t('delBatch'), danger: true, act: () => deleteBatch(btn.dataset.device, btn.dataset.batch) },
+      ],
+    );
+  });
+}
+
+// 首页那 4 个缩略图卡片还在用这个。已接收页已经改走 renderBatchList。
 function renderGallery(target, batches, limit) {
-  const el = $(target);
-  let all = batches || [];
-  if (target === '#histList') {
-    // 文件已经不在磁盘上的批次，默认不占位置：东西早就没了，看也没得看
-    const gone = all.filter((b) => b.missing);
-    if (!showGone) all = all.filter((b) => !b.missing);
-    renderGoneBar(gone.length);
-  }
-  const items = all.slice(0, limit || 48);
-  if (target === '#histList') {
-    $('#clearHist')?.classList.toggle('hidden', items.length === 0);
-  }
+  const el = typeof target === 'string' ? $(target) : target;
+  if (!el) return;
+  const items = (batches || []).slice(0, limit || 48);
   if (!items.length) {
     el.innerHTML = `<div class="empty empty-go">${I_STACK}<div>
       <div>${esc(t('noHist'))}</div>
@@ -2191,22 +2255,67 @@ function renderOnline(online) {
     const id = d.id || d.device_id || '';
     const name = d.name || state.names[id] || shortId(id);
     if (d.name) state.names[id] = d.name;
-    return `<button type="button" class="row-btn" data-device="${esc(id)}" title="${esc(t('openThisPhone'))}"><span class="live" aria-hidden="true">${I_DEVICE}</span><span class="who"><b>${esc(name)}</b><small>${esc(shortId(id))}</small></span></button>`;
+    // 刚连上的那一行点一下亮：多出一行太安静，眼睛不一定会落到这里
+    const fresh = justOnline.has(id) ? ' just-on' : '';
+    return `<button type="button" class="row-btn${fresh}" data-device="${esc(id)}" title="${esc(t('openThisPhone'))}"><span class="live" aria-hidden="true">${I_DEVICE}</span><span class="who"><b>${esc(name)}</b><small>${esc(shortId(id))}</small></span></button>`;
   }).join('');
   el.querySelectorAll('[data-device]').forEach((btn) => {
     btn.addEventListener('click', () => openDeviceGallery(btn.dataset.device));
   });
 }
 
-async function openDeviceGallery(deviceId) {
-  if (!deviceId) {
-    show('history');
+// 点某台在线设备 = 「只看这台传来的东西」。
+//
+// 原来是直接把它最近一批的图片查看器怼到脸上 —— 想看的是「这台手机传过什么」，
+// 弹出来的却是某一批的大图，还得先退出来。
+// 手机连上来的提醒。
+//
+// 之前唯一的反馈是状态行悄悄从 IP 变成「IP · 1 台在线」，Wi-Fi 页多出一行 ——
+// 用户连的时候正低头看手机，回过神来根本不知道到底连上没有。
+function noteOnline(devices) {
+  const ids = new Set((devices || []).map((d) => d.id || d.device_id).filter(Boolean));
+  if (onlineSeen === null) {          // 开机时已经在线的不弹
+    onlineSeen = ids;
     return;
   }
-  const gal = await api('/api/gallery');
-  const batch = (gal.batches || []).find((b) => b.device_id === deviceId);
+  const fresh = [...ids].filter((id) => !onlineSeen.has(id));
+  onlineSeen = ids;
+  if (!fresh.length) return;
+
+  justOnline = new Set(fresh);
+  clearTimeout(justOnlineTimer);
+  justOnlineTimer = setTimeout(() => { justOnline = new Set(); }, 3000);
+
+  const names = fresh.map((id) => deviceLabel(id));
+  showConnToast(names.length > 1 ? names.join('、') : names[0], fresh[0]);
+}
+
+function showConnToast(name, deviceId) {
+  const el = $('#connToast');
+  if (!el) return;
+  $('#connToastTitle').textContent = t('connTitle').replace('{n}', name);
+  $('#connToastText').textContent = t('connHint');
+  el.dataset.device = deviceId || '';
+  el.classList.remove('hidden');
+  clearTimeout(connToastTimer);
+  connToastTimer = setTimeout(() => el.classList.add('hidden'), 6000);
+}
+
+$('#connToastOpen')?.addEventListener('click', () => {
+  const id = $('#connToast').dataset.device || '';
+  $('#connToast').classList.add('hidden');
+  clearTimeout(connToastTimer);
+  openDeviceGallery(id);
+});
+$('#connToastX')?.addEventListener('click', () => {
+  $('#connToast').classList.add('hidden');
+  clearTimeout(connToastTimer);
+});
+
+async function openDeviceGallery(deviceId) {
+  state.histDevice = deviceId || '';
   show('history');
-  if (batch) openViewer(batch.device_id, batch.batch_id, batch.folder || '');
+  await refreshHistory();
 }
 
 let lastQR = '';
@@ -2379,7 +2488,98 @@ $('#usbOut').addEventListener('change', () => setOut($('#usbOut').value.trim()))
 async function refreshHistory() {
   await refreshNames();
   const gal = await api('/api/gallery');
-  renderGallery('#histList', gal.batches || []);
+  renderHistory(gal.batches || []);
+}
+
+// 「已接收」按设备分开。
+//
+// 原来是一个平铺的网格，两台手机传来的东西混在一起，设备名挤在卡片小字的
+// 第三项、还经常被省略号吃掉 —— 想找「刚才那台手机传的」只能一张张认。
+function renderHistory(batches) {
+  const all = batches || [];
+  const list = $('#histList');
+  const bar = $('#histFilter');
+
+  // 按设备聚合，顺序沿用批次本身的顺序（新的在前）
+  const groups = [];
+  const byId = new Map();
+  all.forEach((b) => {
+    const id = b.device_id || '';
+    let g = byId.get(id);
+    if (!g) {
+      g = { id, name: b.device_name || deviceLabel(id), batches: [] };
+      byId.set(id, g);
+      groups.push(g);
+    }
+    // 设备可能改过名，以最新一批为准
+    if (b.device_name) g.name = b.device_name;
+    g.batches.push(b);
+  });
+
+  // 选中的设备已经没有记录了（清空、删批次）就退回全部，
+  // 否则会停在一个永远空着的筛选上，看着像数据丢了
+  if (state.histDevice && !byId.has(state.histDevice)) state.histDevice = '';
+
+  // 只有一台设备时不分组也不显示筛选：那时候「按设备分」全是废话
+  const many = groups.length > 1;
+  bar.classList.toggle('hidden', !many);
+
+  if (many) {
+    const chip = (id, label, n, on) =>
+      `<button type="button" class="ghost${on ? ' on' : ''}" data-dev="${esc(id)}">${esc(label)}<small> · ${n}</small></button>`;
+    bar.innerHTML = [
+      chip('', t('devAll'), all.length, !state.histDevice),
+      ...groups.map((g) => chip(g.id, g.name, g.batches.length, state.histDevice === g.id)),
+    ].join('');
+    bar.querySelectorAll('[data-dev]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.histDevice = btn.dataset.dev;
+        renderHistory(all);
+      });
+    });
+  } else {
+    bar.innerHTML = '';
+  }
+
+  // 文件已经不在磁盘上的批次，默认不占位置：东西早就没了，看也没得看
+  const keep = (arr) => (showGone ? arr : arr.filter((b) => !b.missing));
+  renderGoneBar(all.filter((b) => b.missing).length);
+
+  const visible = groups
+    .map((g) => ({ ...g, batches: keep(g.batches) }))
+    .filter((g) => g.batches.length)
+    .filter((g) => !state.histDevice || g.id === state.histDevice);
+  const total = visible.reduce((s, g) => s + g.batches.length, 0);
+  $('#clearHist')?.classList.toggle('hidden', total === 0);
+
+  if (!total) {
+    list.innerHTML = `<div class="empty empty-go">${I_STACK}<div>
+      <div>${esc(t('noHist'))}</div>
+      <small>${esc(t('noHistHint'))}</small>
+      <div class="empty-acts">
+        <button type="button" class="ghost" data-go="usb">USB</button>
+        <button type="button" class="ghost" data-go="wifi">Wi-Fi</button>
+      </div>
+    </div></div>`;
+    list.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => show(b.dataset.go)));
+    return;
+  }
+
+  // 一台设备一段，段里一批一行。只筛了一台时段头就只剩那一个，不额外藏起来 ——
+  // 留着它才知道「现在看的是哪台」。
+  list.innerHTML = visible.map((g) => {
+    const n = g.batches.reduce((s, b) => s + (b.photo_count || 0), 0);
+    const size = fmtBytes(g.batches.reduce((s, b) => s + (b.total_size || 0), 0));
+    const meta = [`${g.batches.length} ${t('devBatches')}`, `${n} ${t('photos')}`, size]
+      .filter(Boolean).join(' · ');
+    return `<section class="dev-group">
+      <h2 class="dev-head">${I_DEVICE}<span>${esc(g.name)}</span><small>${esc(meta)}</small></h2>
+      <div class="batch-list"></div>
+    </section>`;
+  }).join('');
+  list.querySelectorAll('.dev-group .batch-list').forEach((box, i) => {
+    renderBatchList(box, visible[i].batches);
+  });
 }
 
 $('#clearHist').addEventListener('click', async () => {
