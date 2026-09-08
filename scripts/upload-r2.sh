@@ -27,22 +27,28 @@ DMG="$ROOT/dist/DroidTrans-${VERSION}-macos-arm64.dmg"
 # gradle 在没配签名时会在 app/build/outputs/apk/release/ 留一个
 # app-release-unsigned.apk，而它恰好比手工归档的正式包新——按时间取就正好取到它，
 # 一路传上去覆盖 latest.apk，所有安卓用户的更新从此装不上，而且这边毫无提示。
+# 挑 APK 必须验签，不能只按时间取最新的那个。
+#
+# gradle 在没配签名时会在 app/build/outputs/apk/release/ 留一个
+# app-release-unsigned.apk，而它恰好比手工归档的正式包新——按时间取就正好取到它，
+# 一路传上去覆盖 latest.apk，所有安卓用户的更新从此装不上，而且这边毫无提示。
+#
+# 整段写在这里而不是包成函数：函数得用 $(...) 取返回值，那是个子 shell，
+# 里面对「验没验过」这个标记的赋值传不回来，外面永远看到「没验过」。
+APKSIGNER="$(ls "$HOME"/Library/Android/sdk/build-tools/*/apksigner 2>/dev/null | tail -1 || true)"
+APK_SRC=""
 APK_VERIFIED=0
-pick_signed_apk() {
-  local apksigner f
-  apksigner="$(ls "$HOME"/Library/Android/sdk/build-tools/*/apksigner 2>/dev/null | tail -1 || true)"
-  for f in $(ls -t "$ROOT"/android/app/build/outputs/apk/release/*.apk \
-                   "$ROOT"/android/release_apk/*.apk 2>/dev/null); do
-    if [[ -n "$apksigner" ]]; then
-      "$apksigner" verify "$f" >/dev/null 2>&1 && { APK_VERIFIED=1; echo "$f"; return; }
-    elif [[ "$f" != *unsigned* ]]; then
-      # 连 apksigner 都没有时只能退而看文件名
-      APK_VERIFIED=0
-      echo "$f"; return
+for f in $(ls -t "$ROOT"/android/app/build/outputs/apk/release/*.apk \
+                 "$ROOT"/android/release_apk/*.apk 2>/dev/null); do
+  if [[ -n "$APKSIGNER" ]]; then
+    if "$APKSIGNER" verify "$f" >/dev/null 2>&1; then
+      APK_SRC="$f"; APK_VERIFIED=1; break
     fi
-  done
-}
-APK_SRC="$(pick_signed_apk)"
+  elif [[ "$f" != *unsigned* ]]; then
+    APK_SRC="$f"; break
+  fi
+done
+
 [[ -f "$DMG" ]] || { echo "missing $DMG — run desktop/build.sh first"; exit 1; }
 [[ -n "$APK_SRC" && -f "$APK_SRC" ]] || {
   echo "没有找到签名有效的 release APK。" >&2
