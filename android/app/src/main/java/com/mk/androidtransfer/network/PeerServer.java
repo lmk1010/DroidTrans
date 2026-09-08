@@ -633,6 +633,13 @@ public final class PeerServer {
         return tok;
     }
 
+    /** 有人正挂在那儿等点头。测试用来确认「不带码的请求真的被挂住了」。 */
+    public boolean hasPendingKnock() {
+        synchronized (this) {
+            return knockLatch != null;
+        }
+    }
+
     /** 界面上点了「同意」。 */
     public void approve() {
         synchronized (this) {

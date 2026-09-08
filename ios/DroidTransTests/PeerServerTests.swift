@@ -125,6 +125,29 @@ final class PeerServerTests: XCTestCase {
         XCTAssertEqual(firstCode, 200)
     }
 
+    /// 敲门要等一个人看到弹窗、拿起手机、点一下 —— **8 秒根本不够**。
+    ///
+    /// 这一条特意用真正的客户端 `ApiClient`，而不是上面那个裸 URLSession 助手：
+    /// 超时是配在客户端上的（`timeoutIntervalForRequest = 8`），
+    /// 用助手打的话，即使客户端 8 秒就放弃，这个用例照样绿。
+    /// 那个 8 秒曾经让「对面明明点了同意，这边却说连不上」成为常态。
+    func testKnockSurvivesAHumanTakingTenSeconds() async throws {
+        let client = ApiClient(baseURL: base)
+        async let token = client.pair(code: "", deviceId: "dev-1", deviceName: "对面那台")
+
+        try await waitForKnock()
+        // 比原来那个默认超时更长的「人类反应时间」
+        try await Task.sleep(nanoseconds: 10_000_000_000)
+        server.approve()
+
+        let t = try await token
+        XCTAssertFalse(t.isEmpty, "同意之后必须真的拿到令牌")
+
+        // 拿到的令牌要真的能用，否则发送方下一步就是 403
+        let (_, code) = try await request("/api/outbox", method: "GET", token: t)
+        XCTAssertEqual(code, 200)
+    }
+
     private func waitForKnock() async throws {
         for _ in 0..<60 {
             if server.knock != nil { return }
