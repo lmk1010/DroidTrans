@@ -452,6 +452,7 @@
     <string name="peer_direct">没有 Wi-Fi？开直连热点</string>
     <string name="peer_direct_stop">关掉直连热点</string>
     <string name="peer_direct_on">直连热点已开：%1$s。对面扫上面的码就会自动连过来，不用手输密码。这台手机在热点期间上不了网。</string>
+    <string name="peer_direct_on_p2p">直连已开：%1$s。对面在「找设备」那一屏就能直接看到这台，点一下就连上，不用扫码也不用输密码。这台手机在直连期间上不了网。</string>
     <string name="peer_direct_need_perm">系统要先拿到「附近的设备/位置」权限才肯开热点</string>
     <string name="peer_scan_joining">正在连对方的热点…</string>
     <string name="peer_scan_joined">网连上了，正在找对方…</string>
@@ -503,6 +504,8 @@
     <string name="approval_refused">对方没有同意</string>
     <string name="peer_knock_hint">同意之后，这台手机上的文件会被对方看到吗？不会 —— 对方只能往这里发东西。</string>
     <string name="connect_manual_hint">电脑上的卓传窗口里显示着它的地址，照着输就行。</string>
+    <string name="connect_direct_joining">正在和对方建立 Wi-Fi 直连…</string>
+    <string name="connect_direct_joined">直连成功，正在连接…</string>
     <string name="common_connect">连接</string>
     <string name="common_send">发送</string>
 

@@ -427,7 +427,8 @@ public class RadarScanView extends View {
     }
 
     private Bitmap iconFor(ServerDot dot) {
-        if ("android".equalsIgnoreCase(dot.engine)) {
+        if ("android".equalsIgnoreCase(dot.engine) || "direct".equalsIgnoreCase(dot.engine)) {
+            // direct = Wi-Fi 直连上发现的手机，还没入网，图标和安卓机一样
             return androidArt;
         }
         if ("swift".equalsIgnoreCase(dot.engine)) {

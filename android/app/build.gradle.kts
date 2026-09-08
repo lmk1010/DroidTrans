@@ -96,4 +96,7 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
+    // GrantPermissionRule：直连那组用例要「附近的设备」权限，
+    // 没有它系统会直接抛 SecurityException，用例测不到真正想测的东西
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }

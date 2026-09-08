@@ -22,6 +22,7 @@ import com.journeyapps.barcodescanner.ScanContract;
 import com.journeyapps.barcodescanner.ScanOptions;
 import com.mk.androidtransfer.model.ServerInfo;
 import com.mk.androidtransfer.network.BonjourBrowser;
+import com.mk.androidtransfer.network.DirectFinder;
 import com.mk.androidtransfer.network.Pairing;
 import com.mk.androidtransfer.network.PeerLink;
 import com.mk.androidtransfer.network.PeerServer;
@@ -50,6 +51,10 @@ import java.util.concurrent.Executors;
  */
 public class ConnectActivity extends AppCompatActivity {
 
+    /** 雷达上那些「还没入网、要先建直连」的点，用这个 engine 标出来。 */
+    private static final String DIRECT = "direct";
+    private static final int REQ_NEARBY = 4102;
+
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newCachedThreadPool();
     /** 已经出现在雷达上的电脑，按 ip:port 去重 */
@@ -58,6 +63,8 @@ public class ConnectActivity extends AppCompatActivity {
     private final Map<String, String> byService = new LinkedHashMap<>();
 
     private BonjourBrowser browser;
+    /** Wi-Fi 直连那条路：对面没连任何网络也能被发现。 */
+    private DirectFinder finder;
     private RadarScanView radar;
     private TextView status;
     private TextView hint;
@@ -91,14 +98,30 @@ public class ConnectActivity extends AppCompatActivity {
         });
         ((MaterialButton) findViewById(R.id.btnManual)).setOnClickListener(v -> askAddress());
 
-        radar.setOnServerDotClickListener(dot -> connect(
-                "http://" + dot.ip + ":" + dot.port, dot.serverName));
+        radar.setOnServerDotClickListener(dot -> {
+            if (DIRECT.equals(dot.engine)) {
+                if (finder == null) {
+                    toast(getString(R.string.connect_failed));
+                    return;
+                }
+                // 这台还没入网，先把 Wi-Fi 直连建起来，拿到地址再走原来那套。
+                //
+                // 先把之前扫码入网留下的进程绑定松开：绑着一张别的网卡的话，
+                // 后面打给组主的请求会全发到那张卡上，而组主根本不在那儿。
+                WifiJoiner.get(this).release();
+                toast(getString(R.string.connect_direct_joining));
+                finder.connect(dot.ip);
+                return;
+            }
+            connect("http://" + dot.ip + ":" + dot.port, dot.serverName);
+        });
     }
 
     @Override
     protected void onStart() {
         super.onStart();
         radar.startScanning();
+        startDirectFinder();
         browser = new BonjourBrowser(this);
         browser.start(new BonjourBrowser.Listener() {
             @Override
@@ -121,6 +144,77 @@ public class ConnectActivity extends AppCompatActivity {
             browser.stop();
             browser = null;
         }
+        if (finder != null) {
+            // 只停扫描，不拆已经建好的组 —— 传输还在上面跑
+            finder.stop();
+            finder = null;
+        }
+    }
+
+    // -------------------------------------------------------------- Wi-Fi 直连
+
+    /**
+     * 把附近正在接收、但还没连任何网络的手机也找出来。
+     *
+     * <p>局域网那条路要求两台已经在同一个网里；而「没有路由器」恰恰是
+     * 这个 App 最该好用的场合。P2P 的服务发现是预关联的，正好补上这一段。
+     *
+     * <p>没有权限就安安静静只留局域网那条路 —— 为了一条备用路径把用户
+     * 拦在权限弹窗前面，得不偿失。
+     */
+    private void startDirectFinder() {
+        if (!DirectFinder.isSupported()) {
+            return;
+        }
+        String need = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+                ? android.Manifest.permission.NEARBY_WIFI_DEVICES
+                : android.Manifest.permission.ACCESS_FINE_LOCATION;
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, need)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            androidx.core.app.ActivityCompat.requestPermissions(this,
+                    new String[]{need}, REQ_NEARBY);
+            return;
+        }
+        finder = new DirectFinder(this);
+        finder.start(new DirectFinder.Listener() {
+            @Override
+            public void onFound(String name, String address, int port) {
+                onDirectFound(name, address, port);
+            }
+
+            @Override
+            public void onConnected(String host, int port) {
+                toast(getString(R.string.connect_direct_joined));
+                connect("http://" + host + ":" + port, host);
+            }
+
+            @Override
+            public void onFailed(String msg) {
+                toast(msg);
+            }
+        });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_NEARBY && grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startDirectFinder();
+        }
+    }
+
+    private void onDirectFound(String name, String address, int port) {
+        String key = "direct:" + address;
+        if (found.containsKey(key)) {
+            return;
+        }
+        ServerInfo info = new ServerInfo(name, address, port);
+        info.setEngine(DIRECT);
+        found.put(key, info);
+        radar.addServerDot(info);
+        refreshStatus();
     }
 
     // ------------------------------------------------------------------ 发现

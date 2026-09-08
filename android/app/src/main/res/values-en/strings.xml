@@ -438,6 +438,7 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="peer_direct">No Wi-Fi? Start direct hotspot</string>
     <string name="peer_direct_stop">Stop direct hotspot</string>
     <string name="peer_direct_on">Direct hotspot is on: %1$s. Scanning the code above joins it automatically — no password to type. This phone has no internet while it runs.</string>
+    <string name="peer_direct_on_p2p">Direct link is on: %1$s. The other phone sees this one on its device screen and connects with one tap — no code to scan, no password to type. This phone has no internet while it runs.</string>
     <string name="peer_direct_need_perm">Android needs the nearby devices / location permission before it will start a hotspot</string>
     <string name="peer_scan_joining">Joining the other phone’s hotspot…</string>
     <string name="peer_scan_joined">Connected. Looking for the other phone…</string>
@@ -468,6 +469,8 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="connect_manual">Enter address</string>
     <string name="connect_failed">Could not connect</string>
     <string name="connect_manual_hint">Enter the address shown in the DroidTrans computer window.</string>
+    <string name="connect_direct_joining">Setting up a direct Wi-Fi link…</string>
+    <string name="connect_direct_joined">Linked. Connecting…</string>
     <string name="pair_screen_title">Pair with this computer</string>
     <string name="pair_hint">The six-digit code is shown in the DroidTrans computer window.</string>
     <string name="pair_cancel">Cancel and choose another</string>

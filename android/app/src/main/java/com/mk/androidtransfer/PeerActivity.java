@@ -274,13 +274,16 @@ public class PeerActivity extends AppCompatActivity {
     }
 
     private void startHotspot() {
-        hotspot.start(new DirectHotspot.Callback() {
+        hotspot.start(deviceName(), server.getBoundPort(), new DirectHotspot.Callback() {
             @Override
             public void onStarted(String ssid, String password) {
                 hotspotSsid = ssid;
                 hotspotPass = password;
                 btnDirect.setText(R.string.peer_direct_stop);
-                recvHotspot.setText(getString(R.string.peer_direct_on, ssid));
+                // 走 Wi-Fi Direct 时对面连扫码都不用，这句话要说清楚，
+                // 否则用户还以为非得让人来扫这张码
+                recvHotspot.setText(getString(hotspot.isDirectGroup()
+                        ? R.string.peer_direct_on_p2p : R.string.peer_direct_on, ssid));
                 recvHotspot.setVisibility(View.VISIBLE);
                 // 热点起来之后本机地址会变成热点网段的那个，码必须重画
                 refreshQr();

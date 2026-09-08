@@ -4,8 +4,6 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
-import android.net.wifi.p2p.WifiP2pGroup;
-import android.net.wifi.p2p.WifiP2pManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,21 +12,23 @@ import android.util.Log;
 /**
  * 没有路由器时，接收端自己拉一个直连热点。
  *
- * <p>用的是系统的 LocalOnlyHotspot：它专为「两台设备就地互连」而设，
- * 不需要用户去设置里开个人热点，也不碰运营商的共享开关；SSID 和密码由系统随机生成，
- * 直接塞进二维码，对面扫一下就能入网 —— 这才是「不用管网络」该有的样子。
+ * <p>两条实现，按这个顺序试 —— 顺序是有理由的，别倒过来：
  *
- * <p>系统拒绝时（部分厂商 ROM 直接不给 LocalOnlyHotspot）退到 <b>Wi-Fi Direct</b>：
- * 建一个 P2P 组，自己当组主。组主本身就是一个普通的 AP，名字（DIRECT-xx-…）和密码
- * 都读得到，一样能进二维码 —— 所以连 iPhone 也能加入，它并不需要懂 Wi-Fi Direct。
- * 这条路要 Android 10（API 29）以上才拿得到密码，拿不到就没法写进码里，也就没有意义。
+ * <ol>
+ *   <li><b>Wi-Fi Direct 自建组</b>（{@link DirectGroup}，Android 10 起）。
+ *       频段能请求 5GHz，名字和密码我们自己定，而且组主可以在 P2P 上广播服务，
+ *       对面<b>不用扫码</b>就能发现并连过来。</li>
+ *   <li><b>LocalOnlyHotspot</b>（Android 8 起）。名字和密码由系统随机生成、读得到，
+ *       所以二维码那条路照常成立；但<b>频段由系统定</b>，不少机型直接给 2.4GHz，
+ *       实测 5~8 MB/s —— 那还不如走路由器。所以它只是兜底，不是首选。</li>
+ * </ol>
  *
- * <p>局限，界面上要如实说：
- * <ul>
- *   <li>需要 Android 8（API 26）以上；</li>
- *   <li>开着的时候这台手机上不了网 —— 它的 Wi-Fi 被系统切去当热点了；</li>
- *   <li>部分厂商 ROM 会直接拒绝（onFailed），这时只能退回「让对方开个人热点」。</li>
- * </ul>
+ * <p>两条出来的都是普通 AP，所以 iPhone 都能加入 —— 它不需要懂 Wi-Fi Direct，
+ * 只要从二维码里拿到名字和密码。iOS 既没有扫描周围 Wi-Fi 的能力，也不懂 P2P，
+ * 所以对 iPhone 来说扫码是唯一的路。
+ *
+ * <p>局限，界面上要如实说：开着的时候这台手机上不了网（Wi-Fi 被切去当热点了），
+ * 部分厂商 ROM 两条都会拒绝。
  */
 public final class DirectHotspot {
 
@@ -48,35 +48,64 @@ public final class DirectHotspot {
     private final Context app;
     private final Handler main = new Handler(Looper.getMainLooper());
     private WifiManager.LocalOnlyHotspotReservation reservation;
-
-    /** Wi-Fi Direct 兜底用的通道；建了组就非空，关的时候要拿它去 removeGroup。 */
-    private WifiP2pManager p2p;
-    private WifiP2pManager.Channel p2pChannel;
+    private DirectGroup group;
 
     public DirectHotspot(Context ctx) {
         app = ctx.getApplicationContext();
     }
 
     public boolean isRunning() {
-        return reservation != null || p2pChannel != null;
+        return reservation != null || (group != null && group.isRunning());
     }
 
     public static boolean isSupported() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O;
     }
 
-    @SuppressLint("MissingPermission")
-    public void start(Callback cb) {
+    /** 这次的热点是不是走的 Wi-Fi Direct —— 走它才有「对面免扫码」这条路。 */
+    public boolean isDirectGroup() {
+        return group != null && group.isRunning();
+    }
+
+    /**
+     * @param deviceName 广播出去的设备名，对面看到的就是它
+     * @param port       接收端实际监听的端口，写进 P2P 服务的 TXT 记录
+     */
+    public void start(String deviceName, int port, Callback cb) {
         if (!isSupported()) {
             cb.onFailed("这台手机的系统版本太低，开不了直连热点");
             return;
         }
-        if (reservation != null) {
+        if (isRunning()) {
             return;
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            final DirectGroup g = new DirectGroup(app);
+            group = g;
+            g.start(deviceName, port, new DirectGroup.Callback() {
+                @Override
+                public void onStarted(String ssid, String password) {
+                    cb.onStarted(ssid, password);
+                }
+
+                @Override
+                public void onFailed(String msg) {
+                    // 这台不给建 P2P 组，还剩 LocalOnlyHotspot
+                    group = null;
+                    g.stop();
+                    startLocalOnly(msg, cb);
+                }
+            });
+            return;
+        }
+        startLocalOnly("", cb);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void startLocalOnly(String why, Callback cb) {
         WifiManager wm = (WifiManager) app.getSystemService(Context.WIFI_SERVICE);
         if (wm == null) {
-            cb.onFailed("拿不到 Wi-Fi 服务");
+            cb.onFailed(why.isEmpty() ? "拿不到 Wi-Fi 服务" : why);
             return;
         }
         try {
@@ -87,9 +116,9 @@ public final class DirectHotspot {
                     String ssid = ssidOf(r);
                     String pass = passwordOf(r);
                     if (ssid == null || ssid.isEmpty()) {
-                        // 拿不到名字，二维码就没法带入网信息，这时候开着它没意义
+                        // 拿不到名字，二维码就没法带入网信息，开着它没意义
                         stop();
-                        main.post(() -> cb.onFailed("系统没给出热点名称"));
+                        main.post(() -> cb.onFailed(why.isEmpty() ? "系统没给出热点名称" : why));
                         return;
                     }
                     main.post(() -> cb.onStarted(ssid, pass == null ? "" : pass));
@@ -99,8 +128,13 @@ public final class DirectHotspot {
                 public void onFailed(int reason) {
                     Log.w(TAG, "local only hotspot failed " + reason);
                     reservation = null;
-                    // 这台 ROM 不给开热点，还剩 Wi-Fi Direct 一条路
-                    main.post(() -> startWifiDirect(explain(reason), cb));
+                    // 两条都失败时，两句都要说：只报第一条，用户会以为
+                    // 还有别的办法没试过；只报第二条，又丢掉了更准的那句
+                    // （「这台手机不支持 Wi-Fi 直连」）。
+                    final String msg = why.isEmpty()
+                            ? explain(reason)
+                            : why + "；" + explain(reason);
+                    main.post(() -> cb.onFailed(msg));
                 }
 
                 @Override
@@ -110,67 +144,9 @@ public final class DirectHotspot {
                 }
             }, main);
         } catch (SecurityException e) {
-            // 没给定位/附近设备权限
             cb.onFailed("要先允许「位置/附近的设备」权限，系统才肯开热点");
         } catch (IllegalStateException e) {
-            startWifiDirect("这台手机现在开不了直连热点：" + e.getMessage(), cb);
-        }
-    }
-
-    // -------------------------------------------------------- Wi-Fi Direct 兜底
-
-    /**
-     * 自己当 Wi-Fi Direct 的组主。
-     *
-     * <p>组主就是一个普通 AP，名字和密码都读得到 —— 写进二维码之后，
-     * 对面（安卓或 iPhone）当成一个普通 Wi-Fi 连进来就行，
-     * 它完全不需要知道这是 Wi-Fi Direct。
-     *
-     * @param why 上一条路失败的原因；这条也不成时，报给用户的是这句话。
-     */
-    @SuppressLint("MissingPermission")
-    private void startWifiDirect(String why, Callback cb) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            // 拿不到组密码，码里就没法带入网信息，这条路等于没有
-            cb.onFailed(why);
-            return;
-        }
-        WifiP2pManager m = (WifiP2pManager) app.getSystemService(Context.WIFI_P2P_SERVICE);
-        if (m == null) {
-            cb.onFailed(why);
-            return;
-        }
-        final WifiP2pManager.Channel ch = m.initialize(app, Looper.getMainLooper(), null);
-        if (ch == null) {
-            cb.onFailed(why);
-            return;
-        }
-        try {
-            m.createGroup(ch, new WifiP2pManager.ActionListener() {
-                @Override
-                public void onSuccess() {
-                    p2p = m;
-                    p2pChannel = ch;
-                    m.requestGroupInfo(ch, group -> {
-                        String ssid = group == null ? null : group.getNetworkName();
-                        String pass = group == null ? null : group.getPassphrase();
-                        if (ssid == null || ssid.isEmpty()) {
-                            stop();
-                            cb.onFailed(why);
-                            return;
-                        }
-                        cb.onStarted(ssid, pass == null ? "" : pass);
-                    });
-                }
-
-                @Override
-                public void onFailure(int reason) {
-                    Log.w(TAG, "createGroup failed " + reason);
-                    cb.onFailed(why);
-                }
-            });
-        } catch (SecurityException e) {
-            cb.onFailed("要先允许「位置/附近的设备」权限，系统才肯开直连");
+            cb.onFailed(why.isEmpty() ? "这台手机现在开不了直连热点：" + e.getMessage() : why);
         }
     }
 
@@ -182,16 +158,10 @@ public final class DirectHotspot {
             }
             reservation = null;
         }
-        if (p2p != null && p2pChannel != null) {
-            try {
-                // 不删组的话，这台手机会一直挂着一个 DIRECT-xx 热点，
-                // 用户回到主屏也上不了网，而界面上已经没有任何地方提到它了
-                p2p.removeGroup(p2pChannel, null);
-            } catch (Exception ignored) {
-            }
+        if (group != null) {
+            group.stop();
+            group = null;
         }
-        p2p = null;
-        p2pChannel = null;
     }
 
     @SuppressWarnings("deprecation")
