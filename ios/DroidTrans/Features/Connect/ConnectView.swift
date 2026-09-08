@@ -194,10 +194,32 @@ struct ConnectView: View {
 
     /// 桌面端二维码里是 http://ip:9500/?c=187931 —— 地址后面挂着配对码，
     /// 扫一下就能连上并配好，用户不用再手输那六位。
+    ///
+    /// 手机接收端的码里还可能带着它开的直连热点（s/k）：那就先把网连上。
+    /// 不然「扫一下就能传」在没有路由器的场合只是句空话 —— 用户还得退出 App、
+    /// 去设置里翻热点、手输一串随机密码。
     private func handleScan(_ payload: String) async {
-        let code = URLComponents(string: payload)?
-            .queryItems?.first(where: { $0.name == "c" })?.value
-        await app.connect(toAddress: payload, pairingCode: code)
+        guard let link = PeerLink.parse(payload) else {
+            app.error = L("error.badAddress", payload)
+            return
+        }
+        var joinFailure: String?
+        if link.hasHotspot {
+            do {
+                try await HotspotJoin.join(ssid: link.ssid, password: link.password)
+            } catch {
+                // 连不上也照样往下走：用户可能本来就在同一个网里，
+                // 这时候码里的地址依然是通的，不该在这儿把人拦下。
+                // 这句话留到真的连不上时再说 —— 连上了还弹一句「没能自动入网」
+                // 只会让人以为出了什么事。
+                joinFailure = error.localizedDescription
+            }
+        }
+        await app.connect(toAddress: link.baseURL,
+                          pairingCode: link.code.isEmpty ? nil : link.code)
+        if app.error != nil, let joinFailure {
+            app.error = joinFailure
+        }
     }
 }
 

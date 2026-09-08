@@ -7,6 +7,7 @@
 /// 好处是发送方一行都不用改：接收方通告的是同一个 _droidtrans._tcp、
 /// 说的是同一套 HTTP 口，雷达把它当成一台「电脑」照常连。
 
+import CoreImage
 import SwiftUI
 
 struct PeerView: View {
@@ -169,6 +170,24 @@ struct PeerView: View {
         }
     }
 
+    // MARK: - 二维码
+
+    /// 用 CoreImage 画码。没有引第三方库：这一个功能不值得多一个依赖。
+    ///
+    /// CIQRCodeGenerator 出的图只有几十像素，直接放大会糊成一片，
+    /// 所以先按整数倍放大再交给 SwiftUI（配合 .interpolation(.none)，边缘才是硬的）。
+    private func qrImage(for payload: String) -> UIImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(payload.utf8), forKey: "inputMessage")
+        // M 级容错：码里有 SSID 和密码时内容不短，纠错级别再高会把格子压得太密
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let out = filter.outputImage else { return nil }
+        let scaled = out.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+        let ctx = CIContext()
+        guard let cg = ctx.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+
     // MARK: - 正在接收
 
     private var receiveScreen: some View {
@@ -193,6 +212,28 @@ struct PeerView: View {
                 .padding(.horizontal, Space.xl)
                 .padding(.top, Space.s)
 
+            // 二维码：对面扫一下，「找到这台」和「连上它的网」两步一起走完。
+            // 没有码的话，对面要么指望组播扫得到（路由器一拦就没了），
+            // 要么手输 IP 加端口。
+            if let ip = peer.localIP, peer.running,
+               let img = qrImage(for: PeerLink.encode(
+                    host: ip, port: peer.boundPort,
+                    code: peer.pairingCode, name: Store.shared.deviceName)) {
+                Image(uiImage: img)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 180, height: 180)
+                    .padding(Space.s)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.top, Space.m)
+                    .accessibilityIdentifier("peer-qr")
+
+                Text(L("peer.qrHint"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.ink2)
+            }
+
             Spacer(minLength: Space.l)
 
             // 地址和配对码是兜底，不是主路。
@@ -204,7 +245,9 @@ struct PeerView: View {
                         .font(.system(size: 11.5))
                         .foregroundStyle(Color.ink3)
                     if let ip = peer.localIP {
-                        Text("\(ip):\(Ports.peer)   \(spaced(peer.pairingCode))")
+                        // 端口按实际绑上的那个来：9600 被占时服务端会退到系统分配的端口，
+                        // 这里还写死 9600 的话，手输地址那条兜底路指向的是一个没人听的端口
+                        Text("\(ip):\(peer.boundPort)   \(spaced(peer.pairingCode))")
                             .font(.system(size: 13, design: .monospaced))
                             .foregroundStyle(Color.ink2)
                             .accessibilityIdentifier("peer-code")

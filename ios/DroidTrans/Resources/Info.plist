@@ -35,6 +35,8 @@
 	<string>扫描电脑上显示的二维码完成配对。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>卓传需要在局域网里找到你的电脑，才能直接传文件。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>加入对方手机的直连热点时，系统要求 App 具备此权限才能读取当前 Wi-Fi 名称。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>把电脑传过来的照片保存到相册。</string>
 	<key>NSPhotoLibraryUsageDescription</key>

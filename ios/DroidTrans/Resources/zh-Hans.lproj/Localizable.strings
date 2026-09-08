@@ -272,6 +272,8 @@ Pro 解锁以下功能。";
 "peer.knock.title" = "想连过来";
 "peer.knock.allow" = "同意";
 "peer.knock.deny" = "拒绝";
+"peer.qrHint" = "让对面用「扫码」扫这个";
+"hotspot.manual" = "没能自动连上，请手动连接 Wi-Fi「%@」后重试";
 "peer.codeFallback" = "连不上？让对方手输地址和这个码";
 "peer.tapToAccept" = "对方在他那台上点到你，你这边会弹一下，同意就通了。";
 "peer.err.port" = "端口被占用，换个网络或重启 App 再试";

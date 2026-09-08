@@ -3,6 +3,7 @@ package com.mk.androidtransfer.network;
 import android.net.Uri;
 import android.util.Log;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -12,13 +13,26 @@ import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * 探测电脑端开放的通道，按速度优先级自动选：TCP > FTP > HTTP PUT > multipart。
  */
 public class ProtocolSelector {
     private static final String TAG = "ProtocolSelector";
+    /** 连一个端口通不通，判死得快一点没关系 —— 通的那条毫秒级就回来了。 */
     private static final int PROBE_MS = 400;
+
+    /**
+     * 问对面「你支持哪些通道」的超时。
+     *
+     * <p>原来和端口探测共用 400ms，太紧了：热点、弱信号下一次 HTTP 往返
+     * 超过 400ms 很常见，于是探测失败 → 退到 http_multipart，
+     * 而**手机接收端根本没实现 multipart**（只有 /api/fast/put），
+     * 结果是 404，用户看到「传输失败」。
+     */
+    private static final int CAPS_MS = 2500;
 
     public static class Choice {
         public final TransferProtocol protocol;
@@ -44,11 +58,13 @@ public class ProtocolSelector {
         int ftpPort = 9502;
 
         boolean capsOk = false;
+        // 对面自己报的通道清单。手机只报 http_put —— 它没有 ATF3 裸流也没有 FTP。
+        Set<String> prefer = new LinkedHashSet<>();
         try {
             HttpURLConnection conn = (HttpURLConnection) new java.net.URL(
                     serverUrl.replaceAll("/+$", "") + "/api/fast/caps").openConnection();
-            conn.setConnectTimeout(PROBE_MS);
-            conn.setReadTimeout(PROBE_MS);
+            conn.setConnectTimeout(CAPS_MS);
+            conn.setReadTimeout(CAPS_MS);
             conn.setRequestMethod("GET");
             if (conn.getResponseCode() == 200) {
                 capsOk = true;
@@ -62,21 +78,32 @@ public class ProtocolSelector {
                 JSONObject json = new JSONObject(new String(bos.toByteArray(), StandardCharsets.UTF_8));
                 tcpPort = json.optInt("tcp_port", tcpPort);
                 ftpPort = json.optInt("ftp_port", ftpPort);
+                JSONArray list = json.optJSONArray("prefer");
+                for (int i = 0; list != null && i < list.length(); i++) {
+                    prefer.add(list.optString(i, ""));
+                }
             }
             conn.disconnect();
         } catch (Exception e) {
             Log.w(TAG, "caps 探测失败，用默认端口", e);
         }
 
-        if (canConnect(host, tcpPort)) {
+        // 对面说了它支持什么，就别再去敲它明说没有的端口 —— 那是两次
+        // 白等的连接超时，用户只看得到「连上了但半天不动」。
+        boolean allowTcp = prefer.isEmpty() || prefer.contains("tcp");
+        boolean allowFtp = prefer.isEmpty() || prefer.contains("ftp");
+
+        if (allowTcp && canConnect(host, tcpPort)) {
             return new Choice(TransferProtocol.TCP, host, httpPort, tcpPort, ftpPort);
         }
-        if (canConnect(host, ftpPort)) {
+        if (allowFtp && canConnect(host, ftpPort)) {
             return new Choice(TransferProtocol.FTP, host, httpPort, tcpPort, ftpPort);
         }
-        if (capsOk) {
+        if (capsOk || httpPort == PeerServer.PORT) {
             return new Choice(TransferProtocol.HTTP_PUT, host, httpPort, tcpPort, ftpPort);
         }
+        // multipart 只剩下一个用处：老版本的桌面端。手机接收端没有这个口，
+        // 走到这儿就是 404，所以上面那一行专门把手机的端口挡在前面。
         return new Choice(TransferProtocol.HTTP_MULTIPART, host, httpPort, tcpPort, ftpPort);
     }
 

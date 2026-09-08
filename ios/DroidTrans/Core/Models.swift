@@ -113,7 +113,8 @@ struct Desktop: Identifiable, Equatable {
 
     /// 同一台电脑换了端口就是另一个入口，所以 id 要带上端口
     var id: String { "\(host):\(port)" }
-    var baseURL: String { "http://\(host):\(port)" }
+    // IPv6（AWDL 直连给的就是它）要方括号加 %25 作用域，见 urlHost
+    var baseURL: String { "http://\(urlHost(host)):\(port)" }
 
     static func == (a: Desktop, b: Desktop) -> Bool {
         a.host == b.host && a.port == b.port

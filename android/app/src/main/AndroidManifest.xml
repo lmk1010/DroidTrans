@@ -10,6 +10,14 @@
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="33" />
+    <!-- 直连热点（接收端自己拉一个）和扫码自动入网（发送端连过去）都要改 Wi-Fi 状态 -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- LocalOnlyHotspot 被 ROM 拒掉时退到 Wi-Fi Direct 自建组 -->
+    <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
+    <!-- Android 12 及以下，系统要定位权限才肯开 LocalOnlyHotspot；
+         13 起由上面的 NEARBY_WIFI_DEVICES 接手，所以这里封顶到 32。 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32" />
 
     <!-- 扫码连接 -->
     <uses-permission android:name="android.permission.CAMERA" />

@@ -77,9 +77,14 @@ extension ServiceResolver: NetServiceDelegate {
     }
 
     /// 一个服务可能通告多个地址（IPv4 / IPv6 / 链路本地）。
-    /// 链路本地的 169.254 和 fe80 连不到桌面端，得排掉。
+    ///
+    /// 优先普通 IPv4，其次普通 IPv6，最后才是 fe80 链路本地 ——
+    /// **链路本地不能再直接丢掉**：AWDL（两台 iPhone 不经路由器直连）
+    /// 通告的只有 fe80::…%awdl0，丢了它，点对点这条路就永远是空列表。
+    /// 169.254 仍然排掉：那是 Wi-Fi 没拿到 DHCP 时的自说自话，连不到任何人。
     private nonisolated static func firstUsableIPv4(of svc: NetService) -> String? {
         var fallback: String?
+        var linkLocal: String?
         for data in svc.addresses ?? [] {
             let addr: String? = data.withUnsafeBytes { raw -> String? in
                 guard let base = raw.baseAddress else { return nil }
@@ -95,12 +100,18 @@ extension ServiceResolver: NetServiceDelegate {
             ip = ip.components(separatedBy: "%").first ?? ip
 
             if ip.hasPrefix("127.") || ip == "::1" { continue }
-            if ip.hasPrefix("169.254.") || ip.lowercased().hasPrefix("fe80") { continue }
+            if ip.hasPrefix("169.254.") { continue }
 
             // 普通 IPv4 优先。IPv6 留着当备选，总比没有强
             if !ip.contains(":") { return ip }
+            if ip.lowercased().hasPrefix("fe80") {
+                // 链路本地必须带上 %en0 / %awdl0 作用域，不然内核不知道走哪张网卡。
+                // 上面那句 components(separatedBy: "%") 会把它切掉，所以这里用原样的。
+                if linkLocal == nil { linkLocal = addr }
+                continue
+            }
             if fallback == nil { fallback = ip }
         }
-        return fallback
+        return fallback ?? linkLocal
     }
 }

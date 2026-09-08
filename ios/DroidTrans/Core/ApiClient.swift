@@ -43,7 +43,8 @@ actor ApiClient {
     // MARK: - 底层
 
     private func request(_ path: String, method: String, body: Any? = nil,
-                         query: [String: String] = [:]) throws -> URLRequest {
+                         query: [String: String] = [:],
+                         timeout: TimeInterval? = nil) throws -> URLRequest {
         guard var comps = URLComponents(string: baseURL + path) else {
             throw ApiError(L("error.badAddress", path))
         }
@@ -59,6 +60,9 @@ actor ApiClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
+        // 默认 8 秒是给「问一句就该有答案」的接口定的。要等人动手指的那种
+        // （敲门），必须自己把这个数字放宽，见 pair()。
+        if let timeout { req.timeoutInterval = timeout }
         return req
     }
 
@@ -117,17 +121,24 @@ actor ApiClient {
         if let deviceId { q["device_id"] = deviceId }
         if let deviceName { q["device_name"] = deviceName }
         let j = try await send(try request("/api/wifi/info", method: "GET", query: q))
-        let host = URL(string: baseURL)?.host ?? baseURL
+        let host = plainHost(URL(string: baseURL)?.host ?? baseURL)
         return Desktop.fromWifiInfo(host: host, json: j)
     }
 
     /// 拿配对码换长期令牌。换到之后要自己存起来并调 setToken。
+    ///
+    /// 码留空 = 敲门：对面会把这条请求挂起来，弹框问它的主人同不同意。
+    /// 那要等一个人看到通知、拿起手机、点一下，**8 秒根本不够** ——
+    /// 用默认超时的话，对面点了同意这边早就报「连不上」了，
+    /// 而弹窗还开着，用户看到的是「明明点了同意，还是连不上」。
+    /// 对面最多挂 45 秒（两端 PeerServer 都是这个数），这里给到 60 秒兜住它。
     func pair(code: String, deviceId: String, deviceName: String) async throws -> String {
+        let knocking = code.trimmingCharacters(in: .whitespaces).isEmpty
         let j = try await send(try request("/api/pair", method: "POST", body: [
             "code": code,
             "device_id": deviceId,
             "device_name": deviceName,
-        ]))
+        ], timeout: knocking ? 60 : nil))
         guard let t = j["token"] as? String, !t.isEmpty else {
             throw ApiError(L("error.noToken"))
         }

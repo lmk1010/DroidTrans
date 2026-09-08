@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- 扫码自动入网：NEHotspotConfiguration 要这项能力才签得进去。
+	     还要在 Apple 开发者后台给这个 App ID 勾上 Hotspot Configuration，
+	     否则真机构建会卡在「描述文件缺少该权限」。 -->
+	<key>com.apple.developer.networking.HotspotConfiguration</key>
+	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.life.mkstore.droidtrans</string>

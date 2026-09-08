@@ -274,6 +274,29 @@ public class MainActivity extends AppCompatActivity {
 
     /** 扫到的内容形如 http://192.168.1.5:9500/?c=123456，也接受纯 IP。 */
     private void onScanned(String text) {
+        // 手机接收端的码里还带着直连热点的 SSID 和密码，先把网连上再谈连设备
+        com.mk.androidtransfer.network.PeerLink link =
+                com.mk.androidtransfer.network.PeerLink.parse(text);
+        if (link != null && link.hasHotspot()) {
+            Toast.makeText(this, R.string.peer_scan_joining, Toast.LENGTH_SHORT).show();
+            final String rest = com.mk.androidtransfer.network.PeerLink.encode(
+                    link.host, link.port, link.code, link.name, null, null);
+            com.mk.androidtransfer.network.WifiJoiner.get(this).join(link.ssid, link.password,
+                    new com.mk.androidtransfer.network.WifiJoiner.Callback() {
+                        @Override
+                        public void onJoined() {
+                            onScanned(rest);
+                        }
+
+                        @Override
+                        public void onFailed(String msg) {
+                            // 没连上也往下走：用户可能本来就在同一个网里
+                            Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
+                            onScanned(rest);
+                        }
+                    });
+            return;
+        }
         String content = text == null ? "" : text.trim();
         if (content.isEmpty() || (!content.startsWith("http://") && !content.matches("^[0-9a-fA-F:.]+(:\\d+)?$"))) {
             Toast.makeText(this, R.string.scan_bad, Toast.LENGTH_LONG).show();
@@ -580,19 +603,28 @@ public class MainActivity extends AppCompatActivity {
         if (bonjour == null) {
             bonjour = new BonjourBrowser(this);
         }
-        bonjour.start((name, host, port) -> {
-            int p = port > 0 ? port : DEFAULT_PORT;
-            if (executorService == null) {
-                return;
-            }
-            executorService.execute(() -> {
-                if (!probeServer(host, p)) {
+        bonjour.start(new BonjourBrowser.Listener() {
+            @Override
+            public void onFound(String name, String host, int port) {
+                int p = port > 0 ? port : DEFAULT_PORT;
+                if (executorService == null) {
                     return;
                 }
-                String label = (name != null && !name.isEmpty()) ? name : host;
-                ServerInfo server = new ServerInfo(label, host, p);
-                mainHandler.post(() -> addDiscovered(server));
-            });
+                executorService.execute(() -> {
+                    if (!probeServer(host, p)) {
+                        return;
+                    }
+                    String label = (name != null && !name.isEmpty()) ? name : host;
+                    ServerInfo server = new ServerInfo(label, host, p);
+                    mainHandler.post(() -> addDiscovered(server));
+                });
+            }
+
+            @Override
+            public void onLost(String name) {
+                // 这一屏的列表是「历史连过的电脑」，不是实时雷达 ——
+                // 对面一时不广播就把它从首页抹掉，用户下次开机会找不到熟悉的那台。
+            }
         });
     }
 

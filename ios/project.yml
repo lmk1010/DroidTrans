@@ -64,6 +64,9 @@ targets:
         NSPhotoLibraryUsageDescription: 选择要传到电脑的照片和视频。
         NSPhotoLibraryAddUsageDescription: 把电脑传过来的照片保存到相册。
         NSCameraUsageDescription: 扫描电脑上显示的二维码完成配对。
+        # ---- 扫码自动入网 ----
+        # 扫到另一台手机的直连热点时，系统会拿这句话问用户同不同意加入。
+        NSLocationWhenInUseUsageDescription: 加入对方手机的直连热点时，系统要求 App 具备此权限才能读取当前 Wi-Fi 名称。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: life.mkstore.droidtrans

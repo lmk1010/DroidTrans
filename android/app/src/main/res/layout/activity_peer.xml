@@ -227,6 +227,30 @@
                     android:textColor="@color/ink2"
                     android:textSize="14sp" />
 
+                <!-- 二维码：对面扫一下就走完「找到这台 + 连上它的网」两步。
+                     码里是 http://ip:port/?c=六位码，开了直连热点时还带 SSID 和密码。 -->
+                <ImageView
+                    android:id="@+id/recvQr"
+                    android:layout_width="190dp"
+                    android:layout_height="190dp"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="18dp"
+                    android:background="@android:color/white"
+                    android:contentDescription="@string/peer_qr_hint"
+                    android:padding="8dp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/recvQrHint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/peer_qr_hint"
+                    android:textColor="@color/ink2"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+
                 <!-- 配对码。对面连过来时会问它要这六位 -->
                 <LinearLayout
                     android:layout_width="wrap_content"
@@ -279,6 +303,28 @@
                     android:fontFamily="monospace"
                     android:textColor="@color/ink2"
                     android:textSize="13sp" />
+
+                <!-- 没有路由器时的那条路：这台自己拉一个热点，SSID/密码直接进二维码 -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDirect"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="18dp"
+                    android:text="@string/peer_direct" />
+
+                <TextView
+                    android:id="@+id/recvHotspot"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="32dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginEnd="32dp"
+                    android:gravity="center"
+                    android:textColor="@color/ink3"
+                    android:textSize="12.5sp"
+                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/recvError"

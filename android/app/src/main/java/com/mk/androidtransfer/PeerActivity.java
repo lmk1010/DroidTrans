@@ -19,6 +19,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.mk.androidtransfer.network.DirectHotspot;
+import com.mk.androidtransfer.network.PeerLink;
 import com.mk.androidtransfer.network.PeerServer;
 
 import java.io.File;
@@ -40,8 +42,15 @@ public class PeerActivity extends AppCompatActivity {
     public static final String KIND_IPHONE = "iphone";
     public static final String KIND_ANDROID = "android";
 
+    private static final int REQ_HOTSPOT_PERM = 4101;
+
     private PeerServer server;
+    private DirectHotspot hotspot;
     private String kind = KIND_ANDROID;
+
+    /** 直连热点的名字和密码。开着才有值，它们要一起进二维码。 */
+    private String hotspotSsid = "";
+    private String hotspotPass = "";
 
     private View roleGroup;
     private View connectedGroup;
@@ -61,6 +70,10 @@ public class PeerActivity extends AppCompatActivity {
     private TextView doneFiles;
     private TextView doneText;
     private ImageView receiveArt;
+    private ImageView recvQr;
+    private TextView recvQrHint;
+    private TextView recvHotspot;
+    private com.google.android.material.button.MaterialButton btnDirect;
     private AnimatorSet receiveAnimator;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable finishAfterIdle = this::finishReceiving;
@@ -103,6 +116,13 @@ public class PeerActivity extends AppCompatActivity {
         doneFiles = findViewById(R.id.doneFiles);
         doneText = findViewById(R.id.doneText);
         receiveArt = findViewById(R.id.receiveArt);
+        recvQr = findViewById(R.id.recvQr);
+        recvQrHint = findViewById(R.id.recvQrHint);
+        recvHotspot = findViewById(R.id.recvHotspot);
+        btnDirect = findViewById(R.id.btnDirect);
+        hotspot = new DirectHotspot(this);
+        btnDirect.setVisibility(DirectHotspot.isSupported() ? View.VISIBLE : View.GONE);
+        btnDirect.setOnClickListener(v -> toggleHotspot());
 
         boolean iphone = KIND_IPHONE.equals(kind);
         ((ImageView) findViewById(R.id.roleIcon))
@@ -156,6 +176,7 @@ public class PeerActivity extends AppCompatActivity {
                     } else {
                         recvAddr.setText(R.string.peer_need_wifi);
                     }
+                    refreshQr();
                 }
             }
 
@@ -187,6 +208,121 @@ public class PeerActivity extends AppCompatActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
+    // ------------------------------------------------------------------ 二维码
+
+    /**
+     * 把「连上这台」需要的一切画成一张码：地址、端口、六位码，
+     * 开了直连热点时再加上 SSID 和密码。
+     *
+     * <p>没有码的时候，对面要么指望组播扫得到（路由器一拦就没了），
+     * 要么手输一串 IP 和端口 —— 而现在还要再手输一串随机热点密码。
+     */
+    private void refreshQr() {
+        String ip = server.localIp();
+        if (ip == null || !server.isRunning()) {
+            recvQr.setVisibility(View.GONE);
+            recvQrHint.setVisibility(View.GONE);
+            return;
+        }
+        String payload = PeerLink.encode(ip, server.getBoundPort(),
+                server.getPairingCode(), deviceName(),
+                hotspotSsid.isEmpty() ? null : hotspotSsid,
+                hotspotSsid.isEmpty() ? null : hotspotPass);
+        try {
+            int px = dp(190);
+            com.google.zxing.common.BitMatrix m = new com.google.zxing.MultiFormatWriter()
+                    .encode(payload, com.google.zxing.BarcodeFormat.QR_CODE, px, px);
+            recvQr.setImageBitmap(
+                    new com.journeyapps.barcodescanner.BarcodeEncoder().createBitmap(m));
+            recvQr.setVisibility(View.VISIBLE);
+            recvQrHint.setVisibility(View.VISIBLE);
+        } catch (Exception e) {
+            // 画不出来就当没有这条路，地址和六位码还在下面摆着
+            recvQr.setVisibility(View.GONE);
+            recvQrHint.setVisibility(View.GONE);
+        }
+    }
+
+    // ------------------------------------------------------------------ 直连热点
+
+    /**
+     * 没有路由器时，这台自己拉一个热点，名字和密码直接进二维码。
+     *
+     * <p>系统的 LocalOnlyHotspot 要「附近的设备」（Android 13 起）或定位权限，
+     * 没有它系统会直接抛 SecurityException，所以先要权限再开。
+     */
+    private void toggleHotspot() {
+        if (hotspot.isRunning()) {
+            hotspot.stop();
+            hotspotSsid = "";
+            hotspotPass = "";
+            btnDirect.setText(R.string.peer_direct);
+            recvHotspot.setVisibility(View.GONE);
+            refreshQr();
+            return;
+        }
+        String need = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? android.Manifest.permission.NEARBY_WIFI_DEVICES
+                : android.Manifest.permission.ACCESS_FINE_LOCATION;
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, need)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            androidx.core.app.ActivityCompat.requestPermissions(this,
+                    new String[]{need}, REQ_HOTSPOT_PERM);
+            return;
+        }
+        startHotspot();
+    }
+
+    private void startHotspot() {
+        hotspot.start(new DirectHotspot.Callback() {
+            @Override
+            public void onStarted(String ssid, String password) {
+                hotspotSsid = ssid;
+                hotspotPass = password;
+                btnDirect.setText(R.string.peer_direct_stop);
+                recvHotspot.setText(getString(R.string.peer_direct_on, ssid));
+                recvHotspot.setVisibility(View.VISIBLE);
+                // 热点起来之后本机地址会变成热点网段的那个，码必须重画
+                refreshQr();
+            }
+
+            @Override
+            public void onFailed(String msg) {
+                hotspotSsid = "";
+                hotspotPass = "";
+                btnDirect.setText(R.string.peer_direct);
+                recvHotspot.setText(msg);
+                recvHotspot.setVisibility(View.VISIBLE);
+                refreshQr();
+            }
+
+            @Override
+            public void onStopped() {
+                hotspotSsid = "";
+                hotspotPass = "";
+                btnDirect.setText(R.string.peer_direct);
+                recvHotspot.setVisibility(View.GONE);
+                refreshQr();
+            }
+        });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_HOTSPOT_PERM) {
+            return;
+        }
+        if (grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startHotspot();
+        } else {
+            recvHotspot.setText(R.string.peer_direct_need_perm);
+            recvHotspot.setVisibility(View.VISIBLE);
+        }
+    }
+
     private void showConnected(String name) {
         connectedName.setText(name);
         roleGroup.setVisibility(View.GONE);
@@ -201,6 +337,12 @@ public class PeerActivity extends AppCompatActivity {
         main.removeCallbacks(finishAfterIdle);
         stopReceiveAnimation();
         server.stop();
+        // 热点是为这次接收开的，接收停了还留着它，这台手机就一直上不了网
+        hotspot.stop();
+        hotspotSsid = "";
+        hotspotPass = "";
+        btnDirect.setText(R.string.peer_direct);
+        recvHotspot.setVisibility(View.GONE);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         connectedGroup.setVisibility(View.GONE);
         recvGroup.setVisibility(View.GONE);
@@ -319,6 +461,7 @@ public class PeerActivity extends AppCompatActivity {
         stopReceiveAnimation();
         super.onDestroy();
         server.stop();
+        hotspot.stop();
     }
 
     // ------------------------------------------------------------------ 小工具

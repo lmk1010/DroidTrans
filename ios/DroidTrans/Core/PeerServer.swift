@@ -119,9 +119,13 @@ final class PeerServer: ObservableObject {
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
-            // 同一个 Wi-Fi 下就够了，不开点对点 —— 开了会在没有 Wi-Fi 时
-            // 悄悄走 AWDL，对面能连上但网段对不上，排查起来很痛苦
-            params.includePeerToPeer = false
+            // 开点对点（AWDL）：没有路由器的场合，两台 iPhone 直接就能互相看见 ——
+            // 这正是这个 App 最该好用的场合。
+            //
+            // 代价要认：这时候对面拿到的是 fe80::…%awdl0 这种链路本地地址，
+            // 和 Wi-Fi 网段对不上，排查「为什么连的是这个地址」会绕一下；
+            // 界面上那条兜底地址给的仍然是 Wi-Fi/热点的 IPv4，手输那条路不受影响。
+            params.includePeerToPeer = true
 
             let port = requestedPort == 0
                 ? NWEndpoint.Port.any

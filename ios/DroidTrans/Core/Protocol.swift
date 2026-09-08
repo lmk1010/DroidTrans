@@ -148,6 +148,25 @@ func u32be(from data: Data) -> UInt32 {
 
 // MARK: - 地址
 
+/// IPv6 地址拼进 URL 要加方括号；链路本地还带一个 %en0 / %awdl0 作用域，
+/// 那个百分号在 URL 里必须写成 %25，否则整条 URL 解析失败。
+///
+/// AWDL（iPhone 之间不经路由器直连）给出的**只有**链路本地地址，
+/// 所以这条路能不能走通，全看这个函数。
+func urlHost(_ host: String) -> String {
+    guard host.contains(":") else { return host }   // 普通 IPv4
+    return "[" + host.replacingOccurrences(of: "%", with: "%25") + "]"
+}
+
+/// 反过来：从 URL 那种写法还原成裸地址，用作 id 和显示。
+func plainHost(_ raw: String) -> String {
+    var h = raw
+    if h.hasPrefix("["), h.hasSuffix("]") {
+        h = String(h.dropFirst().dropLast())
+    }
+    return h.replacingOccurrences(of: "%25", with: "%")
+}
+
 /// 把用户输入或二维码内容整理成 http://host:port。
 ///
 /// 接受 "192.168.1.5"、"192.168.1.5:9500"、"http://192.168.1.5:9500" 三种写法。
@@ -157,5 +176,6 @@ func normalizeAddress(_ raw: String) -> String? {
     if !s.contains("://") { s = "http://\(s)" }
     guard let u = URL(string: s), let host = u.host, !host.isEmpty else { return nil }
     let port = u.port ?? Ports.http
-    return "http://\(host):\(port)"
+    // URL.host 把 IPv6 的方括号剥掉了，直接拼回去会得到一条解析不了的地址
+    return "http://\(urlHost(plainHost(host))):\(port)"
 }

@@ -702,6 +702,11 @@ public final class PeerServer {
         if (name.startsWith("ap") || name.startsWith("softap") || name.startsWith("swlan")) {
             return 0;
         }
+        // Wi-Fi Direct 自建组时，对面连的是 p2p 那张网卡（192.168.49.1），
+        // 不认它的话「开了直连、二维码却说先连 Wi-Fi」
+        if (name.startsWith("p2p")) {
+            return 0;
+        }
         if (name.startsWith("wlan")) {
             return 1;
         }

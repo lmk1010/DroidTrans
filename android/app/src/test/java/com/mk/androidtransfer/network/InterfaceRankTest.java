@@ -23,6 +23,14 @@ public class InterfaceRankTest {
         assertTrue(PeerServer.interfaceRank("swlan0") < PeerServer.interfaceRank("wlan0"));
     }
 
+    /** Wi-Fi Direct 自建组时，对面连的是 p2p 那张网卡（192.168.49.1）。 */
+    @Test
+    public void wifiDirectInterfaceIsReported() {
+        assertTrue(PeerServer.interfaceRank("p2p-wlan0-0") >= 0);
+        assertTrue(PeerServer.interfaceRank("p2p-wlan0-0")
+                < PeerServer.interfaceRank("wlan0"));
+    }
+
     /** 蜂窝地址对面连不过来，报出去等于给用户一个死地址。 */
     @Test
     public void cellularIsNeverReported() {

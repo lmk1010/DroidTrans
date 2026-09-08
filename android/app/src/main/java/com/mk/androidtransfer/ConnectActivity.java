@@ -23,6 +23,9 @@ import com.journeyapps.barcodescanner.ScanOptions;
 import com.mk.androidtransfer.model.ServerInfo;
 import com.mk.androidtransfer.network.BonjourBrowser;
 import com.mk.androidtransfer.network.Pairing;
+import com.mk.androidtransfer.network.PeerLink;
+import com.mk.androidtransfer.network.PeerServer;
+import com.mk.androidtransfer.network.WifiJoiner;
 import com.mk.androidtransfer.widget.RadarScanView;
 
 import java.util.LinkedHashMap;
@@ -51,6 +54,8 @@ public class ConnectActivity extends AppCompatActivity {
     private final ExecutorService io = Executors.newCachedThreadPool();
     /** 已经出现在雷达上的电脑，按 ip:port 去重 */
     private final Map<String, ServerInfo> found = new LinkedHashMap<>();
+    /** Bonjour 服务名 → ip:port。服务消失时只给得到服务名，得靠它找回那个点。 */
+    private final Map<String, String> byService = new LinkedHashMap<>();
 
     private BonjourBrowser browser;
     private RadarScanView radar;
@@ -95,7 +100,17 @@ public class ConnectActivity extends AppCompatActivity {
         super.onStart();
         radar.startScanning();
         browser = new BonjourBrowser(this);
-        browser.start((name, host, port) -> main.post(() -> onFound(name, host, port)));
+        browser.start(new BonjourBrowser.Listener() {
+            @Override
+            public void onFound(String name, String host, int port) {
+                main.post(() -> ConnectActivity.this.onFound(name, host, port));
+            }
+
+            @Override
+            public void onLost(String name) {
+                main.post(() -> ConnectActivity.this.onLost(name));
+            }
+        });
     }
 
     @Override
@@ -112,6 +127,7 @@ public class ConnectActivity extends AppCompatActivity {
 
     private void onFound(String name, String host, int port) {
         String key = host + ":" + port;
+        byService.put(name, key);
         if (found.containsKey(key)) {
             return;
         }
@@ -138,6 +154,25 @@ public class ConnectActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * 对面不再广播了 —— 停了接收、退出了 App、或者离开了这个网络。
+     *
+     * <p>留在雷达上的话，用户点下去只会等到一个超时错误，
+     * 而他看到的是「明明在列表里，就是连不上」。
+     */
+    private void onLost(String serviceName) {
+        String key = byService.remove(serviceName);
+        if (key == null) {
+            return;
+        }
+        ServerInfo gone = found.remove(key);
+        if (gone == null) {
+            return;
+        }
+        radar.removeServerDot(gone.getIp());
+        refreshStatus();
+    }
+
     private void refreshStatus() {
         int n = found.size();
         if (n == 0) {
@@ -161,7 +196,7 @@ public class ConnectActivity extends AppCompatActivity {
      */
     private void connect(String baseUrl, String name) {
         io.execute(() -> {
-            String url = Pairing.normalize(baseUrl);
+            String url = resolvePort(Pairing.normalize(baseUrl));
             boolean needsPair;
             String mode;
             try {
@@ -203,21 +238,73 @@ public class ConnectActivity extends AppCompatActivity {
         });
     }
 
-    /** 电脑二维码里是 http://ip:9500/?c=187931 —— 地址后面挂着配对码。 */
-    private void handleScan(String payload) {
-        String code = null;
-        int q = payload.indexOf("c=");
-        if (q > 0) {
-            code = payload.substring(q + 2);
-            int amp = code.indexOf('&');
-            if (amp > 0) {
-                code = code.substring(0, amp);
+    /**
+     * 手输的地址没带端口时，替用户试出来。
+     *
+     * <p>不补的话请求会打到 80 端口 —— 那儿什么都没有，用户看到的是
+     * 「连不上」，而他输的 IP 完全正确。电脑在 9500，手机接收端在 9600，
+     * 两个都试一下，谁应声就是谁。
+     */
+    private String resolvePort(String hostPort) {
+        if (hostPort.contains(":")) {
+            return hostPort;
+        }
+        for (int port : new int[]{9500, PeerServer.PORT}) {
+            String candidate = hostPort + ":" + port;
+            if (!Pairing.engine("http://" + candidate).isEmpty()) {
+                return candidate;
             }
         }
-        String url = Pairing.normalize(payload);
+        // 都没应声：按电脑那个端口报错，错误信息里带的地址才是用户认得的
+        return hostPort + ":9500";
+    }
+
+    /**
+     * 扫到一个码。
+     *
+     * <p>码里可能有三样东西：地址、六位配对码，以及（对面开了直连热点时）
+     * 那个热点的 SSID 和密码。带网络信息的话先把网连上 —— 不然「扫一下就能传」
+     * 只是嘴上说说：用户还得退出 App、去设置里翻热点、手输一串随机密码。
+     */
+    private void handleScan(String payload) {
+        PeerLink link = PeerLink.parse(payload);
+        if (link == null) {
+            toast(getString(R.string.connect_failed));
+            return;
+        }
+        if (link.hasHotspot()) {
+            toast(getString(R.string.peer_scan_joining));
+            WifiJoiner.get(this).join(link.ssid, link.password, new WifiJoiner.Callback() {
+                @Override
+                public void onJoined() {
+                    toast(getString(R.string.peer_scan_joined));
+                    afterScan(link);
+                }
+
+                @Override
+                public void onFailed(String msg) {
+                    // 没连上也照样往下走：用户可能本来就在同一个网里，
+                    // 这时候码里的地址依然是通的，不该在这儿把人拦下
+                    toast(msg);
+                    afterScan(link);
+                }
+            });
+            return;
+        }
+        afterScan(link);
+    }
+
+    private void afterScan(PeerLink link) {
+        String url = link.baseUrl();
+        // 对面是手机（接收端口，或码里报了设备名）：走「点一下同意」那条路，
+        // 六位码在那边只是兜底，不该把用户推到一个要抄码的界面上去
+        if (link.port == PeerServer.PORT || !link.name.isEmpty()) {
+            connect(url, link.name.isEmpty() ? link.host : link.name);
+            return;
+        }
         Intent i = new Intent(this, PairActivity.class);
-        i.putExtra(HomeActivity.EXTRA_BASE_URL, url);
-        i.putExtra(PairActivity.EXTRA_CODE, code);
+        i.putExtra(HomeActivity.EXTRA_BASE_URL, Pairing.normalize(url));
+        i.putExtra(PairActivity.EXTRA_CODE, link.code.isEmpty() ? null : link.code);
         startActivity(i);
     }
 

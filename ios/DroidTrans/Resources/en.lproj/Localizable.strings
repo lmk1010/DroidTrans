@@ -272,6 +272,8 @@ Pro unlocks the following.";
 "peer.knock.title" = "wants to connect";
 "peer.knock.allow" = "Accept";
 "peer.knock.deny" = "Decline";
+"peer.qrHint" = "Scan this from the other phone";
+"hotspot.manual" = "Couldn't join automatically. Connect to the Wi-Fi network \"%@\" and try again.";
 "peer.codeFallback" = "Can't find each other? Have them type this address and code";
 "peer.tapToAccept" = "When they tap this device on their phone, you'll get a prompt here — accept and you're connected.";
 "peer.err.port" = "Port is busy — try again or restart the app";

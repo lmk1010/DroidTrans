@@ -448,6 +448,13 @@
     <string name="peer_addr">或让对面手输这个地址</string>
     <string name="peer_got">已收到</string>
     <string name="peer_stop">停止接收</string>
+    <string name="peer_qr_hint">让对面用「扫码」扫这个</string>
+    <string name="peer_direct">没有 Wi-Fi？开直连热点</string>
+    <string name="peer_direct_stop">关掉直连热点</string>
+    <string name="peer_direct_on">直连热点已开：%1$s。对面扫上面的码就会自动连过来，不用手输密码。这台手机在热点期间上不了网。</string>
+    <string name="peer_direct_need_perm">系统要先拿到「附近的设备/位置」权限才肯开热点</string>
+    <string name="peer_scan_joining">正在连对方的热点…</string>
+    <string name="peer_scan_joined">网连上了，正在找对方…</string>
     <string name="peer_need_wifi">先连上 Wi-Fi，两台要在同一个网络里</string>
     <string name="peer_back">回主界面</string>
     <string name="peer_done">传输完成</string>

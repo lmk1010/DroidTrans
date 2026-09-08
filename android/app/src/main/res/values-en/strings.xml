@@ -434,6 +434,13 @@ This path skips the router — usually faster and steadier than public Wi-Fi.</s
     <string name="peer_addr">Or enter this address on the other phone</string>
     <string name="peer_got">Received</string>
     <string name="peer_stop">Stop receiving</string>
+    <string name="peer_qr_hint">Scan this from the other phone</string>
+    <string name="peer_direct">No Wi-Fi? Start direct hotspot</string>
+    <string name="peer_direct_stop">Stop direct hotspot</string>
+    <string name="peer_direct_on">Direct hotspot is on: %1$s. Scanning the code above joins it automatically — no password to type. This phone has no internet while it runs.</string>
+    <string name="peer_direct_need_perm">Android needs the nearby devices / location permission before it will start a hotspot</string>
+    <string name="peer_scan_joining">Joining the other phone’s hotspot…</string>
+    <string name="peer_scan_joined">Connected. Looking for the other phone…</string>
     <string name="peer_need_wifi">Join Wi-Fi first. Both phones must use the same network.</string>
     <string name="peer_back">Back to start</string>
     <string name="peer_done">Transfer complete</string>
