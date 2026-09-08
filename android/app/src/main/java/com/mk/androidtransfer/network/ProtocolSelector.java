@@ -51,7 +51,15 @@ public class ProtocolSelector {
     }
 
     public static Choice select(String serverUrl) {
-        Uri uri = Uri.parse(serverUrl);
+        // 没有 scheme 的「host:port」在 Uri 眼里没有 host，于是一路退化到
+        // 127.0.0.1 —— 传输会去连本机，而用户看到的是
+        // 「Failed to connect to /127.0.0.1:9500」，完全看不出发生了什么。
+        // 这里把它补上，别让一个少写的 http:// 变成一条查不出的故障。
+        String raw = serverUrl == null ? "" : serverUrl.trim();
+        if (!raw.contains("://")) {
+            raw = "http://" + raw;
+        }
+        Uri uri = Uri.parse(raw);
         String host = uri.getHost() != null ? uri.getHost() : "127.0.0.1";
         int httpPort = uri.getPort() > 0 ? uri.getPort() : 9500;
         int tcpPort = 9501;
@@ -62,7 +70,7 @@ public class ProtocolSelector {
         Set<String> prefer = new LinkedHashSet<>();
         try {
             HttpURLConnection conn = (HttpURLConnection) new java.net.URL(
-                    serverUrl.replaceAll("/+$", "") + "/api/fast/caps").openConnection();
+                    raw.replaceAll("/+$", "") + "/api/fast/caps").openConnection();
             conn.setConnectTimeout(CAPS_MS);
             conn.setReadTimeout(CAPS_MS);
             conn.setRequestMethod("GET");

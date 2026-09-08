@@ -48,6 +48,12 @@ final class PeerServer: ObservableObject {
     private var knockWaiter: CheckedContinuation<String?, Never>?
     /// 已经收到的文件，界面上按顺序列出来
     @Published private(set) var received: [ReceivedFile] = []
+
+    /// 正在收的那个：名字、已收字节、总字节。
+    ///
+    /// 没有它，界面在整个文件落盘之前一个字都不动 —— 传一个大视频
+    /// 就是几十秒的死界面，用户会以为卡住了或者根本没连上。
+    @Published private(set) var incoming: (name: String, got: Int64, total: Int64)?
     @Published private(set) var lastError: String?
 
     struct ReceivedFile: Identifiable, Equatable {
@@ -83,17 +89,32 @@ final class PeerServer: ObservableObject {
     /// 连接那一侧要在非主线程上算分片路径，隔一次 MainActor 跳转没必要。
     nonisolated var inboxDir: URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("Inbox", isDirectory: true)
+        // 目录名不能叫 Inbox。
+        //
+        // `Documents/Inbox` 是 iOS 的保留目录：别的 App 通过「用其他应用打开」
+        // 递进来的文件由系统放在那儿，而系统只给 App 读和删的权限，**不允许写**。
+        // 真机上因此每一个文件都收不下，报的是
+        // 「你没有将文件“Inbox”存储到文件夹“Documents”中的权限」。
+        // 模拟器不执行这条限制，所以这个 bug 在模拟器上永远看不见。
+        let dir = base.appendingPathComponent("Received", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 
     // MARK: - 开关
 
+    /// 已经在监听就什么都不做。App 前台常驻监听走这条，
+    /// 免得每次切回前台都把正在进行的传输掐掉。
+    func startIfIdle() {
+        guard listener == nil else { return }
+        start()
+    }
+
     func start() {
         guard listener == nil else { return }
         lastError = nil
         received = []
+        incoming = nil
         connectedName = nil
         tokens = []
         pairingCode = Self.newCode()
@@ -246,7 +267,13 @@ final class PeerServer: ObservableObject {
 
     /// 只给 PeerConnection 用（拆到另一个文件了，所以不能 fileprivate）
     func note(_ f: ReceivedFile) {
+        incoming = nil
         received.append(f)
+    }
+
+    /// 收到一半时的进度。只给 PeerConnection 用。
+    func noteProgress(name: String, got: Int64, total: Int64) {
+        incoming = (name, got, total)
     }
 
     /// 本机在当前局域网下的地址。手输地址那条路要用它。

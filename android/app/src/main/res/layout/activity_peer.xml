@@ -231,13 +231,13 @@
                      码里是 http://ip:port/?c=六位码，开了直连热点时还带 SSID 和密码。 -->
                 <ImageView
                     android:id="@+id/recvQr"
-                    android:layout_width="190dp"
-                    android:layout_height="190dp"
+                    android:layout_width="176dp"
+                    android:layout_height="176dp"
                     android:layout_gravity="center_horizontal"
                     android:layout_marginTop="18dp"
-                    android:background="@android:color/white"
+                    android:background="@drawable/qr_card"
                     android:contentDescription="@string/peer_qr_hint"
-                    android:padding="8dp"
+                    android:padding="14dp"
                     android:visibility="gone" />
 
                 <TextView
@@ -249,6 +249,28 @@
                     android:text="@string/peer_qr_hint"
                     android:textColor="@color/ink2"
                     android:textSize="13sp"
+                    android:visibility="gone" />
+
+                <!-- 没有路由器时的那条路：这台自己拉一个热点，SSID/密码直接进二维码 -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDirect"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="18dp"
+                    android:text="@string/peer_direct" />
+
+                <TextView
+                    android:id="@+id/recvHotspot"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="32dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginEnd="32dp"
+                    android:gravity="center"
+                    android:textColor="@color/ink3"
+                    android:textSize="12.5sp"
                     android:visibility="gone" />
 
                 <!-- 配对码。对面连过来时会问它要这六位 -->
@@ -304,27 +326,6 @@
                     android:textColor="@color/ink2"
                     android:textSize="13sp" />
 
-                <!-- 没有路由器时的那条路：这台自己拉一个热点，SSID/密码直接进二维码 -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDirect"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center_horizontal"
-                    android:layout_marginTop="18dp"
-                    android:text="@string/peer_direct" />
-
-                <TextView
-                    android:id="@+id/recvHotspot"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="32dp"
-                    android:layout_marginTop="8dp"
-                    android:layout_marginEnd="32dp"
-                    android:gravity="center"
-                    android:textColor="@color/ink3"
-                    android:textSize="12.5sp"
-                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/recvError"
@@ -336,6 +337,17 @@
                     android:gravity="center"
                     android:textColor="@color/danger"
                     android:textSize="12.5sp"
+                    android:visibility="gone" />
+
+                <!-- 收到的文件逐个列在这儿，边收边更新 -->
+                <LinearLayout
+                    android:id="@+id/recvList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="18dp"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginEnd="18dp"
+                    android:orientation="vertical"
                     android:visibility="gone" />
 
                 <TextView

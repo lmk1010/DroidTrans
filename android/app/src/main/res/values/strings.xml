@@ -448,6 +448,14 @@
     <string name="peer_addr">或让对面手输这个地址</string>
     <string name="peer_got">已收到</string>
     <string name="peer_stop">停止接收</string>
+    <string name="peer_knock_body">同意之后它就能把东西传到这台手机上。名字是对方自己报的，认不出来就别同意。</string>
+    <string name="peer_someone">对方设备</string>
+    <string name="peer_row_receiving">正在收 %1$s / %2$s</string>
+    <string name="peer_row_done">已收下 %1$s</string>
+    <string name="home_need_repair">对面不认这次的连接了，回上一步重新连一下</string>
+    <string name="home_job_waiting">准备中…</string>
+    <string name="home_job_sending">正在传 %1$d%%</string>
+    <string name="home_job_done">已送达</string>
     <string name="peer_qr_hint">让对面用「扫码」扫这个</string>
     <string name="peer_direct">没有 Wi-Fi？开直连热点</string>
     <string name="peer_direct_stop">关掉直连热点</string>
@@ -472,6 +480,8 @@
     <string name="connect_status_scanning">正在找同一 Wi-Fi 下的电脑…</string>
     <string name="connect_status_one">点一下就连上</string>
     <string name="connect_status_many">点一下要连的电脑</string>
+    <string name="connect_status_many_phone">点一下要连的手机</string>
+    <string name="connect_status_scanning_phone">正在找同一 Wi-Fi 下的手机…</string>
     <string name="connect_hint">电脑上的卓传要开着，两台设备连同一个 Wi-Fi。\n有些路由器会拦掉自动发现，那就扫码或手输地址。</string>
     <string name="connect_scan">扫码连接</string>
     <string name="connect_manual">手输地址</string>
@@ -504,6 +514,7 @@
     <string name="approval_refused">对方没有同意</string>
     <string name="peer_knock_hint">同意之后，这台手机上的文件会被对方看到吗？不会 —— 对方只能往这里发东西。</string>
     <string name="connect_manual_hint">电脑上的卓传窗口里显示着它的地址，照着输就行。</string>
+    <string name="connect_hint_nothing">找不到对方？让他在自己手机上点「我要收」；要是这儿没有 Wi-Fi，让他再点一下「开直连热点」，然后你用上面的「扫码连接」扫他屏幕上的码——网和连接会一起搞定。</string>
     <string name="connect_direct_joining">正在和对方建立 Wi-Fi 直连…</string>
     <string name="connect_direct_joined">直连成功，正在连接…</string>
     <string name="common_connect">连接</string>

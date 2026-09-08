@@ -131,6 +131,8 @@ targets:
     platform: iOS
     sources:
       - path: DroidTransUITests
+      # 真机联调的开关，两个测试 target 共用一份
+      - path: DroidTransTests/InteropConfig.swift
       # SKTestSession 要从测试 bundle 里读商品定义
       - path: DroidTrans/Resources/Products.storekit
     dependencies:

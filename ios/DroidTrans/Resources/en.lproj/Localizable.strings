@@ -262,6 +262,7 @@ Pro unlocks the following.";
 "peer.connectedHint" = "The sender can now choose photos, videos, or files";
 "peer.code" = "Pairing code";
 "peer.addr" = "Or have them type this address";
+"peer.receiving" = "Receiving";
 "peer.got" = "Received";
 "peer.open" = "Open in Files";
 "peer.stop" = "Stop receiving";

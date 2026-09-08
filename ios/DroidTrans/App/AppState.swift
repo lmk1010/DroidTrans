@@ -89,7 +89,11 @@ final class AppState: ObservableObject {
                 api = client
                 // 对面是台手机的话，别让用户去抄六位码 ——
                 // 敲一下门，等它点「同意」就行。
-                phase = info.approvesByTap ? .awaitingApproval(info) : .needsPairing(info)
+                // 对面是手机就一律「点一下同意」，第一次也不要码。
+                // 只看 pairing_mode 的话，对面版本旧一点、或者那次回包没带上
+                // 这个字段，用户就会被推到一屏根本用不上的六位码前面。
+                phase = (info.approvesByTap || info.isPhone)
+                    ? .awaitingApproval(info) : .needsPairing(info)
                 return
             }
 

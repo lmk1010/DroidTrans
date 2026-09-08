@@ -262,6 +262,7 @@ Pro 解锁以下功能。";
 "peer.connectedHint" = "对方可以开始选择照片、视频或文件";
 "peer.code" = "配对码";
 "peer.addr" = "或让对面手输这个地址";
+"peer.receiving" = "正在接收";
 "peer.got" = "已收到";
 "peer.open" = "在「文件」里打开";
 "peer.stop" = "停止接收";

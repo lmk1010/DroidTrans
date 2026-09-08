@@ -35,6 +35,12 @@ public final class Pairing {
             .readTimeout(6, TimeUnit.SECONDS)
             .build();
 
+    /** 问「要不要配对」这种关键判断，超时给宽一点：判错的代价是把用户带到错的一屏。 */
+    private static final OkHttpClient PATIENT = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build();
+
     private Pairing() {
     }
 
@@ -107,6 +113,76 @@ public final class Pairing {
         } catch (IOException | org.json.JSONException e) {
             return false;
         }
+    }
+
+    /**
+     * 存着的令牌对面还认不认。
+     *
+     * <p>手机当接收端时令牌是<b>一次性</b>的：对面每次重新进入「我要收」都会
+     * 把它作废。而发送端只要本地存过一个令牌就不再敲门，于是一直拿着一张
+     * 过期的票去传，对面一律 403 —— 用户看到的正是「第一次能传，之后就不行了」。
+     *
+     * <p>拿一个需要鉴权的口探一下最准：/api/outbox 电脑和手机都实现了。
+     */
+    public static boolean tokenWorks(String baseUrl, String token) {
+        if (token == null || token.isEmpty()) {
+            return false;
+        }
+        Request req = new Request.Builder()
+                .url("http://" + normalize(baseUrl) + "/api/outbox")
+                .header(HEADER, token)
+                .get()
+                .build();
+        try (Response res = CLIENT.newCall(req).execute()) {
+            return res.isSuccessful();
+        } catch (Exception e) {
+            // 连不上不等于令牌坏了，这时候别把它删掉
+            return true;
+        }
+    }
+
+    /** 对面的配对要求：要不要配、以及怎么配。 */
+    public static final class Info {
+        public final boolean required;
+        public final String mode;
+        /** 问到了没有。没问到时**不能**当成「要输码」，见 ConnectActivity。 */
+        public final boolean known;
+
+        Info(boolean required, String mode, boolean known) {
+            this.required = required;
+            this.mode = mode == null ? "" : mode;
+            this.known = known;
+        }
+    }
+
+    /**
+     * 一次问清楚：要不要配对、以及怎么配。
+     *
+     * <p>原来这两件事分两次请求问，任何一次超时都会退化成「按要输码处理」，
+     * 于是手机连手机时冒出一屏六位码 —— 而手机之间根本就不该有码，
+     * 对面也因此从没被敲门，屏幕上什么都不弹。
+     *
+     * <p>所以这里问一次、失败重试一次，并且如实告诉调用方「到底问到没有」。
+     */
+    public static Info info(String baseUrl) {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            Request req = new Request.Builder()
+                    .url("http://" + normalize(baseUrl) + "/api/wifi/info")
+                    .get()
+                    .build();
+            try (Response res = PATIENT.newCall(req).execute()) {
+                ResponseBody rb = res.body();
+                if (!res.isSuccessful() || rb == null) {
+                    continue;
+                }
+                JSONObject j = new JSONObject(rb.string());
+                return new Info(j.optBoolean("pairing_required", true),
+                        j.optString("pairing_mode", ""), true);
+            } catch (Exception ignored) {
+                // 再试一次；网络抖一下不该把用户推进一屏用不上的配对码
+            }
+        }
+        return new Info(true, "", false);
     }
 
     /**

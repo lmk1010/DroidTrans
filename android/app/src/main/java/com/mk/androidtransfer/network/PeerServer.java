@@ -75,6 +75,14 @@ public final class PeerServer {
     public interface Listener {
         void onStateChanged(boolean running, String error);
 
+        /**
+         * 正在收，边收边报。
+         *
+         * <p>没有这个回调时，界面在整个文件收完之前一个字都不动 ——
+         * 传一个大视频就是几十秒的死界面，用户会以为卡住了。
+         */
+        void onFileProgress(String name, long received, long total);
+
         void onFileReceived(String name, long size, File file);
 
         void onPeerConnected(String name);
@@ -505,6 +513,7 @@ public final class PeerServer {
                 body += take;
             }
             byte[] buf = new byte[64 * 1024];
+            long lastReport = 0;
             while (body < bodyLen) {
                 int want = (int) Math.min(buf.length, bodyLen - body);
                 int n = in.read(buf, 0, want);
@@ -513,6 +522,19 @@ public final class PeerServer {
                 }
                 raf.write(buf, 0, n);
                 body += n;
+
+                // 每 200ms 报一次就够了：报太密只会让主线程忙着刷新
+                long now = System.currentTimeMillis();
+                if (now - lastReport > 200) {
+                    lastReport = now;
+                    final long got = offset + body;
+                    final String shown = name;
+                    main.post(() -> {
+                        if (listener != null) {
+                            listener.onFileProgress(shown, got, total);
+                        }
+                    });
+                }
             }
         }
 
@@ -702,7 +724,7 @@ public final class PeerServer {
      *
      * <p>蜂窝网（rmnet/pdp）上对面连不过来，一律不要。
      */
-    static int interfaceRank(String name) {
+    public static int interfaceRank(String name) {
         if (name == null) {
             return -1;
         }

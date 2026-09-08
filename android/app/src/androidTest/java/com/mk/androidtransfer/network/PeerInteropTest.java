@@ -10,8 +10,11 @@ import android.os.Bundle;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
+import androidx.test.rule.GrantPermissionRule;
+
 import org.junit.After;
 import org.junit.Assume;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -45,6 +48,15 @@ import okhttp3.Response;
  */
 @RunWith(AndroidJUnit4.class)
 public class PeerInteropTest {
+
+    /**
+     * 相册权限。真机上 photo=1 那一路要从 MediaStore 读一张照片，
+     * 没有它读回来的是空的 —— 而那看起来会像「传输失败」。
+     */
+    @Rule
+    public GrantPermissionRule photos = android.os.Build.VERSION.SDK_INT >= 33
+            ? GrantPermissionRule.grant(android.Manifest.permission.READ_MEDIA_IMAGES)
+            : GrantPermissionRule.grant(android.Manifest.permission.READ_EXTERNAL_STORAGE);
 
     private PeerServer server;
 
@@ -154,9 +166,26 @@ public class PeerInteropTest {
         // 通道也得按对面报的 prefer 选，不能退到它根本没有的 multipart
         assertEquals(TransferProtocol.HTTP_PUT, ProtocolSelector.select(base).protocol);
 
-        byte[] payload = "从安卓传给 iPhone 的一段字节".getBytes("UTF-8");
-        assertEquals(200, put(new OkHttpClient(), base, token,
-                "from-android.txt", payload.length, 0, payload));
+        // 默认发一小段字节；给了 photo=1 就从相册里真拿一张照片发过去，
+        // 那才是用户实际会做的事（也顺带把大一点的 body 走一遍）
+        byte[] payload;
+        String name;
+        if (InstrumentationRegistry.getArguments().getString("photo") != null) {
+            android.util.Pair<String, byte[]> pic = firstPhoto();
+            assertNotNull("这台手机的相册里没找到照片", pic);
+            name = pic.first;
+            payload = pic.second;
+        } else {
+            name = "from-android.txt";
+            payload = "从安卓传给 iPhone 的一段字节".getBytes("UTF-8");
+        }
+        long started = System.currentTimeMillis();
+        assertEquals(200, put(new OkHttpClient(), base, token, name,
+                payload.length, 0, payload));
+        long ms = Math.max(1, System.currentTimeMillis() - started);
+        android.util.Log.i("PeerInteropTest", "传了 " + name + "：" + payload.length
+                + " 字节，" + ms + " ms，约 "
+                + (payload.length / 1024.0 / 1024.0) / (ms / 1000.0) + " MB/s");
     }
 
     /**
@@ -187,6 +216,10 @@ public class PeerInteropTest {
                     }
 
                     @Override
+                    public void onFileProgress(String name, long received, long total) {
+                    }
+
+                    @Override
                     public void onFileReceived(String name, long bytes, File file) {
                         size.set(bytes);
                         got.countDown();
@@ -209,7 +242,77 @@ public class PeerInteropTest {
         assertTrue("收到的文件是空的", size.get() > 0);
     }
 
+    /**
+     * 真网络上的发现：在真的 Wi-Fi 里用 NSD 把对面那台接收端找出来。
+     *
+     * <p>这一条在模拟器上做不到 —— emulator 的组播出不了它那层 NAT，
+     * 所以「解析要排队、走了要移除」那些改动，只有在真机上才验得到。
+     *
+     * <pre>
+     *   -Pandroid.testInstrumentationRunnerArguments.expectPeer=192.168.10.15
+     * </pre>
+     */
+    @Test
+    public void findsPeerOnTheRealNetwork() throws Exception {
+        String expect = InstrumentationRegistry.getArguments().getString("expectPeer");
+        Assume.assumeNotNull(expect);
+
+        final CountDownLatch found = new CountDownLatch(1);
+        final AtomicReference<String> where = new AtomicReference<>();
+        BonjourBrowser browser = new BonjourBrowser(ctx());
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                browser.start(new BonjourBrowser.Listener() {
+                    @Override
+                    public void onFound(String name, java.util.List<String> hosts, int port) {
+                        if (hosts.contains(expect)) {
+                            where.set(expect + ":" + port);
+                            found.countDown();
+                        }
+                    }
+
+                    @Override
+                    public void onLost(String name) {
+                    }
+                }));
+        try {
+            assertTrue("30 秒之内没在局域网里发现 " + expect
+                            + "（组播被路由器拦掉、或者解析那一路又把它丢了）",
+                    found.await(30, TimeUnit.SECONDS));
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(browser::stop);
+        }
+        assertNotNull(where.get());
+    }
+
     // ------------------------------------------------------------------ 小工具
+
+    /** 相册里的第一张照片。只读，不动用户的任何东西。 */
+    private android.util.Pair<String, byte[]> firstPhoto() throws Exception {
+        String[] cols = {android.provider.MediaStore.Images.Media._ID,
+                android.provider.MediaStore.Images.Media.DISPLAY_NAME};
+        try (android.database.Cursor c = ctx().getContentResolver().query(
+                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                cols, null, null,
+                android.provider.MediaStore.Images.Media.DATE_ADDED + " DESC LIMIT 1")) {
+            if (c == null || !c.moveToFirst()) {
+                return null;
+            }
+            long id = c.getLong(0);
+            String name = c.getString(1);
+            android.net.Uri uri = android.content.ContentUris.withAppendedId(
+                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream in = ctx().getContentResolver().openInputStream(uri)) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while (in != null && (n = in.read(buf)) != -1) {
+                    out.write(buf, 0, n);
+                }
+            }
+            return new android.util.Pair<>(name == null ? "photo.jpg" : name,
+                    out.toByteArray());
+        }
+    }
 
     private int startServer() throws Exception {
         final CountDownLatch up = new CountDownLatch(1);
@@ -221,6 +324,10 @@ public class PeerInteropTest {
                         if (running) {
                             up.countDown();
                         }
+                    }
+
+                    @Override
+                    public void onFileProgress(String name, long received, long total) {
                     }
 
                     @Override

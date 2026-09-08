@@ -176,6 +176,11 @@ public class RadarScanView extends View {
         canvas.drawLine(x - 11f, y + h / 2f + 6f, x + 11f, y + h / 2f + 6f, computerPaint);
     }
 
+    /** 这些尺寸都是按 dp 给的，别再直接当像素用 —— 在 3x 屏上会缩成原来的三分之一。 */
+    private float dp(float v) {
+        return v * getResources().getDisplayMetrics().density;
+    }
+
     private void drawDevice(Canvas canvas, float x, float y, Bitmap art, float size) {
         if (art == null) {
             drawComputer(canvas, x, y);
@@ -232,7 +237,7 @@ public class RadarScanView extends View {
         canvas.restore();
 
         // Android 端雷达中心代表本机，不能再用电脑图标。
-        drawDevice(canvas, centerX, centerY, androidArt, 64f);
+        drawDevice(canvas, centerX, centerY, androidArt, dp(52));
     }
 
     private void drawServerDots(Canvas canvas) {
@@ -251,15 +256,15 @@ public class RadarScanView extends View {
             }
 
             float pulse = (float) ((Math.sin(SystemClock.elapsedRealtime() / 420.0 + dot.angle) + 1) * 0.5);
-            float ring = 18 + pulse * 16;
+            float ring = dp(16) + pulse * dp(14);
             serverPulsePaint.setAlpha((int) ((1f - pulse) * 90 + 30));
             canvas.drawCircle(x, y, ring * dot.scale, serverPulsePaint);
             serverPulsePaint.setAlpha((int) ((1f - pulse) * 50));
-            canvas.drawCircle(x, y, (ring + 10) * dot.scale, serverPulsePaint);
+            canvas.drawCircle(x, y, (ring + dp(9)) * dot.scale, serverPulsePaint);
 
             canvas.save();
             canvas.scale(dot.scale, dot.scale, x, y);
-            drawDevice(canvas, x, y, iconFor(dot), 58f);
+            drawDevice(canvas, x, y, iconFor(dot), dp(46));
             canvas.restore();
 
             if (dot.scale >= 0.8f && dot.labelScale > 0f) {

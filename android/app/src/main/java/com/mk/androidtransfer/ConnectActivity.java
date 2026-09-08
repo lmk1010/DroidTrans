@@ -23,6 +23,7 @@ import com.journeyapps.barcodescanner.ScanOptions;
 import com.mk.androidtransfer.model.ServerInfo;
 import com.mk.androidtransfer.network.BonjourBrowser;
 import com.mk.androidtransfer.network.DirectFinder;
+import com.mk.androidtransfer.network.LanScanner;
 import com.mk.androidtransfer.network.Pairing;
 import com.mk.androidtransfer.network.PeerLink;
 import com.mk.androidtransfer.network.PeerServer;
@@ -51,20 +52,37 @@ import java.util.concurrent.Executors;
  */
 public class ConnectActivity extends AppCompatActivity {
 
+    /** 只找手机（从「和手机传 → 我要发」进来时）。 */
+    public static final String EXTRA_PHONES_ONLY = "phones_only";
+
     /** 雷达上那些「还没入网、要先建直连」的点，用这个 engine 标出来。 */
     private static final String DIRECT = "direct";
     private static final int REQ_NEARBY = 4102;
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final Runnable nothingFound = new Runnable() {
+        @Override
+        public void run() {
+            if (found.isEmpty()) {
+                hint.setText(R.string.connect_hint_nothing);
+                hint.setVisibility(View.VISIBLE);
+            }
+        }
+    };
     private final ExecutorService io = Executors.newCachedThreadPool();
     /** 已经出现在雷达上的电脑，按 ip:port 去重 */
     private final Map<String, ServerInfo> found = new LinkedHashMap<>();
     /** Bonjour 服务名 → ip:port。服务消失时只给得到服务名，得靠它找回那个点。 */
     private final Map<String, String> byService = new LinkedHashMap<>();
 
+    /** true = 这一趟只找手机，电脑不进雷达 */
+    private boolean phonesOnly;
+
     private BonjourBrowser browser;
     /** Wi-Fi 直连那条路：对面没连任何网络也能被发现。 */
     private DirectFinder finder;
+    /** 组播不靠谱时的兜底：直接扫本网段。 */
+    private LanScanner scanner2;
     private RadarScanView radar;
     private TextView status;
     private TextView hint;
@@ -83,6 +101,9 @@ public class ConnectActivity extends AppCompatActivity {
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
         setContentView(R.layout.activity_connect);
         applyInsets();
+
+        phonesOnly = getIntent() != null
+                && getIntent().getBooleanExtra(EXTRA_PHONES_ONLY, false);
 
         radar = findViewById(R.id.radar);
         status = findViewById(R.id.status);
@@ -121,12 +142,24 @@ public class ConnectActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         radar.startScanning();
+        // 扫了一会儿还是空的，就把那条真正能救场的路说出来 ——
+        // 组播被路由器拦掉、或者压根没有 Wi-Fi 时，雷达会一直空着，
+        // 而用户不知道还有「让对方开直连热点 + 扫码」这条路。
+        main.postDelayed(nothingFound, 12_000);
         startDirectFinder();
+        startLanScan();
         browser = new BonjourBrowser(this);
         browser.start(new BonjourBrowser.Listener() {
             @Override
-            public void onFound(String name, String host, int port) {
-                main.post(() -> ConnectActivity.this.onFound(name, host, port));
+            public void onFound(String name, java.util.List<String> hosts, int port) {
+                // 探一下哪个地址真的应声，再往雷达上放 —— 见下面 pickReachable
+                io.execute(() -> {
+                    String[] live = pickReachable(hosts, port);
+                    if (live == null) {
+                        return;
+                    }
+                    main.post(() -> ConnectActivity.this.onFound(name, live[0], port, live[1]));
+                });
             }
 
             @Override
@@ -140,6 +173,7 @@ public class ConnectActivity extends AppCompatActivity {
     protected void onStop() {
         super.onStop();
         radar.stopScanning();
+        main.removeCallbacks(nothingFound);
         if (browser != null) {
             browser.stop();
             browser = null;
@@ -148,6 +182,10 @@ public class ConnectActivity extends AppCompatActivity {
             // 只停扫描，不拆已经建好的组 —— 传输还在上面跑
             finder.stop();
             finder = null;
+        }
+        if (scanner2 != null) {
+            scanner2.stop();
+            scanner2 = null;
         }
     }
 
@@ -219,33 +257,21 @@ public class ConnectActivity extends AppCompatActivity {
 
     // ------------------------------------------------------------------ 发现
 
-    private void onFound(String name, String host, int port) {
+    private void onFound(String name, String host, int port, String engine) {
+        if (phonesOnly && !isPhone(engine, port)) {
+            return;   // 这一趟只找手机
+        }
         String key = host + ":" + port;
         byService.put(name, key);
         if (found.containsKey(key)) {
             return;
         }
         ServerInfo info = new ServerInfo(name, host, port);
+        // engine 在探活那一步就问出来了，雷达据此选电脑还是手机的图标
+        info.setEngine(engine);
         found.put(key, info);
         radar.addServerDot(info);
         refreshStatus();
-
-        // Bonjour 只有地址信息。补一次 health，才能把 Android/iPhone
-        // 从电脑节点里区分出来，并在雷达上换成对应素材。
-        io.execute(() -> {
-            String engine = Pairing.engine(info.getServerUrl());
-            if (engine.isEmpty()) {
-                return;
-            }
-            main.post(() -> {
-                ServerInfo current = found.get(key);
-                if (current == null) {
-                    return;
-                }
-                current.setEngine(engine);
-                radar.updateServerDot(current);
-            });
-        });
     }
 
     /**
@@ -267,11 +293,112 @@ public class ConnectActivity extends AppCompatActivity {
         refreshStatus();
     }
 
+    /**
+     * 扫本网段兜底。
+     *
+     * <p>组播这条路真机上会以两种方式失灵：mDNS 缓存里留着对面换网络之前的
+     * 旧地址（实测遇到过），以及路由器直接拦掉组播。两种情况雷达都是空的，
+     * 而用户并不知道发生了什么。挨个敲一遍同网段的 9500/9600 最笨，但它不会骗人。
+     */
+    private void startLanScan() {
+        String self = selfIp();
+        if (self == null) {
+            return;
+        }
+        scanner2 = new LanScanner();
+        scanner2.start(self, new int[]{9500, PeerServer.PORT},
+                (name, ip, port, engine) -> main.post(() -> {
+                    if (phonesOnly && !isPhone(engine, port)) {
+                        return;
+                    }
+                    String key = ip + ":" + port;
+                    if (found.containsKey(key)) {
+                        return;
+                    }
+                    ServerInfo info = new ServerInfo(name, ip, port);
+                    info.setEngine(engine);
+                    found.put(key, info);
+                    radar.addServerDot(info);
+                    refreshStatus();
+                }));
+    }
+
+    /**
+     * 本机在 Wi-Fi（或直连热点）上的地址。拿不到就不扫。
+     *
+     * <p><b>不能随手拿第一个非回环 IPv4。</b>手机上蜂窝网卡（rmnet）通常排在
+     * 前面，拿到的是运营商给的地址 —— 然后就去扫一个跟局域网毫不相干的网段，
+     * 一台设备都扫不到，而用户看到的是「雷达永远是空的」。
+     * 复用 PeerServer.interfaceRank 那套排序：热点 > Wi-Fi > 其他，蜂窝一律不要。
+     */
+    private String selfIp() {
+        String best = null;
+        int bestRank = Integer.MAX_VALUE;
+        try {
+            for (java.util.Enumeration<java.net.NetworkInterface> e =
+                 java.net.NetworkInterface.getNetworkInterfaces(); e.hasMoreElements(); ) {
+                java.net.NetworkInterface ni = e.nextElement();
+                if (!ni.isUp() || ni.isLoopback()) {
+                    continue;
+                }
+                int rank = PeerServer.interfaceRank(ni.getName());
+                if (rank < 0 || rank >= bestRank) {
+                    continue;
+                }
+                for (java.net.InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                    java.net.InetAddress a = ia.getAddress();
+                    if (a instanceof java.net.Inet4Address && !a.isLoopbackAddress()) {
+                        best = a.getHostAddress();
+                        bestRank = rank;
+                        break;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return best;
+    }
+
+    /**
+     * 从候选地址里挑一个真的能连上的。
+     *
+     * <p>mDNS 的缓存里常留着对面换网络之前的旧地址。真机上实测过：
+     * Mac 换了网段之后手机还拿着 192.168.4.18，而那个地址在 Mac 上
+     * 早就不存在了 —— 雷达上看得见、点进去所有请求都超时，
+     * 用户得到的信息是「这个 App 连不上」。
+     *
+     * <p>所以发现之后先问一句 /api/health，谁应声用谁；一个都不应声就
+     * 干脆不显示 —— 显示一台连不上的设备，比不显示更糟。
+     */
+    private String[] pickReachable(java.util.List<String> hosts, int port) {
+        for (String h : hosts) {
+            String engine = Pairing.engine("http://" + h + ":" + port);
+            if (!engine.isEmpty()) {
+                return new String[]{h, engine};
+            }
+        }
+        return null;
+    }
+
+    /** 手机端的 engine 是 android / swift；旧版本探不出来时按端口兜底。 */
+    private static boolean isPhone(String engine, int port) {
+        return "android".equalsIgnoreCase(engine)
+                || "swift".equalsIgnoreCase(engine)
+                || DIRECT.equalsIgnoreCase(engine)
+                || port == PeerServer.PORT;
+    }
+
     private void refreshStatus() {
         int n = found.size();
         if (n == 0) {
-            status.setText(R.string.connect_status_scanning);
+            status.setText(phonesOnly
+                    ? R.string.connect_status_scanning_phone
+                    : R.string.connect_status_scanning);
             hint.setVisibility(View.VISIBLE);
+        } else if (phonesOnly) {
+            // 从「和手机传」进来的，这一屏一台电脑都不该提
+            status.setText(n == 1
+                    ? R.string.connect_status_one : R.string.connect_status_many_phone);
         } else {
             status.setText(n == 1 ? R.string.connect_status_one : R.string.connect_status_many);
             // 已经找到了就别再教用户怎么排查，那段话这时候只是噪音
@@ -289,14 +416,48 @@ public class ConnectActivity extends AppCompatActivity {
      * 有些电脑压根没开配对要求。
      */
     private void connect(String baseUrl, String name) {
+        connect(baseUrl, name, engineOf(baseUrl));
+    }
+
+    /** 已经知道对面是什么的时候直接给，省一次探测。 */
+    private String engineOf(String baseUrl) {
+        for (ServerInfo info : found.values()) {
+            if (baseUrl.contains(info.getIp() + ":" + info.getPort())) {
+                return info.getEngine();
+            }
+        }
+        return "";
+    }
+
+    private void connect(String baseUrl, String name, String engine) {
         io.execute(() -> {
             String url = resolvePort(Pairing.normalize(baseUrl));
             boolean needsPair;
             String mode;
             try {
-                needsPair = Pairing.requiresPairing(url)
-                        && Pairing.token(this, url).isEmpty();
-                mode = needsPair ? Pairing.pairingMode(url) : "";
+                // 存着的令牌还认不认，要真的问一句 —— 手机当接收端时令牌是
+                // 一次性的，对面重新进一次「我要收」就作废。不问的话，
+                // 发送端会一直拿着过期的票，传什么都是 403，
+                // 而用户看到的是「第一次能传，之后就不行了」。
+                String saved = Pairing.token(this, url);
+                boolean tokenOk = Pairing.tokenWorks(url, saved);
+                if (!tokenOk && saved != null && !saved.isEmpty()) {
+                    Pairing.forget(this, url);
+                }
+
+                Pairing.Info info = Pairing.info(url);
+                if (!info.known) {
+                    // 没问出来就是没问出来。当成「要输码」把用户推到那一屏，
+                    // 是拿一个猜测冒充事实 —— 而手机之间压根没有码可输。
+                    main.post(() -> toast(getString(R.string.connect_failed)));
+                    return;
+                }
+                needsPair = info.required && !tokenOk;
+                // 手机接收端一律是「点一下同意」。端口就是它的身份证，
+                // 万一对面版本旧、没报 pairing_mode，也不该把用户带到码那一屏。
+                mode = needsPair
+                        ? (url.endsWith(":" + PeerServer.PORT) ? "approve" : info.mode)
+                        : "";
             } catch (Exception e) {
                 main.post(() -> toast(getString(R.string.connect_failed)));
                 return;
@@ -312,6 +473,7 @@ public class ConnectActivity extends AppCompatActivity {
                         Intent i = new Intent(this, HomeActivity.class);
                         i.putExtra(HomeActivity.EXTRA_BASE_URL, url);
                         i.putExtra(HomeActivity.EXTRA_NAME, name);
+                        i.putExtra(HomeActivity.EXTRA_ENGINE, engine);
                         startActivity(i);
                     } else {
                         toast(getString(R.string.approval_refused));
@@ -327,6 +489,7 @@ public class ConnectActivity extends AppCompatActivity {
                         : new Intent(this, HomeActivity.class);
                 i.putExtra(HomeActivity.EXTRA_BASE_URL, url);
                 i.putExtra(HomeActivity.EXTRA_NAME, name);
+                i.putExtra(HomeActivity.EXTRA_ENGINE, engine);
                 startActivity(i);
             });
         });

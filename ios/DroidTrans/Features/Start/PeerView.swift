@@ -42,7 +42,9 @@ struct PeerView: View {
             .padding(.top, Space.s)
         }
         .preferredColorScheme(.dark)
-        .onDisappear { peer.stop() }
+        // 离开这一屏**不能**停监听：App 现在是常驻可被发现的，
+        // 停掉的话用户一退出这屏，别人就再也找不到他了。
+        // 真要停由「停止接收」那个按钮负责。
         // 对面在雷达上点了这台，这里弹一下。把关就在这一下 ——
         // 设备名是对面自己报的，只当提示看，真正决定开不开门的是这个人。
         .alert(knockTitle, isPresented: knocking) {
@@ -61,7 +63,6 @@ struct PeerView: View {
     }
 
     private func leave() {
-        peer.stop()
         app.route = .start
     }
 
@@ -89,7 +90,7 @@ struct PeerView: View {
                 roleCard(icon: "tray.and.arrow.down.fill",
                          title: L("peer.recv"), sub: L("peer.recv.sub"),
                          id: "peer-recv") {
-                    peer.start()
+                    peer.startIfIdle()
                     receiving = true
                 }
             }
@@ -170,6 +171,39 @@ struct PeerView: View {
         }
     }
 
+    /// 接收界面的大标题。四态：还没起来 / 正在收 / 已连上 / 在等人连。
+    private var headline: String {
+        if !peer.running { return "…" }
+        if peer.incoming != nil || !peer.received.isEmpty { return L("peer.receiving") }
+        if peer.connectedName != nil { return L("peer.connected") }
+        return L("peer.waiting")
+    }
+
+    /// 正在收的那个文件，边收边显示 —— 不然大文件传着传着界面像死了一样。
+    @ViewBuilder private var incomingRow: some View {
+        if let now = peer.incoming {
+            VStack(spacing: 4) {
+                Text(now.name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                ProgressView(value: Double(now.got),
+                             total: Double(max(now.total, 1)))
+                    .tint(Color.brand)
+                    .frame(maxWidth: 240)
+                Text("\(bytes(now.got)) / \(bytes(now.total))")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.ink3)
+            }
+            .padding(.top, Space.s)
+        }
+    }
+
+    private func bytes(_ n: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
+    }
+
     // MARK: - 二维码
 
     /// 用 CoreImage 画码。没有引第三方库：这一个功能不值得多一个依赖。
@@ -196,13 +230,18 @@ struct PeerView: View {
 
             ArtIcon(art: .inbox, size: 68)
 
-            Text(peer.running ? L("peer.waiting") : "…")
+            // 标题要跟着状态走。原来不管收没收都写「等待连接」——
+            // 对面早就连上了、文件也在往这儿进，屏幕上还说在等，
+            // 用户只会以为没连上。
+            Text(headline)
                 .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(Color.ink)
 
             Text(Store.shared.deviceName)
                 .font(.system(size: 14))
                 .foregroundStyle(Color.ink2)
+
+            incomingRow
 
             Text(L("peer.tapToAccept"))
                 .font(.system(size: 14))
@@ -219,13 +258,16 @@ struct PeerView: View {
                let img = qrImage(for: PeerLink.encode(
                     host: ip, port: peer.boundPort,
                     code: peer.pairingCode, name: Store.shared.deviceName)) {
+                // 底色不能跟着深色主题走：二维码要浅底深码才扫得动，
+                // 反色的码大多数扫描器都不认。但一块生硬的纯白很扎眼，
+                // 所以给它圆角和一点点灰，让它像张卡片。
                 Image(uiImage: img)
                     .interpolation(.none)
                     .resizable()
-                    .frame(width: 180, height: 180)
-                    .padding(Space.s)
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .frame(width: 168, height: 168)
+                    .padding(Space.m)
+                    .background(Color(white: 0.95))
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .padding(.top, Space.m)
                     .accessibilityIdentifier("peer-qr")
 

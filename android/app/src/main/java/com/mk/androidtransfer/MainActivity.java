@@ -605,18 +605,22 @@ public class MainActivity extends AppCompatActivity {
         }
         bonjour.start(new BonjourBrowser.Listener() {
             @Override
-            public void onFound(String name, String host, int port) {
+            public void onFound(String name, java.util.List<String> hosts, int port) {
                 int p = port > 0 ? port : DEFAULT_PORT;
                 if (executorService == null) {
                     return;
                 }
                 executorService.execute(() -> {
-                    if (!probeServer(host, p)) {
+                    // mDNS 会给出对面换网络之前的旧地址，逐个探，谁应声用谁
+                    for (String host : hosts) {
+                        if (!probeServer(host, p)) {
+                            continue;
+                        }
+                        String label = (name != null && !name.isEmpty()) ? name : host;
+                        ServerInfo server = new ServerInfo(label, host, p);
+                        mainHandler.post(() -> addDiscovered(server));
                         return;
                     }
-                    String label = (name != null && !name.isEmpty()) ? name : host;
-                    ServerInfo server = new ServerInfo(label, host, p);
-                    mainHandler.post(() -> addDiscovered(server));
                 });
             }
 

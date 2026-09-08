@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 二维码的底。
+     二维码必须是浅底深码才扫得动（反色码大多数扫描器都不认），
+     所以底色不能跟着深色主题走；但一整块生硬的白方块很扎眼，
+     这里给它圆角和一点点灰，让它像张卡片而不是一块补丁。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F3F4F6" />
+    <corners android:radius="18dp" />
+</shape>

@@ -17,12 +17,13 @@ final class PeerInteropTests: XCTestCase {
 
     /// 这台当接收端，等外面的发送端连过来传一个文件。敲门自动点「同意」。
     ///
-    ///     echo > ~/.droidtrans-interop-serve
-    ///     xcodebuild test ... -only-testing:DroidTransTests/PeerInteropTests
+    ///     InteropConfig.swift 里把 serve 改成 true 再构建
     func testServesAnExternalSender() async throws {
-        try XCTSkipUnless(Self.flag("serve") != nil, "跨平台对跑，只在显式要求时跑")
+        try XCTSkipUnless(Interop.serve, "跨平台对跑，只在显式要求时跑（见 InteropConfig.swift）")
 
-        let server = PeerServer(port: UInt16(Ports.peer), advertiseService: false)
+        // 广播打开：对面要能在真的局域网上把这台发现出来，
+        // 那正是模拟器之间对跑测不到、而真机能测的一段
+        let server = PeerServer(port: UInt16(Ports.peer), advertiseService: true)
         server.start()
         defer { server.stop() }
 
@@ -30,32 +31,48 @@ final class PeerInteropTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTAssertTrue(server.running, "接收端没起来：\(server.lastError ?? "无错误信息")")
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var probe = "Documents=\(docs.path) 存在=\(fm.fileExists(atPath: docs.path)) 可写=\(fm.isWritableFile(atPath: docs.path))"
+        do {
+            try fm.createDirectory(at: docs.appendingPathComponent("probe"),
+                                   withIntermediateDirectories: true)
+            probe += " 建目录=成功"
+            try? fm.removeItem(at: docs.appendingPathComponent("probe"))
+        } catch {
+            probe += " 建目录失败=\(error.localizedDescription)"
+        }
+        print("RESULT 沙盒 \(probe) HOME=\(NSHomeDirectory())")
+        print("RESULT 接收端就绪 \(server.localIP ?? "无地址"):\(server.boundPort) 码 \(server.pairingCode)")
 
-        // 最多等两分钟：对面要装 APK、起 instrumentation，比本机用例慢得多
-        for _ in 0..<1200 {
+        var reported = false
+        // 最多等十分钟：真机那头要装包、起 instrumentation、还要人点几下，
+        // 两分钟经常不够，而超时之后这头就不在了，对面只会看到「连不上」
+        for _ in 0..<6000 {
             if server.knock != nil {
                 server.approve()
             }
-            if let got = server.received.first {
+            if let got = server.received.first, !reported {
                 XCTAssertGreaterThan(got.size, 0, "收到的文件是空的")
                 XCTAssertTrue(FileManager.default.fileExists(atPath: got.url.path))
-                return
+                print("RESULT 收到 \(got.name) \(got.size) 字节")
+                reported = true
+                // 收完一个不退出：联调时要连着测好几轮，
+                // 退出的话对面下一次连过来只会得到「连不上」
             }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        XCTFail("没等到对面把文件传过来")
+        XCTAssertTrue(reported, "没等到对面把文件传过来")
     }
 
     /// 反过来：这台当发送端，连外面那台真的接收端（安卓）。
     ///
-    ///     echo 127.0.0.1:9600 > ~/.droidtrans-interop-peer
+    ///     InteropConfig.swift 里填上 peer = "192.168.10.14:9600"
     func testSendsToAnExternalPeer() async throws {
-        // XCTUnwrap 拿不到值是**失败**不是跳过 —— 平时跑整套用例时这条会变红
-        guard let addr = Self.flag("peer") else {
-            throw XCTSkip("跨平台对跑，只在显式要求时跑")
+        guard !Interop.peer.isEmpty else {
+            throw XCTSkip("跨平台对跑，只在显式要求时跑（见 InteropConfig.swift）")
         }
-
-        let peer = try await DesktopDiscovery.verify(addr)
+        let peer = try await DesktopDiscovery.verify(Interop.peer)
         // 对面是台手机：它该说「点一下同意」，而不是让用户去抄六位码
         XCTAssertTrue(peer.approvesByTap, "对面没报 approve，发送端会退回抄码那条路")
         XCTAssertTrue(peer.isPhone)
@@ -81,16 +98,4 @@ final class PeerInteropTests: XCTestCase {
         XCTAssertFalse(skipped, "第一次传就报秒传，说明对面根本没在收")
     }
 
-    /// 宿主机 home 下的 `.droidtrans-interop-<名字>`；不存在返回 nil。
-    ///
-    /// 模拟器进程读得到宿主机的文件系统，宿主机 home 的位置由模拟器自己
-    /// 通过 SIMULATOR_HOST_HOME 告诉进程 —— 不能用 NSUserName() 去拼，
-    /// 那在模拟器里得到的不是宿主机那个用户名。
-    private static func flag(_ name: String) -> String? {
-        let env = ProcessInfo.processInfo.environment
-        let home = env["SIMULATOR_HOST_HOME"] ?? NSHomeDirectory()
-        guard let s = try? String(contentsOfFile: "\(home)/.droidtrans-interop-\(name)",
-                                 encoding: .utf8) else { return nil }
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }

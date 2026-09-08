@@ -20,7 +20,16 @@ public final class BonjourBrowser {
     public static final String SERVICE_TYPE = "_droidtrans._tcp.";
 
     public interface Listener {
-        void onFound(String name, String host, int port);
+        /**
+         * 发现一台。
+         *
+         * <p>给的是**一组**候选地址，不是一个：mDNS 的缓存里常常留着对面
+         * 换网络之前的旧地址，直接拿第一个用，结果就是「雷达上看得见、点了连不上」。
+         * 真机上实测过：Mac 换到别的网段之后，手机这边还拿着上一段的
+         * 192.168.4.18，那个地址在 Mac 上早就不存在了。
+         * 哪个能用由调用方去探。
+         */
+        void onFound(String name, java.util.List<String> hosts, int port);
 
         /** 这个服务不再广播了（对面停了接收、退出了 App、或者离开了网络）。 */
         void onLost(String name);
@@ -143,11 +152,10 @@ public final class BonjourBrowser {
                 @Override
                 public void onServiceResolved(NsdServiceInfo serviceInfo) {
                     if (listener != null && serviceInfo != null) {
-                        InetAddress host = serviceInfo.getHost();
-                        String ip = host == null ? null : host.getHostAddress();
-                        if (ip != null && !ip.contains(":")) {
-                            listener.onFound(serviceInfo.getServiceName(),
-                                    ip, serviceInfo.getPort());
+                        java.util.List<String> hosts = addressesOf(serviceInfo);
+                        if (!hosts.isEmpty()) {
+                            listener.onFound(serviceInfo.getServiceName(), hosts,
+                                    serviceInfo.getPort());
                         }
                     }
                     done();
@@ -168,6 +176,34 @@ public final class BonjourBrowser {
             if (next.getServiceName() != null) {
                 resolved.remove(next.getServiceName());
             }
+        }
+    }
+
+    /**
+     * 这个服务通告出来的所有 IPv4 地址。
+     *
+     * <p>Android 14 起 NSD 能一次给出全部地址；再往下只有一个，
+     * 那就只能拿那一个去试。IPv6 一律不要：桌面端和手机端都只监听 IPv4。
+     */
+    private static java.util.List<String> addressesOf(NsdServiceInfo info) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            for (InetAddress a : info.getHostAddresses()) {
+                add(out, a);
+            }
+        } else {
+            add(out, info.getHost());
+        }
+        return out;
+    }
+
+    private static void add(java.util.List<String> out, InetAddress a) {
+        if (a == null) {
+            return;
+        }
+        String ip = a.getHostAddress();
+        if (ip != null && !ip.contains(":") && !out.contains(ip)) {
+            out.add(ip);
         }
     }
 

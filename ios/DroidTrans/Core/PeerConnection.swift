@@ -210,11 +210,35 @@ final class PeerConnection {
         // 半个文件比传输失败更糟，用户不知道它是坏的。
         let part = Self.partPath(in: dir, name: name, size: total)
 
-        if !FileManager.default.fileExists(atPath: part.path) {
-            FileManager.default.createFile(atPath: part.path, contents: nil)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: part.path) {
+            // 目录可能还不在（第一次收东西），先补上再建文件 ——
+            // 少了这一步，createFile 会静默失败，然后下面打不开，
+            // 对面收到的是一句「cannot open file」，什么信息都没有。
+            var mkdirError = ""
+            do {
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            } catch {
+                mkdirError = error.localizedDescription
+            }
+            if !fm.createFile(atPath: part.path, contents: nil) {
+                try await sendJSON(500, ["success": false,
+                                         "error": "建不了分片：dir=\(dir.path) 存在=" +
+                                                  "\(fm.fileExists(atPath: dir.path)) 可写=" +
+                                                  "\(fm.isWritableFile(atPath: dir.path)) " +
+                                                  mkdirError])
+                return
+            }
         }
-        guard let fh = try? FileHandle(forWritingTo: part) else {
-            try await sendJSON(500, ["success": false, "error": "cannot open file"])
+        let fh: FileHandle
+        do {
+            fh = try FileHandle(forWritingTo: part)
+        } catch {
+            // 把真正的原因带回去。原来只回一句「cannot open file」，
+            // 排查时既不知道是哪个路径，也不知道系统说了什么。
+            try await sendJSON(500, ["success": false,
+                                     "error": "打不开 \(part.lastPathComponent)：" +
+                                              error.localizedDescription])
             return
         }
         defer { try? fh.close() }
@@ -241,11 +265,21 @@ final class PeerConnection {
                 body += take
             }
         }
+        var lastReport = Date.distantPast
         while body < bodyLen {
             guard let chunk = try await recv() else { break }
             let take = min(Int64(chunk.count), bodyLen - body)
             try fh.write(contentsOf: chunk.prefix(Int(take)))
             body += take
+
+            // 每 200ms 报一次进度就够了，报太密只会让界面忙着重绘
+            if Date().timeIntervalSince(lastReport) > 0.2 {
+                lastReport = Date()
+                let got = offset + body
+                await MainActor.run {
+                    server.noteProgress(name: name, got: got, total: total)
+                }
+            }
         }
         let written = offset + body
         try? fh.close()

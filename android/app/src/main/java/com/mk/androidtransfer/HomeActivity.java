@@ -26,7 +26,9 @@ import androidx.core.view.WindowInsetsCompat;
 import com.mk.androidtransfer.model.UploadFileItem;
 import com.mk.androidtransfer.network.FastTransferClient;
 import com.mk.androidtransfer.network.Pairing;
+import com.mk.androidtransfer.network.PeerServer;
 import com.mk.androidtransfer.network.ProtocolSelector;
+import com.mk.androidtransfer.network.RetrofitClient;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -58,6 +60,8 @@ public class HomeActivity extends AppCompatActivity {
 
     public static final String EXTRA_BASE_URL = "base_url";
     public static final String EXTRA_NAME = "name";
+    /** 对面是什么（go / android / swift）。图标据此选电脑还是手机。 */
+    public static final String EXTRA_ENGINE = "engine";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newCachedThreadPool();
@@ -66,9 +70,22 @@ public class HomeActivity extends AppCompatActivity {
             // 传一个几 GB 的视频要好几分钟，读超时不能按常规接口来
             .readTimeout(60, TimeUnit.MINUTES)
             .writeTimeout(60, TimeUnit.MINUTES)
+            // 每个请求都要带配对令牌。少了它，电脑一律回 403，
+            // 而用户在这一屏看到的只是「pairing required」——他明明已经配过对了。
+            .addInterceptor(chain -> {
+                String t = com.mk.androidtransfer.network.RetrofitClient.getToken();
+                if (t == null || t.isEmpty()) {
+                    return chain.proceed(chain.request());
+                }
+                return chain.proceed(chain.request().newBuilder()
+                        .header(Pairing.header(), t)
+                        .build());
+            })
             .build();
 
     private String baseUrl;
+    /** host:port，只用于界面显示和按机器存令牌，别拿去发请求。 */
+    private String host;
     private String name;
 
     private LinearLayout jobs;
@@ -90,11 +107,37 @@ public class HomeActivity extends AppCompatActivity {
         setContentView(R.layout.activity_home);
         applyInsets();
 
-        baseUrl = Pairing.normalize(getIntent().getStringExtra(EXTRA_BASE_URL));
+        // normalize 出来的是「host:port」，没有 http:// —— 那是给存令牌当 key 用的，
+        // 不能直接拿去请求：Uri.parse("192.168.1.5:9500") 解不出 host，
+        // ProtocolSelector 会一路退化到 127.0.0.1，用户看到的是
+        // 「Failed to connect to /127.0.0.1:9500」，而他连的明明是另一台机器。
+        host = Pairing.normalize(getIntent().getStringExtra(EXTRA_BASE_URL));
+        baseUrl = "http://" + host;
+
+        // 令牌要在这里装上：ATF3 快传是从 RetrofitClient 这个静态字段取令牌的，
+        // 而这一屏原来从没设过它 —— 于是从雷达连上电脑之后，发任何文件都被
+        // 电脑判 403，界面上写着「pairing required」，可用户明明已经配过对。
+        RetrofitClient.setToken(Pairing.token(this, host));
         name = getIntent().getStringExtra(EXTRA_NAME);
 
-        ((TextView) findViewById(R.id.connName)).setText(name == null ? baseUrl : name);
-        ((TextView) findViewById(R.id.connAddr)).setText(baseUrl);
+        // 连的是手机就别画一台笔记本。这一屏最上面那张卡是「我现在连着谁」，
+        // 图标画错，用户第一眼得到的就是错的信息。
+        int port = 9500;
+        int colon = host.lastIndexOf(':');
+        if (colon > 0) {
+            try {
+                port = Integer.parseInt(host.substring(colon + 1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        String engine = getIntent().getStringExtra(EXTRA_ENGINE);
+        boolean phone = port == PeerServer.PORT
+                || "android".equalsIgnoreCase(engine) || "swift".equalsIgnoreCase(engine);
+        ((ImageView) findViewById(R.id.connIcon)).setImageResource(
+                phone ? R.drawable.art_phone : R.drawable.art_laptop);
+
+        ((TextView) findViewById(R.id.connName)).setText(name == null ? host : name);
+        ((TextView) findViewById(R.id.connAddr)).setText(host);
 
         jobs = findViewById(R.id.jobs);
         jobsLabel = findViewById(R.id.jobsLabel);
@@ -132,9 +175,21 @@ public class HomeActivity extends AppCompatActivity {
         String display = queryName(uri);
         long size = querySize(uri);
 
-        TextView row = addJobRow(display);
+        View row = addJobRow(display);
         io.execute(() -> {
             try {
+                // 每发一个都按当前这台重新取令牌。
+                //
+                // 令牌存在 RetrofitClient 那个静态字段里，别的界面（连电脑、
+                // 上传进度页）也会往里写 —— 只在 onCreate 设一次的话，
+                // 中途被覆盖成另一台的令牌，对面就回 403，
+                // 而界面上显示的还是「已连接」。
+                String tok = Pairing.token(this, host);
+                if (tok == null || tok.isEmpty()) {
+                    throw new IOException(getString(R.string.home_need_repair));
+                }
+                RetrofitClient.setToken(tok);
+
                 ProtocolSelector.Choice choice = ProtocolSelector.select(baseUrl);
                 // path 传 null：内容 URI 拿不到真实路径，FastTransferClient 会走
                 // uri 那条分支用 ContentResolver 打开
@@ -150,18 +205,19 @@ public class HomeActivity extends AppCompatActivity {
                             @Override
                             public void onBytes(long sent, long total) {
                                 int pct = total > 0 ? (int) (sent * 100 / total) : 0;
-                                main.post(() -> row.setText(display + "   " + pct + "%"));
+                                main.post(() -> setJob(row,
+                                        getString(R.string.home_job_sending, pct),
+                                        R.color.ink3));
                             }
                         });
-                main.post(() -> {
-                    row.setText("✓  " + display);
-                    row.setTextColor(getColor(R.color.ok));
-                });
+                main.post(() -> setJob(row, getString(R.string.home_job_done), R.color.ok));
             } catch (IOException e) {
-                main.post(() -> {
-                    row.setText("✗  " + display + "   " + e.getMessage());
-                    row.setTextColor(getColor(R.color.danger));
-                });
+                // 403 = 对面不认这个令牌。对用户来说「HTTP PUT 403」什么都不是，
+                // 而他能做的事很具体：重新连一次。
+                final String why = String.valueOf(e.getMessage()).contains("403")
+                        ? getString(R.string.home_need_repair)
+                        : e.getMessage();
+                main.post(() -> setJob(row, why, R.color.danger));
             }
         });
     }
@@ -211,18 +267,46 @@ public class HomeActivity extends AppCompatActivity {
 
     // ------------------------------------------------------------------ 进度
 
-    private TextView addJobRow(String label) {
+    /**
+     * 「正在传」里的一行。
+     *
+     * <p>做成卡片而不是一行小字：一次发好几个的时候，一堆灰字挤在一起
+     * 根本看不出谁传到哪儿了，而这一屏最需要回答的就是这个问题。
+     */
+    private View addJobRow(String label) {
         jobsLabel.setVisibility(View.VISIBLE);
-        TextView row = new TextView(this);
-        row.setText(label);
-        row.setTextColor(getColor(R.color.ink2));
-        row.setTextSize(13f);
+        View row = getLayoutInflater().inflate(R.layout.item_job_row, jobs, false);
+        ((ImageView) row.findViewById(R.id.jobIcon)).setImageResource(iconFor(label));
+        ((TextView) row.findViewById(R.id.jobName)).setText(label);
+        ((TextView) row.findViewById(R.id.jobStatus)).setText(R.string.home_job_waiting);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = Math.round(6 * getResources().getDisplayMetrics().density);
+        lp.topMargin = Math.round(8 * getResources().getDisplayMetrics().density);
         jobs.addView(row, lp);
         return row;
+    }
+
+    /** 按扩展名挑图标。认不出来就用通用的文件图标。 */
+    private static int iconFor(String name) {
+        String n = name == null ? "" : name.toLowerCase(java.util.Locale.US);
+        if (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png")
+                || n.endsWith(".gif") || n.endsWith(".webp") || n.endsWith(".heic")
+                || n.endsWith(".heif") || n.endsWith(".bmp") || n.endsWith(".mp4")
+                || n.endsWith(".mov") || n.endsWith(".mkv") || n.endsWith(".webm")) {
+            return R.drawable.art_photos;
+        }
+        if (n.endsWith(".txt") || n.endsWith(".md") || n.endsWith(".json")
+                || n.endsWith(".csv")) {
+            return R.drawable.art_text;
+        }
+        return R.drawable.art_files;
+    }
+
+    private void setJob(View row, String status, int color) {
+        TextView t = row.findViewById(R.id.jobStatus);
+        t.setText(status);
+        t.setTextColor(getColor(color));
     }
 
     // ------------------------------------------------------------------ 小工具
